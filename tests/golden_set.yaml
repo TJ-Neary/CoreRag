@@ -1,0 +1,180 @@
+# Golden Dataset for Regression Testing
+#
+# This file contains query-answer pairs that MUST work correctly.
+# Run this test suite before any changes to:
+# - Embedding model
+# - Chunking strategy
+# - Re-ranking logic
+# - Hybrid search weights
+#
+# Usage: pytest tests/test_golden_set.py
+
+metadata:
+  version: "1.0"
+  created: "2026-01-31"
+  description: "Regression test suite for PKM retrieval quality"
+
+# Test configuration
+config:
+  top_k: 5                    # How many results to consider
+  required_rank: 3            # Expected file must be in top N
+  similarity_threshold: 0.7   # Minimum similarity score (0-1)
+
+# Test cases
+# Each case specifies:
+#   query: The search query
+#   expected_file: File path (relative to vault root) that MUST be found
+#   expected_in_top: Must appear in top N results (default: 3)
+#   tags: Optional categorization for selective testing
+
+queries:
+  # ============================================
+  # Architecture & Design
+  # ============================================
+  - query: "What are the hardware limits for M4 Max processing?"
+    expected_file: "architecture/HARDWARE_SAFETY.md"
+    expected_in_top: 3
+    tags: ["architecture", "hardware"]
+
+  - query: "How do I resume a failed ingestion job?"
+    expected_file: "src/utils/checkpoint.py"
+    expected_in_top: 5
+    tags: ["resilience", "code"]
+
+  - query: "Privacy tiers for sensitive documents"
+    expected_file: "architecture/ACCESS_CONTROL.md"
+    expected_in_top: 3
+    tags: ["security", "privacy"]
+
+  - query: "How does parent-child chunking work?"
+    expected_file: "architecture/CHUNKING_STRATEGY.md"
+    expected_in_top: 3
+    tags: ["architecture", "chunking"]
+
+  - query: "Vector search combined with keyword search"
+    expected_file: "src/search/hybrid_search.py"
+    expected_in_top: 3
+    tags: ["search", "code"]
+
+  # ============================================
+  # Code & Implementation
+  # ============================================
+  - query: "Cross-encoder reranking implementation"
+    expected_file: "src/search/reranker.py"
+    expected_in_top: 3
+    tags: ["search", "code"]
+
+  - query: "Apple Vision OCR integration"
+    expected_file: "src/ocr/vision_ocr.py"
+    expected_in_top: 3
+    tags: ["ocr", "code"]
+
+  - query: "Exponential backoff and retry logic"
+    expected_file: "src/utils/retry.py"
+    expected_in_top: 3
+    tags: ["resilience", "code"]
+
+  - query: "Circuit breaker pattern implementation"
+    expected_file: "src/utils/retry.py"
+    expected_in_top: 5
+    tags: ["resilience", "code"]
+
+  - query: "How to handle file deduplication?"
+    expected_file: "src/utils/deduplication.py"
+    expected_in_top: 3
+    tags: ["ingestion", "code"]
+
+  # ============================================
+  # Operations & Maintenance
+  # ============================================
+  - query: "How to back up the vector database?"
+    expected_file: "src/utils/backup.py"
+    expected_in_top: 3
+    tags: ["operations", "code"]
+
+  - query: "System health checks and monitoring"
+    expected_file: "src/utils/health.py"
+    expected_in_top: 3
+    tags: ["operations", "code"]
+
+  - query: "Files to exclude from indexing"
+    expected_file: ".pkmignore"
+    expected_in_top: 3
+    tags: ["configuration"]
+
+  - query: "Clean up orphaned vectors from deleted files"
+    expected_file: "src/sync/reconciliation.py"
+    expected_in_top: 3
+    tags: ["sync", "code"]
+
+  # ============================================
+  # Search & Retrieval
+  # ============================================
+  - query: "How is search relevance boosted by user feedback?"
+    expected_file: "src/utils/feedback.py"
+    expected_in_top: 3
+    tags: ["search", "code"]
+
+  - query: "Save and reuse search queries"
+    expected_file: "src/utils/search_history.py"
+    expected_in_top: 3
+    tags: ["search", "code"]
+
+  - query: "Citation tracking for search results"
+    expected_file: "src/utils/citations.py"
+    expected_in_top: 3
+    tags: ["search", "code"]
+
+  - query: "Multi-modal search across text and images"
+    expected_file: "architecture/MULTIMODAL_SEARCH.md"
+    expected_in_top: 3
+    tags: ["architecture", "search"]
+
+  # ============================================
+  # Content Organization
+  # ============================================
+  - query: "Smart collections that auto-populate"
+    expected_file: "src/utils/collections.py"
+    expected_in_top: 3
+    tags: ["organization", "code"]
+
+  - query: "AI-powered document tagging"
+    expected_file: "src/utils/tagging.py"
+    expected_in_top: 3
+    tags: ["organization", "code"]
+
+  - query: "Document version history and diffs"
+    expected_file: "src/utils/versioning.py"
+    expected_in_top: 3
+    tags: ["organization", "code"]
+
+  # ============================================
+  # Integration
+  # ============================================
+  - query: "Obsidian sync and conflict resolution"
+    expected_file: "architecture/OBSIDIAN_SYNC.md"
+    expected_in_top: 3
+    tags: ["integration", "architecture"]
+
+  - query: "Embedding model migration strategy"
+    expected_file: "architecture/MIGRATION_STRATEGY.md"
+    expected_in_top: 3
+    tags: ["architecture", "migration"]
+
+  - query: "Export knowledge base to different formats"
+    expected_file: "src/utils/export.py"
+    expected_in_top: 3
+    tags: ["export", "code"]
+
+  # ============================================
+  # Performance
+  # ============================================
+  - query: "Memory throttling for Apple Silicon"
+    expected_file: "src/utils/throttle_controller.py"
+    expected_in_top: 3
+    tags: ["performance", "code"]
+
+  - query: "Safe processing with hardware monitoring"
+    expected_file: "src/utils/safe_processor.py"
+    expected_in_top: 3
+    tags: ["performance", "code"]

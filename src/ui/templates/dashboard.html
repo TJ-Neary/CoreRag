@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingestion Approval Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #e5e7eb; }
+        .input-dark { background-color: #1f2937; border-color: #374151; color: white; }
+
+        /* Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-500">Ancient Observatory</h1>
+                <p class="text-gray-400">Ingestion Approval Queue</p>
+            </div>
+            <div>
+                <button onclick="refreshQueue()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Refresh</button>
+            </div>
+        </header>
+
+        <div id="queue-container">
+            <!-- Items injected here -->
+        </div>
+    </div>
+
+    <script>
+        async function refreshQueue() {
+            const container = document.getElementById('queue-container');
+            // Don't wipe content immediately to avoid flicker
+            try {
+                const res = await fetch('/api/queue');
+                const items = await res.json();
+                renderQueue(items);
+            } catch (e) {
+                console.error("Error loading queue", e);
+            }
+        }
+
+        function renderQueue(items) {
+            const container = document.getElementById('queue-container');
+            container.innerHTML = '';
+
+            if (Object.keys(items).length === 0) {
+                container.innerHTML = '<p class="text-gray-500">No pending items.</p>';
+                return;
+            }
+
+            for (const [id, item] of Object.entries(items)) {
+                // Handling Processing State
+                if (item.status === 'processing') {
+                    const html = `
+                    <div class="bg-gray-800 rounded-lg p-6 mb-4 shadow-lg border border-gray-700 opacity-75">
+                         <div class="flex items-center space-x-4">
+                            <div class="loader"></div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Analyzing: ${item.original_path.split('/').pop()}</h3>
+                                <p class="text-sm text-gray-400">AI is reading the document...</p>
+                            </div>
+                         </div>
+                    </div>`;
+                    container.innerHTML += html;
+                    continue; // Skip the rest for this item
+                }
+
+                // Determine Sensitivity Badge
+                const isSensitive = item.metadata?.is_sensitive;
+                const badge = isSensitive 
+                    ? '<span class="bg-red-900 text-red-200 text-xs px-2 py-1 rounded ml-2">PII DETECTED</span>' 
+                    : '<span class="bg-green-900 text-green-200 text-xs px-2 py-1 rounded ml-2">SAFE</span>';
+
+                const html = `
+                <div class="bg-gray-800 rounded-lg p-6 mb-4 shadow-lg border border-gray-700" id="card-${id}">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white flex items-center">
+                                ${item.proposed.filename}
+                                ${badge}
+                            </h3>
+                            <p class="text-sm text-gray-400">Original: ${item.original_path}</p>
+                        </div>
+                        <div class="text-right">
+                             <span class="text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded">${item.proposed.category}</span>
+                             <span class="text-xs bg-purple-900 text-purple-200 px-2 py-1 rounded ml-1">${item.proposed.year}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Proposed Filename</label>
+                            <input type="text" id="filename-${id}" value="${item.proposed.filename}" 
+                                class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-400 mb-1">Target Folder (Category/Year)</label>
+                            <input type="text" id="category-${id}" value="${item.proposed.category}" 
+                                class="w-1/2 inline-block px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white mr-2" placeholder="Category">
+                            <input type="text" id="year-${id}" value="${item.proposed.year}" 
+                                class="w-1/3 inline-block px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white" placeholder="Year">
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center mt-4 border-t border-gray-700 pt-4">
+                        <div class="text-sm text-gray-400">
+                           AI Summary: ${item.metadata?.summary?.substring(0, 100)}...
+                        </div>
+                        <div>
+                            <button onclick="approveItem('${id}')" 
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded transition-colors font-medium shadow-md">
+                                Approve & Archive
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+                container.innerHTML += html;
+            }
+        }
+
+        async function approveItem(id) {
+            const filename = document.getElementById(`filename-${id}`).value;
+            const category = document.getElementById(`category-${id}`).value;
+            const year = document.getElementById(`year-${id}`).value;
+            
+            // Construct target folder from inputs
+            // Note: executor.py uses proposed.target_folder if set, else category/year
+            // Let's explicitly set the 'target_folder' in the update to force it
+            const target_folder = `${category}/${year}`; 
+
+            const updates = {
+                proposed: {
+                    filename: filename,
+                    category: category,
+                    year: year,
+                    target_folder: target_folder
+                }
+            };
+
+            // 1. Send Update
+            await fetch(`/api/update/${id}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(updates)
+            });
+
+            // 2. Approve
+            const res = await fetch(`/api/approve/${id}`, { method: 'POST' });
+            
+            if (res.ok) {
+                // Remove card visuals
+                document.getElementById(`card-${id}`).remove();
+                // Check if empty
+                if (document.getElementById('queue-container').children.length === 0) {
+                     document.getElementById('queue-container').innerHTML = '<p class="text-gray-500">No pending items.</p>';
+                }
+            } else {
+                alert("Failed to approve item.");
+            }
+        }
+
+        // Auto Refresh Loop
+        refreshQueue();
+        setInterval(refreshQueue, 2000); // Poll every 2 seconds
+    </script>
+</body>
+</html>

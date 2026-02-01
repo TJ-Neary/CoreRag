@@ -1,0 +1,193 @@
+# PKM System Ignore File
+# Files and directories matching these patterns will NOT be indexed.
+# Syntax: Same as .gitignore
+
+# ============================================
+# System & IDE Files
+# ============================================
+.DS_Store
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# PKM System Internals (don't index our own database)
+.pkm/
+_transcripts/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ============================================
+# Development Dependencies
+# ============================================
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+.env/
+
+# ============================================
+# Secrets & Credentials (CRITICAL)
+# ============================================
+.env
+.env.*
+*.env
+.envrc
+secrets/
+credentials/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.ssh/
+.gnupg/
+
+# API Keys & Tokens
+**/api_key*
+**/apikey*
+**/token*
+**/*_token*
+**/*_key*
+credentials*.json
+service_account*.json
+gcloud*.json
+firebase*.json
+
+# ============================================
+# Large Binary Files
+# ============================================
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.iso
+*.dmg
+
+# Large media - NOW PROCESSED via Whisper (audio) and OpenCV/VLM (video)
+# These files WILL be indexed by the media processing pipelines
+# *.mp4
+# *.avi
+# *.mkv
+# *.mov
+# *.wmv
+# *.mp3
+# *.wav
+# *.m4a
+# *.flac
+
+# Model files (don't index the models themselves)
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pb
+
+# ============================================
+# Generated Files
+# ============================================
+*.log
+*.logs
+logs/
+*.cache
+.cache/
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ============================================
+# Version Control
+# ============================================
+.git/
+.svn/
+.hg/
+
+# ============================================
+# Package Managers
+# ============================================
+# npm
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Python
+Pipfile.lock
+poetry.lock
+
+# Ruby
+Gemfile.lock
+
+# ============================================
+# Database Files (we have our own)
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.lancedb/
+*.lance/
+
+# ============================================
+# macOS Specific
+# ============================================
+.fseventsd/
+.TemporaryItems
+.DocumentRevisions-V100
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ============================================
+# Obsidian Specific
+# ============================================
+.obsidian/plugins/
+.obsidian/themes/
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.trash/
+
+# Canvas files are raw JSON and pollute the vector index
+*.canvas
+
+# ============================================
+# Custom Exclusions
+# ============================================
+# Add your project-specific exclusions below
+
+# Example: Exclude a specific large folder
+# /path/to/large/folder/
+
+# Example: Exclude all files with a specific name pattern
+# **/draft_*
+
+# Example: Exclude by file size (handled in code, not here)
+# Files > 100MB are skipped by default

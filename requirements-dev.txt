@@ -1,0 +1,78 @@
+# Development dependencies for PKM System
+# Install with: pip install -r requirements-dev.txt
+
+# =============================================================================
+# Testing
+# =============================================================================
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-timeout>=2.2.0
+pytest-xdist>=3.5.0          # Parallel test execution
+pytest-mock>=3.12.0          # Mocking support
+hypothesis>=6.92.0           # Property-based testing
+
+# =============================================================================
+# Code Quality
+# =============================================================================
+ruff>=0.1.0                  # Fast Python linter
+black>=23.0.0                # Code formatter
+isort>=5.12.0                # Import sorter
+mypy>=1.7.0                  # Static type checker
+pylint>=3.0.0                # Additional linting
+
+# Type stubs for common libraries
+types-requests>=2.31.0
+types-python-dateutil>=2.8.0
+
+# =============================================================================
+# Security
+# =============================================================================
+bandit>=1.7.0                # Security linter
+safety>=2.3.0                # Dependency vulnerability scanner
+pip-audit>=2.6.0             # Pip dependency audit
+
+# =============================================================================
+# Documentation
+# =============================================================================
+mkdocs>=1.5.0                # Documentation generator
+mkdocs-material>=9.0.0       # Material theme
+mkdocstrings[python]>=0.24.0 # Python docstring support
+mkdocs-mermaid2-plugin>=1.1.0  # Mermaid diagrams
+
+# =============================================================================
+# Debugging
+# =============================================================================
+ipdb>=0.13.0                 # IPython debugger
+rich>=13.0.0                 # Rich terminal output
+icecream>=2.1.0              # Better print debugging
+
+# =============================================================================
+# Profiling & Performance
+# =============================================================================
+memory-profiler>=0.61.0      # Memory profiling
+py-spy>=0.3.0                # Sampling profiler
+line-profiler>=4.1.0         # Line-by-line profiling
+scalene>=1.5.0               # CPU/memory/GPU profiler
+
+# =============================================================================
+# Build & Distribution
+# =============================================================================
+build>=1.0.0                 # PEP 517 build frontend
+twine>=4.0.0                 # PyPI upload
+wheel>=0.42.0                # Wheel building
+
+# =============================================================================
+# Development Tools
+# =============================================================================
+pre-commit>=3.6.0            # Git hooks
+watchdog>=3.0.0              # File watching
+httpx>=0.26.0                # Async HTTP client for testing
+faker>=22.0.0                # Fake data generation for tests
+
+# =============================================================================
+# Jupyter (for interactive development)
+# =============================================================================
+jupyter>=1.0.0
+ipykernel>=6.28.0
+notebook>=7.0.0
