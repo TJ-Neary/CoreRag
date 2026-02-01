@@ -103,57 +103,248 @@ If the manifest call fails (server not running), fall back to MCP client for sea
 
 ---
 
-## What Kendra Should Take From PKM
+## How Kendra Should Use RAG
 
-### 1. RAG-Augmented Chat Pattern
+This is the most important section. It explains **when** and **how** Kendra should pull context from Core Memory during conversations.
 
-PKM's `/api/chat` endpoint (server.py:507-584) shows the pattern Kendra should use. Key pieces:
+### The Problem with the Current Router
 
-**Query → Embed → Search → Build Context → LLM Call**
+Kendra's router (`core/router.py`) currently has a binary decision:
+- User says "search for X" → **SEARCH** route → calls `rag_memory.search()` → returns raw results
+- Everything else → **CHAT** route → sends to LLM with **no RAG context**
 
-```python
-# Simplified version of what PKM does (server.py lines 522-553)
-# Kendra should replicate this logic in its own chat handler
+This means when the user asks "what are the key concepts in FMLA?" it goes to chat mode and the LLM answers from its training data, completely ignoring the FMLA documents sitting in Core Memory. PKM's chat endpoint (`/api/chat`) always checks RAG. Kendra should too.
 
-# 1. Embed the user's query
-query_vector = embedder.embed_query(user_message)
+### The Fix: Always-On RAG for Chat
 
-# 2. Search Core Memory's child_chunks table
-results = table.search(query_vector).limit(5).to_list()
+Every chat message should attempt a RAG lookup. The results determine how the LLM responds.
 
-# 3. Build context from results
-context_chunks = [r["content"] for r in results]
-sources = [r["source_path"] for r in results]
-
-# 4. Inject into system prompt
-system_prompt = (
-    soul_md_content +  # Kendra's personality (PKM doesn't have this)
-    "\n\nRetrieved from your knowledge base:\n" +
-    "\n---\n".join(context_chunks)
-)
+```
+User Input
+    ↓
+[Router] → SEARCH | SKILL | CHAT
+    ↓
+If SEARCH or CHAT:
+    ↓
+[Query Core Memory] → POST /api/v1/search
+    ↓
+Results found?
+    ├─ YES → Inject context + sources into LLM prompt
+    └─ NO  → LLM answers from its own knowledge (no hallucination about your docs)
+    ↓
+[LLM generates response]
+    ↓
+[Log interaction + extract facts]
 ```
 
-**What Kendra adds that PKM doesn't:**
-- `soul.md` personality injection
-- Mood system modifying tone
-- Conversation history from `kendra_memory.db` (not just the current session)
-- Fact extraction after each interaction
-- Skill routing (search vs chat vs action)
+The difference between SEARCH and CHAT with RAG:
+- **SEARCH**: User explicitly asked to find something. Show sources prominently. Return multiple results.
+- **CHAT with RAG**: User asked a question. Silently augment the LLM's answer with your documents. Cite sources naturally.
 
-**Recommendation:** Kendra should use the **REST API** (`POST /api/v1/search`) for RAG retrieval instead of the direct import in `rag_memory.py`. This decouples the projects and lets Core Memory handle embedding/search internally. The direct import approach works but creates a tight coupling to PKM's internal module structure.
+### Implementation: RAG-Augmented Chat
+
+This replaces the current flow where `OllamaClient.generate()` is called without context.
 
 ```python
-# Instead of importing HybridSearcher directly, use the API:
-async def search_knowledge_base(query: str, k: int = 5) -> list:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            "http://localhost:8000/api/v1/search",
-            json={"query": query, "k": k}
-        )
-        return resp.json().get("results", [])
+# In Kendra's chat handler (controller.py or wherever chat is orchestrated)
+
+async def handle_chat(user_message: str, history: list) -> str:
+    """Process a chat message with automatic RAG augmentation."""
+
+    # 1. Always search Core Memory for relevant context
+    rag_context = ""
+    sources = []
+
+    try:
+        results = await search_core_memory(user_message, k=5)
+
+        if results:
+            # Build context string from top results
+            context_parts = []
+            for r in results:
+                content = r.get("content", "")
+                source = r.get("source", "unknown")
+                score = r.get("score", 0)
+
+                # Only include results above a relevance threshold
+                if score >= 0.3:
+                    context_parts.append(content)
+                    if source not in sources:
+                        sources.append(source)
+
+            if context_parts:
+                rag_context = "\n\n---\n\n".join(context_parts)
+
+    except Exception as e:
+        logger.warning(f"RAG lookup failed, proceeding without context: {e}")
+
+    # 2. Generate LLM response with context injected
+    response = await llm_client.generate(
+        prompt=user_message,
+        context=rag_context if rag_context else None,
+        # system_prompt loaded from soul.md automatically
+    )
+
+    # 3. Log the interaction (with what context was used)
+    memory_manager.log_interaction(
+        user_query=user_message,
+        response=response,
+        context=rag_context[:500] if rag_context else None,
+        metadata={"sources": sources, "rag_used": bool(rag_context)}
+    )
+
+    # 4. Extract facts in background
+    memory_manager.extract_facts_from_interaction(user_message, response)
+
+    return response
 ```
 
-### 2. Write-Back: Saving Kendra's Knowledge to Core Memory
+### Calling Core Memory: Preferred Method
+
+Use the REST API instead of direct imports. This decouples the projects.
+
+```python
+import httpx
+
+# Core Memory base URL — should come from config.yaml
+CORE_MEMORY_URL = "http://localhost:8000"
+
+async def search_core_memory(query: str, k: int = 5, use_hyde: bool = False) -> list:
+    """Search Core Memory's knowledge base."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{CORE_MEMORY_URL}/api/v1/search",
+                json={"query": query, "k": k, "use_hyde": use_hyde}
+            )
+            if resp.status_code == 200:
+                return resp.json().get("results", [])
+    except httpx.ConnectError:
+        logger.debug("Core Memory server not running, skipping RAG")
+    except Exception as e:
+        logger.warning(f"Core Memory search failed: {e}")
+    return []
+```
+
+**Fallback chain**: If the REST API is unavailable (server not running), fall back to MCP client. If MCP is also unavailable, proceed without RAG context.
+
+```python
+async def search_with_fallback(query: str, k: int = 5) -> list:
+    """Try REST API first, fall back to MCP, then proceed without."""
+    # Try REST API
+    results = await search_core_memory(query, k)
+    if results:
+        return results
+
+    # Fall back to MCP
+    try:
+        mcp = get_mcp_client()
+        mcp_result = await mcp.search_knowledge(query=query, k=k)
+        if mcp_result and "content" in str(mcp_result):
+            return parse_mcp_search_results(mcp_result)
+    except Exception:
+        pass
+
+    return []  # No RAG context available
+```
+
+### When to Use Each Search Mode
+
+Core Memory supports several search strategies. Kendra should pick the right one based on the query:
+
+| Query Type | Search Strategy | Example |
+|------------|----------------|---------|
+| Simple factual | Standard search (`k=5`) | "What is FMLA?" |
+| Complex / multi-part | HyDE expansion (`use_hyde=true`) | "How do compensation strategies relate to retention?" |
+| Entity-specific | Knowledge graph (`search_by_entity` MCP tool) | "What documents mention OSHA?" |
+| Broad topic | Multi-query (via MCP `use_multi_query=true`) | "Tell me everything about employee benefits" |
+| Recent files | `list_recent_files` MCP tool | "What did I add recently?" |
+
+**Heuristic for choosing automatically:**
+
+```python
+def choose_search_strategy(query: str) -> dict:
+    """Pick search params based on query characteristics."""
+    words = query.split()
+
+    # Short, direct queries — standard search
+    if len(words) <= 5:
+        return {"k": 5, "use_hyde": False}
+
+    # Questions with "how" or "why" or "relate" — HyDE helps
+    if any(w in query.lower() for w in ["how", "why", "relate", "compare", "explain"]):
+        return {"k": 5, "use_hyde": True}
+
+    # "Everything about X" — more results
+    if any(w in query.lower() for w in ["everything", "all about", "comprehensive"]):
+        return {"k": 10, "use_hyde": True}
+
+    # Default
+    return {"k": 5, "use_hyde": False}
+```
+
+### Formatting RAG Context for the LLM
+
+How Kendra injects retrieved documents into the prompt matters. The current `OllamaClient.generate()` already accepts a `context` parameter that prepends to the prompt. The format should be:
+
+```python
+def format_rag_context(results: list) -> str:
+    """Format search results for LLM context injection."""
+    if not results:
+        return ""
+
+    parts = []
+    for i, r in enumerate(results, 1):
+        source = r.get("source", "unknown")
+        # Extract just the filename from the full path
+        source_name = source.split("/")[-1] if "/" in source else source
+        content = r.get("content", "")
+        parts.append(f"[Source {i}: {source_name}]\n{content}")
+
+    return (
+        "The following excerpts were retrieved from the user's personal knowledge base. "
+        "Use them to inform your answer. Cite sources by name when relevant. "
+        "If the excerpts don't contain the answer, say so — don't make things up.\n\n"
+        + "\n\n---\n\n".join(parts)
+    )
+```
+
+### Citing Sources in Responses
+
+Kendra should cite sources naturally in voice and text:
+
+- **Voice mode**: "According to your FMLA document, eligible employees get up to 12 weeks..."
+- **Text mode**: "Based on *Benefits and Non-Monetary Rewards.pdf*, the key categories are..."
+
+The `sources` list from search results provides filenames. Pass these to the LLM in the context so it can reference them.
+
+### Handling No Results
+
+When RAG returns nothing relevant, the LLM should be honest:
+
+```python
+# In the system prompt or context injection:
+if not rag_context:
+    # No context injection — LLM uses its own knowledge
+    # Kendra's soul.md already says "if unsure, say so"
+    pass
+else:
+    # Context found — LLM should prefer it over training data
+    context = format_rag_context(results)
+```
+
+The soul.md instruction "Never make up information — if unsure, say so" handles this, but you can reinforce it:
+
+```
+If the retrieved documents don't answer the question, tell the user:
+"I don't have anything on that in your knowledge base, but here's what I know..."
+```
+
+This lets Kendra still be helpful with general knowledge while being transparent about what came from the user's documents vs the LLM's training.
+
+---
+
+## Write-Back: Saving Kendra's Knowledge to Core Memory
 
 Kendra can push content into Core Memory via the ingest API. Use cases:
 - Save conversation summaries as searchable documents
@@ -163,19 +354,41 @@ Kendra can push content into Core Memory via the ingest API. Use cases:
 ```python
 async def save_to_core_memory(content: str, source: str, metadata: dict = None):
     """Push content from Kendra into the knowledge base."""
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            "http://localhost:8000/api/v1/ingest",
-            json={
-                "content": content,
-                "source": source,  # e.g., "kendra-chat-summary", "kendra-skill-output"
-                "metadata": metadata or {}
-            }
-        )
-        return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{CORE_MEMORY_URL}/api/v1/ingest",
+                json={
+                    "content": content,
+                    "source": source,  # e.g., "kendra-chat-summary", "kendra-skill-output"
+                    "metadata": metadata or {}
+                }
+            )
+            return resp.json()
+    except Exception as e:
+        logger.warning(f"Failed to save to Core Memory: {e}")
+        return None
 ```
 
-### 3. User Memory — Kendra Should Be the Single Source of Truth
+### What to Write Back
+
+| Content | Source Tag | When |
+|---------|-----------|------|
+| Conversation summary | `kendra-chat-summary` | End of long conversation or daily summary |
+| Skill output | `kendra-skill-{name}` | After skill execution (e.g., web search results) |
+| Voice transcript | `kendra-voice-session` | End of voice session |
+| Learned facts | `kendra-fact` | When high-confidence facts are extracted |
+| User corrections | `kendra-correction` | When user corrects Kendra's understanding |
+
+### Don't Write Back
+
+- Every individual chat message (too noisy, fills the index)
+- The user's raw queries (privacy — keep in Kendra's local memory only)
+- Duplicate content already in Core Memory
+
+---
+
+## User Memory — Kendra Should Be the Single Source of Truth
 
 **Current state:** Both systems store user facts separately.
 - PKM: `~/.pkm/profiles/default.json` (EpisodicMemoryManager)
