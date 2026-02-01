@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AntiGravity PKM is a local-first, privacy-preserving Personal Knowledge Management system. It provides semantic search across documents via Claude Desktop's MCP protocol, optimized for Apple Silicon (M4 Max, 48GB RAM). The system ingests documents from an inbox folder, processes them through an AI pipeline (text extraction, PII detection, classification), stages them for human review via a web dashboard, then archives originals and exports redacted markdown to an Obsidian vault.
+AntiGravity PKM is a local-first, privacy-preserving Personal Knowledge Management system running on Apple Silicon (M4 Max, 48GB RAM). It ingests documents from an inbox folder, processes them through an AI pipeline (text extraction, three-layer PII detection, LLM-based classification), stages them for human review via a web dashboard, then archives originals and exports redacted markdown to an Obsidian vault. Semantic search is exposed to Claude Desktop via MCP.
 
 ## Development Commands
 
@@ -14,13 +14,15 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt          # Runtime deps
 pip install -r requirements-dev.txt      # Dev deps (pytest, black, ruff, mypy)
+python -m spacy download en_core_web_lg  # PII detection NER model
 ```
 
 ### Running the System
 ```bash
 ./scripts/run_system.sh                  # Starts server + watchdog + opens dashboard
-python -m src.server                     # Server only (port 8000)
+python -m src.server                     # Dashboard server only (port 8000)
 python -m src.watchdog                   # File watcher only
+python -m src.mcp_server.server          # MCP server for Claude Desktop (stdio)
 ```
 
 ### CLI
@@ -32,6 +34,38 @@ python -m src.cli.main check-links /path
 python -m src.cli.main duplicates /path
 python -m src.cli.main stale /path --days 365
 python -m src.cli.main tag /path
+python -m src.cli.main pii list              # Manage custom PII dictionary
+python -m src.cli.main pii add "John" --type NAME
+python -m src.cli.main pii remove "John"
+```
+
+### Core Memory API (v1) — For External AI Systems
+```bash
+# Capability manifest (handshake protocol)
+curl http://localhost:8000/api/v1/manifest
+
+# Semantic search
+curl -X POST http://localhost:8000/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "authentication setup", "k": 5}'
+
+# Ingest content
+curl -X POST http://localhost:8000/api/v1/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"content": "...", "source": "my-app", "metadata": {"category": "notes"}}'
+
+# Database stats
+curl http://localhost:8000/api/v1/stats
+
+# Delete document
+curl -X DELETE http://localhost:8000/api/v1/documents/{document_id}
+```
+
+### Knowledge Graph Backfill
+```bash
+python scripts/backfill_knowledge_graph.py           # Regex patterns (fast)
+python scripts/backfill_knowledge_graph.py --llm      # LLM extraction (better)
+python scripts/backfill_knowledge_graph.py --llm --clear  # Clear + re-extract
 ```
 
 ### Testing
@@ -58,86 +92,128 @@ mypy src/
 ### Two Subsystems
 
 **1. MCP Server + Search Stack** (`src/mcp_server/`, `src/search/`, `src/embeddings/`)
-- FastMCP server exposes tools to Claude Desktop
-- Hybrid search: Vector (nomic-embed-text-v1.5, 768d) + BM25 full-text via LanceDB
-- HyDE query expansion, cross-encoder reranking, multi-query fusion with RRF
-- Time-decay scoring for freshness weighting
+- FastMCP server exposes tools to Claude Desktop via stdio transport
+- Hybrid search: Vector (all-MiniLM-L6-v2, 384d) + BM25 full-text via LanceDB with RRF fusion
+- Cross-encoder reranking (cross-encoder/ms-marco-MiniLM-L-6-v2)
+- HyDE query expansion, multi-query fusion, time-decay scoring (Phase 2 — wiring in progress)
 
 **2. Ingestion + HITL Dashboard** (root-level modules in `src/`)
 - `watchdog.py` monitors `INBOX_PATH` for new files
-- Two-phase staging: files appear immediately in dashboard as "processing", then update to "pending" when AI finishes
+- `batch_processor.py` processes all inbox files as a batch via the dashboard's "Start Analysis" button
+- Two-phase staging: files appear in dashboard as "processing", then update to "pending" when AI finishes
 - `server.py` serves dashboard at `localhost:8000` for reviewing/editing AI proposals
-- `executor.py` handles rename, archive to `ARCHIVE_PATH/{category}/{year}`, export redacted markdown to `VAULT_PATH/Ingested/`
+- `executor.py` handles: PII redaction (if `is_sensitive`), archive originals to `ARCHIVE_PATH/{target_folder}`, export redacted markdown to `VAULT_PATH/Ingested/`, index into RAG (LanceDB)
 - Config loaded via `src/config.py` (uses `python-dotenv`, reads `.env`)
+
+### Intelligence Provider
+
+`src/intelligence.py` auto-selects provider:
+- **Ollama** (default): uses `qwen2.5:32b` locally at `localhost:11434`. Set `OLLAMA_MODEL` env var to change.
+- **Gemini**: used if `GOOGLE_API_KEY` is set. Faster but sends document text to Google (PII concern).
+
+The LLM analyzes each document and returns: category, year, type, summary, suggested filename, `pii_observations` (advisory text, not a flag), and full redacted text. The `is_sensitive` boolean is set by Presidio + custom dictionary scan in `processor.py`, not by the LLM.
+
+### PII Detection — Three-Layer System
+
+PII is detected at **analysis time** in `processor.py` (not deferred to commit time):
+
+1. **Presidio + spaCy** (`en_core_web_lg`): NER-based detection of names, organizations, locations, dates, plus regex patterns for SSNs, phone numbers, emails, credit cards, API keys, IP addresses. Keyword scanner is **disabled** (caused false positives on policy/HR documents).
+2. **Custom PII dictionary** (`~/.pkm/pii_terms.yaml`): User-defined terms (SSN, email, employee ID, etc.) matched with confidence=1.0. Template at `pii_terms.example.yaml`. Protected by file permissions + `.gitignore`.
+3. **LLM advisory** (`pii_observations`): Free-text field where the LLM notes specific PII it sees. Not used for the `is_sensitive` boolean — purely informational on the dashboard.
+
+**Manual override**: Dashboard "Mark as Sensitive" checkbox lets the user override auto-detection in either direction. Sets `pii_source: "manual"` in metadata.
+
+Key metadata fields on each staged item:
+- `is_sensitive` (bool) — driven by Presidio + custom dictionary (confidence >= 0.70)
+- `pii_detections` (list) — summary of each detection (type, confidence, context snippet)
+- `pii_observations` (str) — LLM's advisory text
+- `pii_source` ("auto" | "manual") — who set the sensitivity flag
+
+Redaction: `_redact_pii()` in `executor.py` runs Presidio + custom dictionary at commit time as a safety net. Archived originals are **never** redacted; Obsidian + RAG exports get redacted text. Files with PII get `CUI_` prefix on suggested filename.
 
 ### Ingestion Pipeline Flow
 
-`watchdog.py` -> `processor.py` -> `extractor.py` -> `intelligence.py` -> `staging.py` -> (dashboard review) -> `executor.py` -> `archiver.py` + `exporter.py`
+```
+watchdog.py / batch_processor.py
+  → processor.py
+    → extractor.py (text extraction: PDF, DOCX, TXT, MD, etc.)
+    → intelligence.py (Ollama/Gemini: classify, summarize, redact PII)
+    → staging.py (write to staging_manifest.json)
+  → Dashboard review (human-in-the-loop)
+  → executor.py
+    → archiver.py (move original to ARCHIVE_PATH/{target_folder})
+    → exporter.py (write redacted markdown to VAULT_PATH/Ingested/)
+    → RAG indexing (parent-child chunks into LanceDB)
+```
 
 All pipeline modules live at `src/` root level (not inside subdirectories).
 
 ### Key Subsystems
 
-| Directory | Purpose |
-|-----------|---------|
-| `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop |
-| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring |
-| `src/embeddings/` | nomic-embed-text with caching, MPS-optimized |
-| `src/ingestion/` | File processing pipeline orchestrator |
-| `src/storage/` | LanceDB vector store wrapper |
-| `src/chunking/` | Parent-child hierarchical chunking + AST-based code chunking |
-| `src/quality/` | Duplicate detection (hash+MinHash+semantic), link checker, freshness, conflict detection |
-| `src/classification/` | Keyword + embedding-based auto-tagging |
-| `src/analytics/` | Query tracking + semantic cache |
-| `src/obsidian/` | Markdown export to Obsidian vault with backlinks |
-| `src/graph/` | GraphRAG entity-based knowledge graph |
-| `src/memory/` | Episodic memory for search history patterns |
-| `src/ocr/` | macOS Vision.framework text extraction |
-| `src/audio/` | mlx-whisper transcription + topic segmentation |
-| `src/video/` | OpenCV keyframe + scene detection |
-| `src/multimodal/` | VLM image captioning (LLaVA) |
-| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging |
+| Directory | Purpose | Status |
+|-----------|---------|--------|
+| `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop | **Wired** |
+| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | **Wired** (HyDE/decay not yet plumbed) |
+| `src/embeddings/` | all-MiniLM-L6-v2 with caching, MPS-optimized | **Wired** |
+| `src/ingestion/` | File processing pipeline orchestrator | Unwired |
+| `src/storage/` | LanceDB vector store wrapper | Unwired (direct LanceDB used instead) |
+| `src/chunking/` | Parent-child hierarchical chunking + AST-based code chunking | **Wired** (via executor) |
+| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | Unwired |
+| `src/classification/` | Keyword + embedding-based auto-tagging | Unwired |
+| `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
+| `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Wired** (via exporter) |
+| `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | Unwired |
+| `src/memory/` | Episodic memory for user context / search patterns | Unwired |
+| `src/ocr/` | macOS Vision.framework text extraction | Unwired |
+| `src/audio/` | mlx-whisper transcription + topic segmentation | Unwired |
+| `src/video/` | OpenCV keyframe + scene detection | Unwired |
+| `src/multimodal/` | VLM image captioning (LLaVA) | Unwired |
+| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | Partially wired |
 
 ### Data Models
 
 Core models in `src/models/` and defined in `architecture/data_schema.md`:
 - **Document**: Source file with metadata, privacy tier (public/private/sensitive), processing status
-- **Chunk**: Text segment with 768d embedding vector, parent-child hierarchy support
+- **Chunk**: Text segment with 384d embedding vector (all-MiniLM-L6-v2), parent-child hierarchy
 - **SearchResult**: Scored result with context snippets
 
 ### Staging Manifest
 
 `staging_manifest.json` tracks each document through the pipeline:
 - Status flow: `processing` -> `pending` -> `approved` -> `completed` (or `error`)
-- Each item stores: original path, AI metadata, redacted text, proposed filename/category/year
+- Each item stores: original path, AI metadata (category, year, type, summary, is_sensitive), redacted text, proposed filename/target_folder
 
 ## Configuration
 
 ### Environment Variables (`.env`)
 ```bash
-INBOX_PATH=~/Desktop/Inbox           # Watched folder (auto-created if missing)
-VAULT_PATH=~/Documents/ObsidianVault # Obsidian vault for markdown exports
-ARCHIVE_PATH=~/Documents             # Long-term storage for originals
-GOOGLE_API_KEY=...                   # For Gemini intelligence (falls back to simulation)
-PKM_DB_PATH=~/.pkm/lancedb          # LanceDB vector database
-PKM_LOG_LEVEL=INFO
-PKM_MEMORY_THRESHOLD=75             # Pause ingestion at this % RAM
-PKM_BATCH_SIZE=32                   # Embedding batch size
+INBOX_PATH=~/Desktop/Inbox                # Watched folder for new documents
+VAULT_PATH=~/Documents/ObsidianVault      # Obsidian vault for markdown exports
+ARCHIVE_PATH=~/Documents                  # Long-term storage for originals (in Knowledge/ subfolder)
+GOOGLE_API_KEY=...                        # Optional: Gemini API (omit to use local Ollama)
+OLLAMA_HOST=http://localhost:11434        # Ollama endpoint (default)
+OLLAMA_MODEL=qwen2.5:32b                 # Ollama model for analysis (default)
+PKM_DB_PATH=~/.pkm/lancedb               # LanceDB vector database path
+PKM_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
+PKM_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
 ```
 
 ### Claude Desktop MCP Setup
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+Already configured in `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "pkm": {
-      "command": "python",
+      "command": "/path/to/PKM_v1/venv/bin/python",
       "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/AntiGravity_PKM"
+      "cwd": "/path/to/PKM_v1"
     }
   }
 }
 ```
+
+The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB connection, HybridSearcher with FTS index, EmbeddingService, CrossEncoderReranker, and PKMTools.
 
 ### macOS Automation
 ```bash
@@ -146,22 +222,59 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Conventions
 
-- Python 3.11+, type hints on all function signatures
+- Python 3.13+, type hints on all function signatures
 - PEP 8 + `black` at 100 char line length, `ruff` for linting
 - Imports: stdlib -> third-party -> local (`from src.models import ...`)
 - Dataclasses or Pydantic for data structures
 - All file processors inherit from `BaseProcessor` (see `CONVENTIONS.md`)
-- Heavy processing wrapped in `SafeProcessor` for memory throttling (pause >75% RAM, resume <65%)
+- Heavy processing wrapped in `SafeProcessor` for memory throttling
 - Custom exception hierarchy: `PKMError` -> `ProcessingError`, `EmbeddingError`, `DatabaseError`
 - Commit format: `<type>: <description>` (feat/fix/docs/refactor/test/chore/perf)
 - `.pkmignore` controls which files are excluded from indexing (gitignore syntax)
 - CUI prefix: files with detected PII get `CUI_` prepended to suggested filenames
 
+## Memory Safety
+
+- **Batch processor + commit runner** (`batch_processor.py`, `server.py`): pause at **92%** RAM, resume at **88%**. Checks between each file.
+- **SafeProcessor** (`src/utils/safe_processor.py`): pause at **75%** RAM, resume at **65%**. Used for background indexing.
+- `gc.collect()` called between files to free extraction buffers.
+- Embedding batch size of 32 tuned for M4 Max.
+
 ## File Type Support
 
-Text extraction handles: PDF, DOCX, TXT, Markdown, JSON, YAML, CSV, log files.
-Full processing pipeline also supports: XLSX/XLS (formula-aware), Python/JS/TS/Go/Rust (AST chunking), MP3/WAV/M4A (mlx-whisper), MP4/MOV (keyframe + scene detection), PNG/JPG/WebP (Vision.framework OCR).
+**Currently working**: PDF, DOCX, TXT, Markdown, JSON, YAML, CSV, log files.
+**Planned (not yet wired)**: XLSX/XLS, Python/JS/TS/Go/Rust (AST chunking), MP3/WAV/M4A (mlx-whisper), MP4/MOV (keyframe + scene detection), PNG/JPG/WebP (Vision.framework OCR).
 
-## Hardware Safety
+## Wiring Plan
 
-Memory management auto-pauses at >75% RAM and resumes at <65%. CPU/GPU temperature throttling is built in. Embedding batch size of 32 is tuned for M4 Max.
+A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Fix MCP Server (stdio transport, FastMCP) | **Complete** |
+| — | PII Redesign (three-layer detection, custom dictionary, manual override) | **Complete** |
+| 2 | Wire Search Stack (HyDE, multi-query, decay scoring) | **In Progress** |
+| 3 | Wire OCR into ingestion | Pending |
+| 4 | Wire auto-tagging | Pending |
+| 5 | Wire knowledge graph | Pending |
+| 6 | Wire episodic memory | Pending |
+| 7 | Wire quality modules | Pending |
+| 8 | Wire utility modules | Pending |
+| 9 | Wire analytics & queue | Pending |
+| 10 | Wire multimodal | Pending |
+| 11 | Config cleanup & dead code removal | Pending |
+| 12 | CLI integration | Pending |
+
+### Phase 2 Details — Search Stack Wiring
+
+Files to modify:
+- `src/mcp_server/server.py` — instantiate HyDEExpander + DecayConfig in `_startup()`, pass to PKMTools
+- `src/mcp_server/tools.py` — fix HyDE to use `result.hypothetical_document` (not HyDEResult object), apply `apply_decay_to_results()` after reranking, add `use_multi_query` parameter
+- `src/search/__init__.py` — export decay_scoring module
+
+Key API signatures:
+- `create_hyde_expander(backend="ollama", model="...", embedder=callable)` → `HyDEExpander`
+- `HyDEExpander.expand(query)` → `HyDEResult` (use `.hypothetical_document` for embedding)
+- `apply_decay_to_results(results, config=DecayConfig(), date_field="modified_at")` → mutates + re-sorts
+- `MultiQuerySearcher(searcher=callable, decomposer=None)` where searcher is `(query: str, k: int) -> List[Dict]`
+- `HybridSearcher.search(query, query_vector, k, filters)` is async

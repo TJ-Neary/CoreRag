@@ -57,6 +57,8 @@ env/
 # =============================================================================
 .pytest_cache/
 .coverage
+.coverage.*
+.coverage\ *
 htmlcov/
 .tox/
 .nox/
@@ -80,6 +82,8 @@ coverage.xml
 *.key
 secrets.json
 credentials.json
+pii_terms.yaml
+pii_terms.yml
 
 # =============================================================================
 # PKM System Data (runtime data, not code)
@@ -112,7 +116,6 @@ tmp/
 *.spec
 
 # =============================================================================
-# Optional: Uncomment to hide internal project files from git
+# Project Internal (archived planning docs from scaffold phase)
 # =============================================================================
-_project/
-Claude.md
+_project/Archive/

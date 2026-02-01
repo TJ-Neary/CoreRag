@@ -1,0 +1,29 @@
+# Personal PII Terms — Copy to ~/.pkm/pii_terms.yaml and fill in your values.
+#
+# These terms will be matched against all documents during ingestion.
+# Matches trigger the "SENSITIVE" flag and get redacted in Obsidian/RAG exports.
+#
+# Supported types:
+#   SSN, EMAIL, PHONE, ADDRESS, NAME, CREDIT_CARD,
+#   ACCOUNT, EMPLOYEE_ID, POLICY, FINANCIAL, MEDICAL, CUSTOM
+#
+# The file at ~/.pkm/pii_terms.yaml is never committed to git.
+# Set file permissions: chmod 600 ~/.pkm/pii_terms.yaml
+
+terms:
+  # - value: "123-45-6789"
+  #   type: SSN
+  # - value: "your.email@example.com"
+  #   type: EMAIL
+  # - value: "555-123-4567"
+  #   type: PHONE
+  # - value: "1234 Main Street, Anytown ST 12345"
+  #   type: ADDRESS
+  # - value: "Your Full Name"
+  #   type: NAME
+  # - value: "EMP-123456"
+  #   type: EMPLOYEE_ID
+  # - value: "POL-9876543"
+  #   type: POLICY
+  # - value: "ACCT-001122334455"
+  #   type: ACCOUNT

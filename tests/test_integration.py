@@ -1,84 +1,202 @@
-import os
-import sys
-import shutil
-from pathlib import Path
-from unittest.mock import patch
+"""
+Integration test for the ingestion pipeline.
 
-# 1. Setup Dummy Env Vars BEFORE importing src modules
-os.environ["INBOX_PATH"] = "/dummy/inbox"
-os.environ["VAULT_PATH"] = "/dummy/vault"
-os.environ["ARCHIVE_PATH"] = "/dummy/archive"
-os.environ["GOOGLE_API_KEY"] = "dummy_key"
+Tests process_document() which orchestrates:
+  extract_text -> duplicate_check -> analyze_document -> staging
+
+Run with: pytest tests/test_integration.py -v
+"""
+
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+# Setup dummy env vars BEFORE importing src modules
+os.environ.setdefault("INBOX_PATH", "/dummy/inbox")
+os.environ.setdefault("VAULT_PATH", "/dummy/vault")
+os.environ.setdefault("ARCHIVE_PATH", "/dummy/archive")
+os.environ.setdefault("GOOGLE_API_KEY", "dummy_key")
 
 sys.path.append(os.getcwd())
 
-TEMP_ROOT = Path("temp_test_env")
+TEMP_ROOT = Path("temp_test_integration")
 INBOX = TEMP_ROOT / "Inbox"
-VAULT = TEMP_ROOT / "Vault"
-ARCHIVE = TEMP_ROOT / "Archive"
+MANIFEST = TEMP_ROOT / "staging_manifest.json"
 
-def setup_env():
+
+@pytest.fixture(autouse=True)
+def test_env():
+    """Create and clean up temp directories for each test."""
     if TEMP_ROOT.exists():
         shutil.rmtree(TEMP_ROOT)
     INBOX.mkdir(parents=True)
-    VAULT.mkdir(parents=True)
-    ARCHIVE.mkdir(parents=True)
+    yield
+    if TEMP_ROOT.exists():
+        shutil.rmtree(TEMP_ROOT)
 
-def test_integration():
-    print("--- Starting Integration Test ---")
-    setup_env()
-    
-    test_file = INBOX / "invoice_2024.txt"
-    test_file.write_text("Bill to: John Smith. Amount: $500.")
-    print(f"Created test file at: {test_file}")
 
-    import src.archiver
-    import src.exporter
-    import src.processor
+class TestProcessDocument:
+    """Tests for the process_document pipeline."""
 
-    # Patch 'src.processor.analyze_document' because src.processor imports it directly
-    with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-         patch("src.exporter.VAULT_PATH", VAULT), \
-         patch("src.processor.analyze_document") as mock_ai:
-        
-        mock_ai.return_value = ({
+    def test_stages_file_with_ai_metadata(self):
+        """process_document should stage the file with AI-generated metadata."""
+        test_file = INBOX / "invoice_2024.txt"
+        test_file.write_text("Bill to: John Smith. Amount: $500.")
+
+        mock_metadata = {
             "category": "Financial",
             "year": "2024",
             "type": "Invoice",
-            "summary": "An invoice for $500."
-        }, "Bill to: [REDACTED]. Amount: $500.")
+            "summary": "An invoice for $500 billed to John Smith.",
+            "suggested_name": "Invoice_John_Smith_500",
+            "is_sensitive": True,
+        }
 
-        print("Running process_document...")
-        try:
+        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
+             patch("src.processor.analyze_document") as mock_ai, \
+             patch("src.processor._dedup") as mock_dedup:
+
+            # analyze_document now returns (metadata, original_full_text)
+            mock_ai.return_value = (mock_metadata, "Bill to: John Smith. Amount: $500.")
+            mock_dedup.check_file.return_value = []
+
+            import src.processor
             src.processor.process_document(test_file)
-        except Exception as e:
-            print(f"❌ Execution Error: {e}")
-            import traceback
-            traceback.print_exc()
 
-    print("\n--- Verifying Results ---")
-    
-    expected_archive_path = ARCHIVE / "Financial" / "2024" / "invoice_2024.txt"
-    if expected_archive_path.exists():
-        print(f"✅ PASSED: File archived to {expected_archive_path}")
-    else:
-        print(f"❌ FAILED: File not found in archive.")
-        for p in ARCHIVE.rglob("*"): print(f"  - {p}")
+        # Verify staging manifest was created with correct data
+        assert MANIFEST.exists(), "Staging manifest should be created"
+        manifest = json.loads(MANIFEST.read_text())
+        assert len(manifest) == 1
 
-    vault_files = list((VAULT / "Ingested").glob("*.md"))
-    if len(vault_files) == 1:
-        note = vault_files[0]
-        print(f"✅ PASSED: Vault note created: {note.name}")
-        content = note.read_text()
-        if "Bill to: [REDACTED]" in content:
-            print("✅ PASSED: Redaction verified.")
-        else:
-            print("❌ FAILED: Redaction missing.")
-            print(content)
-    else:
-        print(f"❌ FAILED: Expected 1 note, found {len(vault_files)}")
+        item = list(manifest.values())[0]
+        assert item["status"] == "pending"
+        assert item["metadata"]["category"] == "Financial"
+        assert item["metadata"]["year"] == "2024"
+        assert item["metadata"]["type"] == "Invoice"
+        assert item["metadata"]["summary"] == "An invoice for $500 billed to John Smith."
+        assert item["metadata"]["is_sensitive"] is True
 
-    print("\n--- Test Complete ---")
+        # proposed fields are human-editable copies
+        assert item["proposed"]["category"] == "Financial"
+        assert item["proposed"]["year"] == "2024"
 
-if __name__ == "__main__":
-    test_integration()
+        # Filename should be sanitized: suggested_name with special chars replaced
+        assert "Invoice" in item["proposed"]["filename"]
+
+        # redacted_text now holds the FULL extracted text (redaction happens at commit time)
+        assert "John Smith" in item["redacted_text"]
+        assert "$500" in item["redacted_text"]
+
+    def test_sensitive_file_gets_cui_prefix(self):
+        """Files flagged as sensitive should get CUI_ prefix on suggested filename."""
+        test_file = INBOX / "tax_return.txt"
+        test_file.write_text("SSN: 078-05-1120. Income: $75,000.")
+
+        mock_metadata = {
+            "category": "Financial",
+            "year": "2024",
+            "type": "Statement",
+            "summary": "A tax return document.",
+            "suggested_name": "Tax_Return_2024",
+            "is_sensitive": True,
+        }
+
+        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
+             patch("src.processor.analyze_document") as mock_ai, \
+             patch("src.processor._dedup") as mock_dedup:
+
+            mock_ai.return_value = (mock_metadata, "SSN: 078-05-1120. Income: $75,000.")
+            mock_dedup.check_file.return_value = []
+
+            import src.processor
+            src.processor.process_document(test_file)
+
+        manifest = json.loads(MANIFEST.read_text())
+        item = list(manifest.values())[0]
+        assert item["proposed"]["filename"].startswith("CUI_")
+
+    def test_non_sensitive_file_no_cui_prefix(self):
+        """Non-sensitive files should NOT get CUI_ prefix."""
+        test_file = INBOX / "meeting_notes.txt"
+        test_file.write_text("Discussed Q4 roadmap priorities.")
+
+        mock_metadata = {
+            "category": "Work",
+            "year": "2024",
+            "type": "Correspondence",
+            "summary": "Meeting notes about Q4 roadmap.",
+            "suggested_name": "Q4_Roadmap_Meeting",
+            "is_sensitive": False,
+        }
+
+        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
+             patch("src.processor.analyze_document") as mock_ai, \
+             patch("src.processor._dedup") as mock_dedup:
+
+            mock_ai.return_value = (mock_metadata, "Discussed Q4 roadmap priorities.")
+            mock_dedup.check_file.return_value = []
+
+            import src.processor
+            src.processor.process_document(test_file)
+
+        manifest = json.loads(MANIFEST.read_text())
+        item = list(manifest.values())[0]
+        assert not item["proposed"]["filename"].startswith("CUI_")
+
+    def test_empty_text_extraction_sets_error(self):
+        """If text extraction returns empty, item should be marked as error."""
+        test_file = INBOX / "empty.txt"
+        test_file.write_text("")
+
+        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
+             patch("src.processor.extract_text", return_value=""), \
+             patch("src.processor._dedup") as mock_dedup:
+
+            mock_dedup.check_file.return_value = []
+
+            import src.processor
+            src.processor.process_document(test_file)
+
+        manifest = json.loads(MANIFEST.read_text())
+        item = list(manifest.values())[0]
+        assert item["status"] == "error"
+
+    def test_duplicate_detected(self):
+        """Duplicate files should be flagged in staging metadata."""
+        test_file = INBOX / "duplicate_doc.txt"
+        test_file.write_text("Some content that already exists.")
+
+        mock_metadata = {
+            "category": "Work",
+            "year": "2024",
+            "type": "Report",
+            "summary": "A duplicate document.",
+            "suggested_name": "Duplicate_Doc",
+            "is_sensitive": False,
+        }
+
+        mock_match = MagicMock()
+        mock_match.match_type = "content_hash"
+        mock_match.similarity = 1.0
+        mock_match.file1 = "original_doc.txt"
+
+        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
+             patch("src.processor.analyze_document") as mock_ai, \
+             patch("src.processor._dedup") as mock_dedup:
+
+            mock_ai.return_value = (mock_metadata, "Some content that already exists.")
+            mock_dedup.check_file.return_value = [mock_match]
+
+            import src.processor
+            src.processor.process_document(test_file)
+
+        manifest = json.loads(MANIFEST.read_text())
+        item = list(manifest.values())[0]
+        assert "duplicate" in item
+        assert item["duplicate"]["is_duplicate"] is True
+        assert item["duplicate"]["match_type"] == "content_hash"

@@ -2,259 +2,87 @@
 
 ---
 
-## Project Status: ✅ CORE COMPLETE
+## Integration Findings (Feb 2026)
 
-All research questions have been answered and solutions implemented.
+These findings emerged during actual integration work, not theoretical planning.
 
----
+### 1. LLM Can't Reliably Produce Both JSON + Full Text in One Call
+**Problem**: Single Ollama call asked to return JSON metadata AND full redacted document text. The model would truncate text, omit JSON fields, or produce malformed output.
 
-## Technology Research (Resolved)
+**Solution**: Split-brain workflow in `intelligence.py`:
+- Call 1: Structured JSON only (category, year, type, summary, filename, pii_observations)
+- Call 2: Full redacted text with clear `===START===` / `===END===` delimiters
 
-### Vector Databases Evaluated
+**Result**: 0/41 → 41/41 summaries (100% metadata quality).
 
-| Database | Pros | Cons | Verdict |
-|----------|------|------|---------|
-| **LanceDB** | Embedded, columnar, TB scale, Python native | Newer project | ✅ Selected & Implemented |
-| Chroma | Popular, easy setup | Memory-hungry at scale | Not selected |
-| Pinecone | Managed, reliable | Cloud-only, costs | Against privacy goals |
-| Weaviate | Full-featured | Server required | Overkill for single-user |
-| FAISS | Fast, Facebook-backed | No metadata, low-level | Too basic |
+### 2. LLM PII Detection Produces False Positives on Topic Words
+**Problem**: LLM flagged 6/41 files as containing PII because they were HR guides mentioning "salary", "medical leave", "hospital" — topic words, not actual PII.
 
-**Implementation**: `src/storage/vector_store.py` wraps LanceDB with full CRUD operations.
+**Solution**: Three-layer PII detection — Presidio (pattern-based) is source of truth, LLM provides advisory observations only, custom dictionary for user-specific terms.
 
-### Embedding Models Evaluated
+**Result**: 0 false positives on re-run.
 
-| Model | Dimensions | Context | Speed (M4 Max) | Quality | Verdict |
-|-------|------------|---------|----------------|---------|---------|
-| **nomic-embed-text-v1.5** | 768 | 8192 | Fast | Good | ✅ Local default |
-| text-embedding-3-small | 1536 | 8191 | API | Excellent | Hybrid fallback |
-| mxbai-rerank-base-v1 | N/A | N/A | Fast | Excellent | ✅ Reranking |
+### 3. No Need for Paid API (Gemini) — Local Ollama Sufficient
+**Analysis**: Evaluated Gemini API free tier (2 RPM, 32K TPM). Ollama with qwen2.5:32b achieved 100% metadata quality across all 41 files. No quality benefit from external API, plus sending document text to Google is a privacy concern.
 
-**Implementation**: `src/embeddings/embedding_service.py` with caching and batch processing.
+### 4. Embedding Model Mismatch
+**Original plan**: nomic-embed-text-v1.5 (768d). **Actual**: all-MiniLM-L6-v2 (384d) was already wired when we started integration. Kept it since it's working well — migration can happen later if needed.
 
-### Audio Transcription Options
+### 5. HyDE Expander Bug
+**Bug**: `tools.py` passed the `HyDEResult` dataclass object as the search query string instead of extracting `.hypothetical_document`. This meant HyDE was silently broken — embedding a string representation of a Python object.
 
-| Tool | Runs Locally | Apple Silicon | Quality | Verdict |
-|------|--------------|---------------|---------|---------|
-| **mlx-whisper** | ✅ | Optimized | Excellent | ✅ Selected & Implemented |
-| whisper.cpp | ✅ | Good | Excellent | Backup option |
-| OpenAI Whisper API | ❌ | N/A | Best | Privacy concern |
+**Fix**: `hyde_result = self._hyde_expander.expand(query)` then use `hyde_result.hypothetical_document`.
 
-**Implementation**: Integrated via `requirements.txt`, used in audio processing pipeline.
+### 6. RAG Verification Shows 95%+ Coverage
+After ingesting 41 documents: avg char ratio 0.9533, word coverage 0.9535. Two "bad" entries (Approved_Doc.txt, CUI_Patient_Record.txt) are test artifacts from integration tests, not real failures.
 
-### Vision Models for Video/Images
-
-| Model | Runs Locally | RAM Required | Quality | Verdict |
-|-------|--------------|--------------|---------|---------|
-| **Vision.framework** | ✅ | Minimal | Good for OCR | ✅ OCR selected |
-| LLaVA-7B | ✅ | ~8GB | Good for descriptions | Optional VLM |
-| GPT-4 Vision | ❌ | N/A | Best | Privacy concern |
-
-**Implementation**:
-- `src/ocr/vision_ocr.py` - macOS Vision.framework
-- `src/multimodal/vlm_captioner.py` - Optional VLM integration
+### 7. Batch Processing Memory Safety
+Batch processor pauses at 92% RAM, resumes at 88%. SafeProcessor (for background indexing) pauses at 75%, resumes at 65%. `gc.collect()` between files prevents extraction buffer accumulation. 41-file batch ran in ~19 minutes with no memory issues.
 
 ---
 
-## Architecture Decisions (Implemented)
+## Technology Decisions (Validated)
 
-### Chunking Strategy
-
-**Research Finding**: Semantic chunking with parent-child hierarchy provides best retrieval.
-
-**Implementation** (`src/chunking/`):
-- `parent_child.py` - Hierarchical chunking (512 tokens children, 2048 tokens parents)
-- `code_ast.py` - AST-aware code chunking (preserves function/class boundaries)
-
-| Strategy | Use Case | Implementation |
-|----------|----------|----------------|
-| Parent-Child | Prose documents | ✅ `parent_child.py` |
-| AST-Aware | Code files | ✅ `code_ast.py` |
-| Topic-Based | Audio transcripts | ✅ `audio/topic_segmenter.py` |
-| Scene-Based | Video content | ✅ `video/scene_detector.py` |
-
-### Search Strategy
-
-**Research Finding**: Hybrid search (vector + BM25) with reranking provides best results.
-
-**Implementation** (`src/search/`):
-| Component | Purpose | File |
-|-----------|---------|------|
-| Hybrid Search | Vector + BM25 fusion | `hybrid_search.py` |
-| HyDE | Query expansion | `hyde_search.py` |
-| Reranker | Cross-encoder reranking | `reranker.py` |
-| Decay Scoring | Time-weighted relevance | `decay_scoring.py` |
-| Multi-Query | Query decomposition + RRF | `multi_query.py` |
-
-### Memory Management
-
-**Research Finding**: M4 Max can handle heavy loads but needs throttling to prevent system instability.
-
-**Implementation** (`src/utils/`):
-| Threshold | Action | File |
-|-----------|--------|------|
-| RAM > 75% | Pause processing | `safe_processor.py` |
-| RAM < 65% | Resume processing | `safe_processor.py` |
-| CPU > 90°C | Throttle | `hardware_monitor.py` |
-| GPU > 95°C | Pause | `hardware_monitor.py` |
+| Component | Planned | Actual | Status |
+|-----------|---------|--------|--------|
+| Vector DB | LanceDB | LanceDB | Working — 4702 child chunks, 52 parent chunks |
+| Embeddings | nomic-embed-text-v1.5 (768d) | all-MiniLM-L6-v2 (384d) | Working — migration possible later |
+| LLM | Gemini or local | Ollama qwen2.5:32b | Working — 100% metadata quality |
+| MCP | FastMCP | FastMCP (stdio) | Working — Claude Desktop connected |
+| PII | Presidio | Presidio + custom dictionary + LLM advisory | Working — 0 false positives |
+| Reranker | cross-encoder | ms-marco-MiniLM-L-6-v2 | Working |
+| HyDE | Ollama-backed | Ollama qwen2.5:32b | Wired (fixed bug) |
+| Audio | mlx-whisper | mlx-whisper | Created, not wired |
+| OCR | Vision.framework | Vision.framework | Created, not wired |
 
 ---
 
-## Performance Benchmarks (Expected vs Actual)
+## Architecture Findings
 
-Based on M4 Max 48GB specifications:
+### What Works Well
+- **Parent-child chunking**: Small chunks (512 tokens) for precise search, parent chunks (2048 tokens) for LLM context
+- **Hybrid search**: Vector + BM25 with RRF fusion provides good recall
+- **Human-in-the-loop dashboard**: Critical for catching LLM errors and PII false positives
+- **Two-phase staging**: Files appear as "processing" immediately, update to "pending" when AI finishes
 
-| Operation | Expected | Target | Implementation |
-|-----------|----------|--------|----------------|
-| PDF ingestion | 100+ pages/min | 100+ pages/min | ✅ Pipeline with queue |
-| Embedding generation | 1000+ chunks/min | 1000+ chunks/min | ✅ Batch processing |
-| LanceDB query | <100ms | <100ms | ✅ Optimized indices |
-| Whisper transcription | 10-20x realtime | 10-20x realtime | ✅ mlx-whisper |
-| Search (hybrid) | <500ms | <1000ms | ✅ Semantic cache |
-
-**Note**: Actual benchmarks to be captured during user testing phase.
-
----
-
-## Privacy Implementation
-
-### Privacy Tiers (Implemented)
-
-| Tier | Definition | Processing | Detection |
-|------|------------|------------|-----------|
-| Public | Can share externally | Local or API | Manual tag |
-| Private | Personal, not shared | Local only | Default |
-| Sensitive | Confidential | Local only, extra care | ✅ Presidio auto-detect |
-
-**Implementation**: `src/utils/privacy_audit.py` with Presidio + regex hybrid.
-
-### PII Detection
-
-| PII Type | Detection Method | Accuracy |
-|----------|------------------|----------|
-| Email addresses | Regex | High |
-| Phone numbers | Regex | High |
-| SSN/Tax IDs | Presidio | High |
-| Names | Presidio NER | Medium |
-| Addresses | Presidio | Medium |
-| Credit cards | Regex + Luhn | High |
+### What Needed Fixing
+- **MCP server**: Original scaffold used HTTP transport, Claude Desktop needs stdio
+- **Intelligence pipeline**: Single LLM call was unreliable for complex output
+- **PII detection**: LLM binary flag was the wrong abstraction — pattern matching is more reliable
+- **Test suite**: Original tests didn't match actual module interfaces
 
 ---
 
-## Open Questions (All Resolved)
+## Performance Observations
 
-### 1. Deduplication Strategy
-**Question**: How to handle same content in multiple formats?
-
-**Answer**: Three-tier detection implemented in `src/quality/duplicate_detector.py`:
-1. **Hash matching** - Exact duplicates (fastest)
-2. **MinHash/LSH** - Near-duplicates (fast)
-3. **Semantic similarity** - Content duplicates (thorough)
-
-### 2. Version Tracking
-**Question**: How to track document updates over time?
-
-**Answer**: Implemented via:
-- File hash comparison in ingestion pipeline
-- `modified_at` metadata tracking
-- Freshness scoring in `src/quality/freshness_tracker.py`
-
-### 3. Cross-Reference Quality
-**Question**: What link density is optimal for discovery?
-
-**Answer**: Implemented in `src/graph/knowledge_graph.py`:
-- Entity extraction for automatic linking
-- Topic clustering for related content
-- Configurable similarity threshold (default: 0.7)
-
-### 4. Freshness Algorithm
-**Question**: How to score topic volatility accurately?
-
-**Answer**: Implemented in `src/search/decay_scoring.py`:
-- Exponential decay with configurable half-life
-- Topic-specific volatility factors
-- File type weighting (e.g., news decays faster than reference)
-
-### 5. Scaling Limits
-**Question**: When does LanceDB need sharding?
-
-**Answer**: Based on research:
-- LanceDB handles 100M+ vectors on single machine
-- M4 Max 48GB can handle ~50M vectors comfortably
-- Sharding not needed for personal PKM scale (< 10M vectors typical)
+| Operation | Measurement | Notes |
+|-----------|-------------|-------|
+| 41-file batch analysis | ~19 minutes | Ollama qwen2.5:32b, 2 calls per file |
+| RAG indexing (41 files) | ~15 minutes | 4702 child chunks + 52 parent chunks |
+| Single file processing | ~25-30 seconds | Extraction + AI analysis + staging |
+| Dashboard load | <1 second | FastAPI + Jinja2 templates |
+| Peak RAM during batch | ~85% | Paused once, resumed automatically |
 
 ---
 
-## Integration Details (Implemented)
-
-### Claude Desktop MCP Configuration
-
-```json
-{
-  "mcpServers": {
-    "pkm": {
-      "command": "python",
-      "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/AntiGravity_PKM"
-    }
-  }
-}
-```
-
-**Implementation**: `src/mcp_server/server.py` with FastMCP.
-
-### Obsidian Compatibility
-
-| Feature | Support | Implementation |
-|---------|---------|----------------|
-| YAML frontmatter | ✅ Full | Metadata extraction |
-| Wiki links `[[]]` | ✅ Full | Link parsing |
-| Tags `#topic` | ✅ Full | Tag extraction |
-| Folder hierarchy | ✅ Full | Collection mapping |
-| Canvas files | ❌ Ignored | `.pkmignore` exclusion |
-
----
-
-## New Discoveries
-
-### 1. Semantic Cache Effectiveness
-Query caching based on semantic similarity (threshold 0.85) reduces embedding calls by ~40% for repeated similar queries.
-
-**Implementation**: `src/analytics/semantic_cache.py`
-
-### 2. Parent-Child Retrieval Pattern
-Retrieving parent chunks when child matches provides better context while maintaining precision.
-
-**Implementation**: `src/chunking/parent_child.py` with `get_parent()` method.
-
-### 3. Reciprocal Rank Fusion
-RRF (k=60) provides robust fusion for multi-query results without requiring score normalization.
-
-**Implementation**: `src/search/multi_query.py`
-
-### 4. Topic Segmentation for Audio
-Splitting audio transcripts by topic rather than time provides more coherent chunks.
-
-**Implementation**: `src/audio/topic_segmenter.py`
-
----
-
-## Resources
-
-### Documentation
-- LanceDB: https://lancedb.github.io/lancedb/
-- FastMCP: https://github.com/jlowin/fastmcp
-- Unstructured: https://unstructured.io/docs
-- mlx-whisper: https://github.com/ml-explore/mlx-examples
-- Presidio: https://microsoft.github.io/presidio/
-- sentence-transformers: https://www.sbert.net/
-
-### Research Papers Referenced
-- HyDE: Hypothetical Document Embeddings (Gao et al., 2022)
-- ColBERT: Efficient Passage Retrieval (Khattab & Zaharia, 2020)
-- Parent Document Retrieval (LangChain pattern)
-- Reciprocal Rank Fusion (Cormack et al., 2009)
-
----
-
-*Research findings for PKM System | Last Updated: 2026-01-31 | Status: Core Complete*
+*Research findings for PKM System | Last Updated: 2026-02-01*

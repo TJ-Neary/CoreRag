@@ -1,54 +1,28 @@
 # Project Planning & Development Files
 
-> ⚠️ **Internal Use Only** - These files are development artifacts, not part of the public codebase.
+> Internal use only — development artifacts, not part of the public codebase.
 
----
-
-## Purpose
-
-This folder contains planning documents, progress logs, and AI agent instructions used during development. They are kept for reference but should be **excluded from any public portfolio or release**.
-
----
-
-## Contents
+## Active Files
 
 | File | Purpose |
 |------|---------|
-| `Master_Prompt.md` | AI agent system prompt with project context |
-| `AGENT_INSTRUCTIONS.md` | Detailed instructions for AI development agents |
-| `PRD.md` | Product Requirements Document (internal planning) |
-| `task_plan.md` | Development task tracking and phase planning |
 | `progress.md` | Session-by-session development log |
-| `findings.md` | Research notes and technical discoveries |
-| `project_memory.md` | Context preservation between sessions |
-| `SETUP_TASKS.md` | User setup checklist |
+| `project_memory.md` | Context preservation between sessions (what's working, what's scaffold) |
+| `task_plan.md` | 12-phase wiring plan with module status |
+| `findings.md` | Real findings from integration work |
 
----
+## Archive
 
-## When to Delete
+The `archive/` folder contains files from the initial scaffold phase (Jan 31) that are no longer actively maintained. They were written for the Antigravity agents and have been superseded by `CLAUDE.md` at the project root.
 
-Before making this repository public or adding it to a portfolio:
+| File | Why Archived |
+|------|-------------|
+| `AGENT_INSTRUCTIONS.md` | Superseded by CLAUDE.md |
+| `Master_Prompt.md` | Antigravity agent prompt, outdated status |
+| `PRD.md` | Requirements captured in CLAUDE.md and code |
+| `SETUP_TASKS.md` | Most items completed or covered in CLAUDE.md |
+| `MIGRATION_LOG.md` | One-time merge event, purely historical |
 
-1. Delete this entire `_project/` folder, OR
-2. Add `_project/` to `.gitignore`
+## Source of Truth
 
-These files contain:
-- Personal information (name, hardware details)
-- Internal development notes
-- AI agent instructions (not relevant to end users)
-
----
-
-## Quick Cleanup Command
-
-```bash
-# Option 1: Delete the folder entirely
-rm -rf _project/
-
-# Option 2: Add to .gitignore (keeps locally but hides from git)
-echo "_project/" >> .gitignore
-```
-
----
-
-*This folder is intentionally prefixed with `_` to sort it first alphabetically, making it easy to spot and manage.*
+The primary project documentation is now `CLAUDE.md` at the project root. It contains architecture, commands, conventions, and configuration that stays current as the codebase evolves.

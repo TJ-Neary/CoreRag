@@ -422,3 +422,151 @@ class EpisodicMemoryMiddleware:
         for fact in new_facts:
             self.manager.add_fact(profile, fact)
             logger.info(f"Learned new fact about {user_id}: {fact.content[:50]}...")
+
+
+# ── Session Tracking ─────────────────────────────────────────────────────────
+
+
+@dataclass
+class SessionEvent:
+    """A single event in a session."""
+    timestamp: str
+    event_type: str  # "tool_call", "search", "chat", "ingestion"
+    tool_name: str
+    query: str = ""
+    result_count: int = 0
+    duration_ms: float = 0
+
+
+@dataclass
+class Session:
+    """A user session with event history."""
+    session_id: str
+    started_at: str
+    events: List[SessionEvent] = field(default_factory=list)
+    ended_at: Optional[str] = None
+
+
+class SessionTracker:
+    """
+    Lightweight session tracking for MCP tool usage.
+
+    Logs tool calls, search queries, and chat interactions to disk
+    for later analysis (popular queries, usage patterns, etc.).
+    """
+
+    def __init__(self, storage_dir: Optional[Path] = None):
+        self.storage_dir = storage_dir or Path.home() / ".pkm" / "sessions"
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+        self._current: Optional[Session] = None
+        self._start_session()
+
+    def _start_session(self):
+        """Start a new session."""
+        import uuid
+        self._current = Session(
+            session_id=str(uuid.uuid4())[:8],
+            started_at=datetime.now().isoformat(),
+        )
+
+    def log_event(
+        self,
+        event_type: str,
+        tool_name: str,
+        query: str = "",
+        result_count: int = 0,
+        duration_ms: float = 0,
+    ):
+        """Log a tool call or interaction event."""
+        if not self._current:
+            self._start_session()
+
+        event = SessionEvent(
+            timestamp=datetime.now().isoformat(),
+            event_type=event_type,
+            tool_name=tool_name,
+            query=query,
+            result_count=result_count,
+            duration_ms=duration_ms,
+        )
+        self._current.events.append(event)
+
+        # Auto-save every 10 events
+        if len(self._current.events) % 10 == 0:
+            self._save_current()
+
+    def get_current_session(self) -> Optional[Dict]:
+        """Get current session info."""
+        if not self._current:
+            return None
+        return {
+            "session_id": self._current.session_id,
+            "started_at": self._current.started_at,
+            "event_count": len(self._current.events),
+            "events": [asdict(e) for e in self._current.events[-20:]],
+        }
+
+    def get_recent_sessions(self, limit: int = 10) -> List[Dict]:
+        """Get recent session summaries from disk."""
+        sessions = []
+        for path in sorted(self.storage_dir.glob("session_*.json"), reverse=True)[:limit]:
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                sessions.append({
+                    "session_id": data.get("session_id", ""),
+                    "started_at": data.get("started_at", ""),
+                    "event_count": len(data.get("events", [])),
+                })
+            except Exception:
+                continue
+        return sessions
+
+    def get_popular_queries(self, limit: int = 10) -> List[Dict]:
+        """Aggregate most common search queries across sessions."""
+        from collections import Counter
+        queries = Counter()
+
+        # Current session
+        if self._current:
+            for e in self._current.events:
+                if e.query:
+                    queries[e.query] += 1
+
+        # Saved sessions (last 20)
+        for path in sorted(self.storage_dir.glob("session_*.json"), reverse=True)[:20]:
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                for e in data.get("events", []):
+                    if e.get("query"):
+                        queries[e["query"]] += 1
+            except Exception:
+                continue
+
+        return [{"query": q, "count": c} for q, c in queries.most_common(limit)]
+
+    def end_session(self):
+        """End and save current session."""
+        if self._current:
+            self._current.ended_at = datetime.now().isoformat()
+            self._save_current()
+            self._current = None
+
+    def _save_current(self):
+        """Save current session to disk."""
+        if not self._current:
+            return
+        path = self.storage_dir / f"session_{self._current.session_id}.json"
+        try:
+            data = {
+                "session_id": self._current.session_id,
+                "started_at": self._current.started_at,
+                "ended_at": self._current.ended_at,
+                "events": [asdict(e) for e in self._current.events],
+            }
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save session: {e}")

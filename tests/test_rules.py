@@ -1,90 +1,120 @@
-import shutil
-import yaml
+"""
+Tests for sorting rules (user-defined overrides of AI classification).
+
+When a file matches a sorting rule, the rule's target folder takes precedence
+over the AI-suggested category/year path.
+
+Run with: pytest tests/test_rules.py -v
+"""
+
 import os
+import shutil
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
-# Setup Dummy Env
-os.environ["INBOX_PATH"] = "/dummy/inbox"
-os.environ["VAULT_PATH"] = "/dummy/vault"
-os.environ["ARCHIVE_PATH"] = "/dummy/archive"
-os.environ["GOOGLE_API_KEY"] = "dummy_key"
+import pytest
+import yaml
+
+# Setup dummy env vars BEFORE importing src modules
+os.environ.setdefault("INBOX_PATH", "/dummy/inbox")
+os.environ.setdefault("VAULT_PATH", "/dummy/vault")
+os.environ.setdefault("ARCHIVE_PATH", "/dummy/archive")
+os.environ.setdefault("GOOGLE_API_KEY", "dummy_key")
 
 sys.path.append(os.getcwd())
 
 TEMP_ROOT = Path("temp_test_rules")
 ARCHIVE = TEMP_ROOT / "Archive"
 INBOX = TEMP_ROOT / "Inbox"
-RULES_FILE = Path("sorting_rules.yaml")
+RULES_FILE = TEMP_ROOT / "sorting_rules.yaml"
 
-def setup():
+
+@pytest.fixture(autouse=True)
+def test_env():
+    """Create and clean up temp directories and rules file for each test."""
     if TEMP_ROOT.exists():
         shutil.rmtree(TEMP_ROOT)
     INBOX.mkdir(parents=True)
     ARCHIVE.mkdir(parents=True)
-    
-    # Create valid rules
+
+    # Create a sorting rules file
     rules = {
         "rules": [
             {
-                "name": "Test Rule",
+                "name": "Special Documents",
                 "condition": {"type": "filename", "pattern": "special"},
-                "target": "Special/Folder"
+                "target": "Special/Folder",
             }
         ]
     }
     with open(RULES_FILE, "w") as f:
         yaml.dump(rules, f)
 
-def cleanup():
-    if RULES_FILE.exists():
-        RULES_FILE.unlink()
+    yield
+
     if TEMP_ROOT.exists():
         shutil.rmtree(TEMP_ROOT)
 
-def test_sorting_rules():
-    print("--- Testing Sorting Rules ---")
-    setup()
-    
-    import src.archiver
 
-    # Test Case 1: File matching rule ("special_doc.txt")
-    file1 = INBOX / "special_doc.txt"
-    file1.touch()
-    
-    with patch("src.archiver.ARCHIVE_PATH", ARCHIVE):
-        # Metadata says "General", but Rule says "Special"
-        metadata = {"category": "General", "year": "2024"}
-        
-        print(f"Archiving {file1.name} (Should trigger User Rule)...")
-        src.archiver.archive_original(file1, metadata)
-        
-        expected = ARCHIVE / "Special/Folder" / "special_doc.txt"
-        if expected.exists():
-            print("✅ PASSED: User Rule overrode AI classification.")
-        else:
-            print("❌ FAILED: User Rule ignored.")
-            
-    # Test Case 2: File NOT matching rule ("normal.txt")
-    file2 = INBOX / "normal.txt"
-    file2.touch()
-    
-    with patch("src.archiver.ARCHIVE_PATH", ARCHIVE):
-        # Should follow AI metadata
-        metadata = {"category": "General", "year": "2024"}
-        
-        print(f"Archiving {file2.name} (Should follow AI)...")
-        src.archiver.archive_original(file2, metadata)
-        
+class TestSortingRules:
+    """Tests for user-defined sorting rules overriding AI classification."""
+
+    def test_matching_file_uses_rule_target(self):
+        """File matching a rule pattern should be archived to the rule's target folder."""
+        import src.archiver
+
+        file1 = INBOX / "special_doc.txt"
+        file1.write_text("Special document content.")
+
+        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
+             patch("src.archiver.SORTING_RULES_PATH", RULES_FILE):
+
+            metadata = {"category": "General", "year": "2024"}
+            src.archiver.archive_original(file1, metadata)
+
+        expected = ARCHIVE / "Special" / "Folder" / "special_doc.txt"
+        assert expected.exists(), (
+            f"Rule should override AI classification. "
+            f"Expected {expected}, found: {list(ARCHIVE.rglob('*'))}"
+        )
+
+    def test_non_matching_file_uses_ai_classification(self):
+        """File NOT matching any rule should use AI-suggested category/year."""
+        import src.archiver
+
+        file2 = INBOX / "normal.txt"
+        file2.write_text("Normal document content.")
+
+        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
+             patch("src.archiver.SORTING_RULES_PATH", RULES_FILE):
+
+            metadata = {"category": "General", "year": "2024"}
+            src.archiver.archive_original(file2, metadata)
+
         expected = ARCHIVE / "General" / "2024" / "normal.txt"
-        if expected.exists():
-            print("✅ PASSED: AI Classification used for non-matching file.")
-        else:
-            print("❌ FAILED: AI Classification failed.")
+        assert expected.exists(), (
+            f"AI classification should be used for non-matching files. "
+            f"Expected {expected}, found: {list(ARCHIVE.rglob('*'))}"
+        )
 
-    cleanup()
-    print("--- Test Complete ---")
+    def test_no_rules_file_uses_ai(self):
+        """When no rules file exists, should fall back to AI classification."""
+        import src.archiver
 
-if __name__ == "__main__":
-    test_sorting_rules()
+        file3 = INBOX / "any_file.txt"
+        file3.write_text("Content without rules.")
+
+        nonexistent_rules = TEMP_ROOT / "nonexistent_rules.yaml"
+
+        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
+             patch("src.archiver.SORTING_RULES_PATH", nonexistent_rules):
+
+            metadata = {"category": "Work", "year": "2025"}
+            src.archiver.archive_original(file3, metadata)
+
+        expected = ARCHIVE / "Work" / "2025" / "any_file.txt"
+        assert expected.exists(), (
+            f"Should use AI classification when no rules file exists. "
+            f"Expected {expected}, found: {list(ARCHIVE.rglob('*'))}"
+        )

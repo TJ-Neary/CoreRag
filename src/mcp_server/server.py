@@ -5,47 +5,50 @@ Exposes PKM tools to Claude via the Model Context Protocol (MCP).
 Uses FastMCP for easy tool registration and serving.
 
 Usage:
-    # Start the server
+    # Start via Claude Desktop (stdio transport)
     python -m src.mcp_server.server
-
-    # Or with uvicorn for production
-    uvicorn src.mcp_server.server:app --host 0.0.0.0 --port 8000
 """
 
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import lancedb
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 
-# Import our tools
 from src.mcp_server.tools import PKMTools
 from src.embeddings.embedding_service import EmbeddingService
 from src.search.hybrid_search import HybridSearcher
 from src.search.reranker import CrossEncoderReranker
-from src.memory.episodic_memory import EpisodicMemoryManager
+from src.search.hyde import create_hyde_expander
 from src.utils.safe_processor import SafeProcessor, get_ingestion_controller
 from src.analytics.query_analytics import QueryAnalytics
 
 logger = logging.getLogger(__name__)
+
+# Load .env from project root
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 # Global instances (initialized on startup)
 _pkm_tools: Optional[PKMTools] = None
 _embedding_service: Optional[EmbeddingService] = None
 _safe_processor: Optional[SafeProcessor] = None
 _query_analytics: Optional[QueryAnalytics] = None
+_session_tracker = None
 
 
 def get_config() -> dict:
     """Load configuration from environment or defaults."""
     return {
         "db_path": os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb")),
+        "vault_path": os.getenv("VAULT_PATH", str(Path.home() / "Documents" / "ObsidianVault")),
         "embedding_model": os.getenv("PKM_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
-        "reranker_model": os.getenv("PKM_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
-        "watch_dir": os.getenv("PKM_WATCH_DIR", str(Path.home() / "Documents" / "PKM_Input")),
+        "reranker_model": os.getenv(
+            "PKM_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        ),
         "state_dir": os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm")),
         "enable_analytics": os.getenv("PKM_ENABLE_ANALYTICS", "true").lower() == "true",
         "enable_cache": os.getenv("PKM_ENABLE_CACHE", "true").lower() == "true",
@@ -62,11 +65,28 @@ async def _startup():
     # Initialize safe processor (memory management)
     _safe_processor = SafeProcessor()
 
+    # Connect to LanceDB
+    db_path = config["db_path"]
+    db = lancedb.connect(db_path)
+    logger.info(f"Connected to LanceDB at {db_path}")
+
     # Initialize embedding service
     _embedding_service = EmbeddingService(
         model_name=config["embedding_model"],
         cache_enabled=config["enable_cache"],
     )
+
+    # Initialize hybrid searcher (vector + FTS)
+    searcher = HybridSearcher(db, table_name="child_chunks")
+    try:
+        searcher.ensure_fts_index()
+        logger.info("FTS index verified on child_chunks")
+    except Exception as e:
+        logger.warning(f"FTS index setup deferred (table may not exist yet): {e}")
+
+    # Initialize cross-encoder reranker
+    reranker = CrossEncoderReranker(model_name=config["reranker_model"])
+    logger.info(f"Reranker ready: {config['reranker_model']}")
 
     # Initialize query analytics
     if config["enable_analytics"]:
@@ -74,19 +94,85 @@ async def _startup():
             state_dir=Path(config["state_dir"]) / "analytics"
         )
 
-    # Initialize PKM tools
-    _pkm_tools = PKMTools(
-        db_path=Path(config["db_path"]),
-        embedding_service=_embedding_service,
-        analytics=_query_analytics,
+    # Initialize semantic cache for search result deduplication
+    from src.analytics.query_analytics import SemanticCache
+    semantic_cache = None
+    if config["enable_cache"]:
+        semantic_cache = SemanticCache(
+            embedding_service=_embedding_service,
+            similarity_threshold=0.92,
+            max_entries=1000,
+            ttl_hours=24,
+        )
+        logger.info("Semantic cache initialized (threshold=0.92, ttl=24h)")
+
+    # Initialize HyDE expander (uses Ollama for hypothetical document generation)
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
+    hyde_expander = create_hyde_expander(
+        backend="ollama",
+        model=ollama_model,
+        embedder=_embedding_service.embed_query,
+        cache_dir=Path(config["state_dir"]) / "cache",
     )
+    logger.info(f"HyDE expander ready: ollama/{ollama_model}")
+
+    # Vault root for file listing / folder structure tools
+    vault_root = Path(config["vault_path"]).expanduser().resolve()
+
+    # Build async embedder callable for PKMTools
+    # PKMTools.search_knowledge calls: query_vector = await self.embedder(query)
+    async def _embed_query(text: str) -> list[float]:
+        return _embedding_service.embed_query(text)
+
+    # Initialize knowledge graph
+    from src.graph.knowledge_graph import KnowledgeGraph
+    graph_db_path = Path(config["state_dir"]) / "knowledge_graph.db"
+    knowledge_graph = KnowledgeGraph(graph_db_path)
+    graph_stats = knowledge_graph.get_stats()
+    logger.info(
+        f"Knowledge graph: {graph_stats['total_entities']} entities, "
+        f"{graph_stats['total_relationships']} relationships"
+    )
+
+    # Initialize conflict detector (semantic + numeric contradiction detection)
+    from src.quality.conflict_detector import ConflictDetector
+    conflict_detector = ConflictDetector(
+        embedder=_embedding_service.embed_query,
+        state_dir=Path(config["state_dir"]) / "conflicts",
+    )
+    logger.info("Conflict detector initialized (semantic + numeric modes)")
+
+    # Initialize PKM tools with correct constructor signature
+    _pkm_tools = PKMTools(
+        retriever=searcher,
+        embedder=_embed_query,
+        reranker=reranker,
+        db=db,
+        vault_root=vault_root,
+        hyde_expander=hyde_expander,
+        knowledge_graph=knowledge_graph,
+        semantic_cache=semantic_cache,
+        conflict_detector=conflict_detector,
+    )
+
+    # Initialize session tracker
+    global _session_tracker
+    from src.memory.episodic_memory import SessionTracker
+    _session_tracker = SessionTracker()
+    logger.info(f"Session tracker started: {_session_tracker._current.session_id}")
 
     logger.info("PKM server initialized successfully")
 
 
 async def _shutdown():
     """Cleanup on server shutdown."""
-    global _safe_processor, _query_analytics
+    global _safe_processor, _query_analytics, _embedding_service, _session_tracker
+
+    if _session_tracker:
+        _session_tracker.end_session()
+
+    if _embedding_service:
+        _embedding_service.save_cache()
 
     if _safe_processor:
         _safe_processor.stop()
@@ -122,6 +208,7 @@ async def search_knowledge(
     k: int = 5,
     use_reranker: bool = True,
     use_hyde: bool = False,
+    use_multi_query: bool = False,
     filters: Optional[dict] = None,
     debug: bool = False,
 ) -> dict:
@@ -133,6 +220,7 @@ async def search_knowledge(
         k: Number of results to return (default: 5)
         use_reranker: Apply cross-encoder re-ranking (default: True)
         use_hyde: Use HyDE query expansion (default: False)
+        use_multi_query: Decompose complex queries into sub-queries and fuse results (default: False)
         filters: Optional filters (e.g., {"file_type": "md", "category": "work"})
         debug: Return detailed debug information (default: False)
 
@@ -142,14 +230,30 @@ async def search_knowledge(
     if not _pkm_tools:
         return {"error": "PKM tools not initialized"}
 
-    return await _pkm_tools.search_knowledge(
+    import time as _time
+    _search_start = _time.time()
+
+    result = await _pkm_tools.search_knowledge(
         query=query,
         k=k,
         use_reranker=use_reranker,
         use_hyde=use_hyde,
+        use_multi_query=use_multi_query,
         filters=filters,
         debug=debug,
     )
+
+    # Log search event for session tracking
+    if _session_tracker:
+        _session_tracker.log_event(
+            event_type="search",
+            tool_name="search_knowledge",
+            query=query,
+            result_count=len(result.get("results", [])),
+            duration_ms=(_time.time() - _search_start) * 1000,
+        )
+
+    return result
 
 
 @mcp.tool()
@@ -329,6 +433,168 @@ async def get_ingestion_queue() -> dict:
     return await _pkm_tools.get_ingestion_queue()
 
 
+# === QUALITY TOOLS ===
+
+@mcp.tool()
+async def check_stale_content(
+    path: Optional[str] = None,
+    days: int = 365,
+) -> dict:
+    """
+    Find stale content in the knowledge base.
+
+    Args:
+        path: Directory to check (defaults to vault root)
+        days: Consider files older than this as stale (default: 365)
+
+    Returns:
+        List of stale files with age and freshness level
+    """
+    try:
+        from src.quality.freshness import FreshnessIndicator
+        fi = FreshnessIndicator(stale_days=days)
+        check_path = Path(path) if path else (
+            Path(os.getenv("VAULT_PATH", str(Path.home() / "Documents/ObsidianVault")))
+        )
+        stale = fi.get_stale_content(check_path, recursive=True)
+        return {
+            "path": str(check_path),
+            "threshold_days": days,
+            "stale_count": len(stale),
+            "files": [
+                {
+                    "path": str(s.file_path),
+                    "age_days": s.age_days,
+                    "level": s.freshness_level.value,
+                    "modified_at": s.modified_at.isoformat() if s.modified_at else None,
+                }
+                for s in stale[:20]
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def check_links(
+    path: Optional[str] = None,
+) -> dict:
+    """
+    Check for broken links in documents.
+
+    Args:
+        path: Directory to scan (defaults to vault root)
+
+    Returns:
+        Link health report with broken link details
+    """
+    try:
+        from src.quality.link_checker import check_links as _check_links
+        check_path = Path(path) if path else (
+            Path(os.getenv("VAULT_PATH", str(Path.home() / "Documents/ObsidianVault")))
+        )
+        report = await _check_links(check_path, recursive=True)
+        return {
+            "path": str(check_path),
+            "documents_scanned": report.documents_scanned,
+            "total_links": report.total_links,
+            "broken_links": report.broken_links,
+            "redirect_links": report.redirect_links,
+            "overall_health": report.overall_health,
+            "broken_details": [
+                {"url": d["url"], "status": d["status"], "file": d.get("file", "")}
+                for d in report.broken_details[:20]
+            ] if hasattr(report, "broken_details") and report.broken_details else [],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def detect_conflicts(
+    path: Optional[str] = None,
+    limit: int = 10,
+) -> dict:
+    """
+    Scan documents for contradictions, numeric mismatches, and outdated information.
+
+    Args:
+        path: Directory to scan (defaults to vault root)
+        limit: Maximum conflicts to return (default: 10)
+
+    Returns:
+        Conflict report with evidence and resolution suggestions
+    """
+    if not _pkm_tools:
+        return {"error": "PKM tools not initialized"}
+
+    return await _pkm_tools.detect_conflicts(path=path, limit=limit)
+
+
+# === BACKUP TOOLS ===
+
+@mcp.tool()
+async def create_backup(
+    name: Optional[str] = None,
+    backup_type: str = "full",
+) -> dict:
+    """
+    Create a backup of the PKM database and state.
+
+    Args:
+        name: Optional name prefix for the backup
+        backup_type: Type of backup ("full" or "incremental")
+
+    Returns:
+        Backup details including path and size
+    """
+    try:
+        from src.utils.backup import BackupManager
+        config = get_config()
+        bm = BackupManager(data_dir=Path(config["state_dir"]))
+        info = bm.create_backup(backup_name=name, backup_type=backup_type)
+        return {
+            "name": info.name,
+            "timestamp": info.timestamp,
+            "size_bytes": info.size_bytes,
+            "path": info.path,
+            "backup_type": info.backup_type,
+            "components": info.components,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def list_backups() -> dict:
+    """
+    List available PKM backups.
+
+    Returns:
+        List of backups with name, timestamp, and size
+    """
+    try:
+        from src.utils.backup import BackupManager
+        config = get_config()
+        bm = BackupManager(data_dir=Path(config["state_dir"]))
+        backups = bm.list_backups()
+        return {
+            "count": len(backups),
+            "backups": [
+                {
+                    "name": b.name,
+                    "timestamp": b.timestamp,
+                    "size_bytes": b.size_bytes,
+                    "backup_type": b.backup_type,
+                    "components": b.components,
+                }
+                for b in backups
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # === RESOURCE ENDPOINTS ===
 
 @mcp.resource("pkm://status")
@@ -352,19 +618,11 @@ def create_app():
     return mcp
 
 
-# For direct running
+# For direct running (Claude Desktop uses stdio transport)
 if __name__ == "__main__":
-    import uvicorn
-
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Run the server
-    uvicorn.run(
-        "src.mcp_server.server:mcp",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
+    mcp.run(transport="stdio")

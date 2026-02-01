@@ -2,227 +2,302 @@
 
 ---
 
-## Project Status: ✅ CORE COMPLETE
+## Project Status: INTEGRATION COMPLETE ✅
 
-**Developer Tasks**: 44/44 complete (100%)
-**Remaining**: User setup tasks only (see `SETUP_TASKS.md`)
+**Scaffold modules**: 44/44 created (by Antigravity agents, Jan 31)
+**Integration wiring**: 12 of 12 phases complete
+**Tests**: 121 passing, 26 skipped (golden set)
 
 ---
 
-## 2026-01-31: Session 4 - Final Quality Modules & Documentation
-
-### Session Summary
-Completed ingestion pipeline integration and Obsidian inbox workflow.
+## 2026-02-01: Session 12 — Tests, RAG API, Manifest Protocol (7 Tasks)
 
 ### Work Completed
 
-#### Ingestion & Integration
-- ✅ Completed `src/ingestion/pipeline.py` - chunking, embedding, storage integration
-- ✅ Created `src/obsidian/obsidian_export.py` - vault integration
-- ✅ Created `scripts/setup_folders.py` - standardized folder structure
-- ✅ Implemented Inbox workflow (Inbox → Processed + Vault)
+- **52 new tests**: Created 4 test files (test_mcp_tools, test_decay_scoring, test_hyde, test_session_tracker) — 121 tests total, 0 failures
+- **Auto-tagger tuned**: Lowered tech thresholds to 0.2, raised personal to 0.6, added human-resources/compliance/finance tags
+- **Knowledge graph backfill updated**: Added `--llm` and `--clear` flags to backfill script. LLM JSON parsing needs prompt refinement (falls back to regex gracefully)
+- **VLM model downloaded**: moondream2 loaded via MLX backend on Apple Silicon
+- **Core Memory API (v1)**: 5 new HTTP endpoints for external AI systems:
+  - `GET /api/v1/manifest` — capability handshake (schema, endpoints, formats, rules)
+  - `GET /api/v1/stats` — database health statistics
+  - `POST /api/v1/search` — semantic search with optional HyDE
+  - `POST /api/v1/ingest` — push text content into the knowledge base
+  - `DELETE /api/v1/documents/{document_id}` — remove documents and chunks
+- **Project docs updated**: progress.md + project_memory.md with Session 11 work
 
-#### Quality & Analytics Modules
-- ✅ Created `src/quality/link_checker.py` - async URL validation with caching
-- ✅ Created `src/quality/conflict_detector.py` - contradiction detection
-- ✅ Created `src/classification/auto_tagger.py` - keyword + embedding classification
-- ✅ Created `src/cli/main.py` - comprehensive CLI with 7 subcommands
-- ✅ Created `src/dashboard/health_dashboard.py` - web monitoring UI
-- ✅ Created `src/search/multi_query.py` - query decomposition + RRF fusion
+### Files Modified
+- `src/server.py` — 5 new v1 API endpoints (manifest, stats, search, ingest, delete)
+- `src/classification/auto_tagger.py` — threshold tuning, 3 new domain tags
+- `scripts/backfill_knowledge_graph.py` — --llm and --clear flags, async extraction
+- `_project/progress.md`, `_project/project_memory.md` — Session 11+12 entries
 
-#### Documentation Updates
-- ✅ Updated `.pkmignore` - enabled media processing, added .canvas, .pkm/, _transcripts/
-- ✅ Rewrote `AGENT_INSTRUCTIONS.md` - complete module inventory, architecture diagram
-- ✅ Rewrote `PRD.md` - v2.0, all phases complete
-- ✅ Rewrote `README.md` - features, CLI, MCP config, project structure
-- ✅ Rewrote `task_plan.md` - all 7 phases marked complete
-- ✅ Updated `New_Features.md` - 100% developer tasks complete
-- ✅ Updated `Master_Prompt.md` - v2.0, Core Complete status
-- ✅ Created missing `__init__.py` files for 12 directories
+### Files Created
+- `tests/test_mcp_tools.py` — 16 tests for PKMTools class
+- `tests/test_decay_scoring.py` — 17 tests for time-decay scoring
+- `tests/test_hyde.py` — 11 tests for HyDE query expansion
+- `tests/test_session_tracker.py` — 9 tests for session tracking
 
-### Technical Decisions
-| Decision | Choice | Reasoning |
-|----------|--------|-----------|
-| Link Checking | aiohttp async | Concurrent checking, rate limiting |
-| Auto-Tagging | Hybrid approach | Keywords + embeddings for accuracy |
-| CLI Framework | argparse | Standard library, no dependencies |
-| Dashboard | http.server | Lightweight, no framework needed |
-| Multi-Query | RRF fusion | Simple, effective result merging |
+### Results
+- 121 tests passing, 0 failures, 26 skipped
+- 34 total HTTP routes (29 dashboard + 5 v1 API)
+- Manifest protocol ready for Kendra integration
 
 ---
 
-## 2026-01-31: Session 3 - Advanced Search & Context
-
-### Session Summary
-Implemented advanced search features and personal context layer.
+## 2026-02-01: Session 11 — Post-Integration Enhancements (8 Tasks)
 
 ### Work Completed
 
-#### Search Enhancements
-- ✅ Created `src/search/hybrid_search.py` - vector + BM25 fusion
-- ✅ Created `src/search/hyde_search.py` - hypothetical document expansion
-- ✅ Created `src/search/reranker.py` - cross-encoder reranking
-- ✅ Created `src/search/decay_scoring.py` - time-weighted relevance
+- **42 new tests**: Created 5 test files (test_chat, test_auto_tagger, test_knowledge_graph, test_conflict_detector, test_exporter) — 69 tests total, 0 failures
+- **PII dictionary CLI**: Added `pii` subcommand to CLI with `list`, `add`, `remove` actions for `~/.pkm/pii_terms.yaml`
+- **Embedding auto-tagger**: Lazy-loading embedding service in processor.py enables hybrid keyword+semantic tagging
+- **LLM entity extraction**: Created `src/utils/ollama_llm.py` wrapper, updated executor.py to use async `extractor.extract()` with LLM fallback
+- **Conflict detector MCP tool**: Wired ConflictDetector into MCP server as `detect_conflicts` tool
+- **Obsidian backlinks**: Added `find_related_documents()` to KnowledgeGraph, `_generate_backlinks()` in exporter generates `[[wikilinks]]` from shared entities
+- **QueueManager wiring**: Added persistent job queue to batch_processor.py with rate limiting, retry, and priority support
+- **VLM captioner wiring**: Updated extractor.py `_extract_image_ocr()` to add VLM captioning after OCR with graceful fallback
 
-#### Analytics & Caching
-- ✅ Created `src/analytics/query_analytics.py` - query tracking
-- ✅ Created `src/analytics/semantic_cache.py` - similarity-based caching
+### Files Modified
+- `src/cli/main.py` — PII subcommand
+- `src/processor.py` — lazy auto-tagger with embedding support
+- `src/executor.py` — LLM entity extraction via OllamaLLM
+- `src/mcp_server/server.py` — conflict detector initialization
+- `src/mcp_server/tools.py` — detect_conflicts() method + conflict_detector param
+- `src/graph/knowledge_graph.py` — find_related_documents()
+- `src/exporter.py` — _generate_backlinks() with wikilinks
+- `src/batch_processor.py` — QueueManager integration
+- `src/extractor.py` — VLM captioning in image extraction
 
-#### Quality Modules
-- ✅ Created `src/quality/duplicate_detector.py` - hash + MinHash + semantic
-- ✅ Created `src/quality/freshness_tracker.py` - stale content detection
+### Files Created
+- `src/utils/ollama_llm.py` — OllamaLLM async wrapper for qwen2.5:32b
+- `tests/test_chat.py` — 5 tests for /api/chat
+- `tests/test_auto_tagger.py` — 10 tests for AutoTagger
+- `tests/test_knowledge_graph.py` — 9 tests for entity extraction + graph
+- `tests/test_conflict_detector.py` — 11 tests for conflict detection
+- `tests/test_exporter.py` — 7 tests for Obsidian export
 
-#### Personal Context
-- ✅ Created `src/memory/episodic_memory.py` - conversation memory
-- ✅ Created `src/graph/knowledge_graph.py` - GraphRAG implementation
+### Results
+- 69 tests passing, 0 failures, 26 skipped
+- All 8 planned enhancement tasks completed
 
 ---
 
-## 2026-01-31: Session 2 - Media Processing & Safety
-
-### Session Summary
-Implemented audio/video processing and hardware safety systems.
+## 2026-02-01: Session 10 — End-to-End Verification + Documentation
 
 ### Work Completed
 
-#### Audio Processing
-- ✅ Created `src/audio/topic_segmenter.py` - topic-based chunking
-- ✅ Integrated mlx-whisper for transcription
-
-#### Video Processing
-- ✅ Created `src/video/scene_detector.py` - OpenCV scene detection
-- ✅ Created `src/multimodal/vlm_captioner.py` - VLM image captioning
-
-#### OCR
-- ✅ Created `src/ocr/vision_ocr.py` - Vision.framework integration
-
-#### Safety Systems
-- ✅ Created `src/utils/safe_processor.py` - memory-aware processing
-- ✅ Created `src/utils/hardware_monitor.py` - CPU/GPU monitoring
-- ✅ Created `src/utils/privacy_audit.py` - Presidio PII detection
-
-#### Infrastructure
-- ✅ Created `src/utils/checkpoint_manager.py` - job persistence
-- ✅ Created `src/utils/backup_manager.py` - automated backups
-- ✅ Created `src/maintenance/db_optimizer.py` - database maintenance
-- ✅ Created `src/sync/zombie_reconciler.py` - orphan cleanup
+- Verified all module imports (search stack, memory, analytics, backup, checkpoint, versioning, knowledge graph)
+- Verified MCP server modules importable without starting
+- Confirmed dashboard routes (29 routes including /api/chat, /api/user-facts)
+- All 27 tests passing
+- All integration checks passing (semantic cache, version manager, backup manager, session tracker, knowledge graph, checkpoint manager)
+- Updated project documentation (progress.md, project_memory.md, task_plan.md)
 
 ---
 
-## 2026-01-31: Session 1 - Core Infrastructure
-
-### Session Summary
-Established core infrastructure including vector database, embeddings, and MCP server.
+## 2026-02-01: Session 9 — Phases 3-12 Completion + Dashboard Enhancements
 
 ### Work Completed
 
-#### Core Components
-- ✅ Created `src/embeddings/embedding_service.py` - nomic-embed-text integration
-- ✅ Created `src/storage/vector_store.py` - LanceDB wrapper
-- ✅ Created `src/ingestion/pipeline.py` - orchestrator with queue
-- ✅ Created `src/ingestion/queue_manager.py` - priority queue system
+- **Knowledge Graph Backfill**: Created and ran `scripts/backfill_knowledge_graph.py` — processed 43 documents, extracted 4238 entities, resulting in 979 unique entities and 165 relationships in the graph
+- **LLM Chat Window**: Added floating chat panel to dashboard with `/api/chat` endpoint — Ollama integration with optional RAG context from LanceDB, source citations, typing indicators
+- **User Memory Panel**: Added memory panel to dashboard showing user facts (with category badges, delete buttons) and correction patterns (AI→human diff visualization)
+- **Session Tracking**: Wired `SessionTracker` into MCP server — logs search events with timing, auto-saves sessions to `~/.pkm/sessions/`, saves on shutdown
+- **Multimodal Dependencies**: Installed opencv-python-headless 4.13.0 and mlx-whisper 0.4.3 (with mlx, mlx-metal, numba, tiktoken)
+- **Audio/Video Extraction**: Wired `WhisperWithSegmentation` and `VideoProcessor` into `extractor.py` with graceful ImportError fallback
+- **Dead Code Removal**: Removed dead `register_tools()` from tools.py (~40 lines)
+- **CLI Fix**: Fixed `cmd_duplicates` API mismatch (field names didn't match `DuplicateReport`)
+- **MCP Fix**: Fixed `stale_threshold_days` → `stale_days` param in `check_stale_content` tool
+- **Dependency Fix**: Relaxed numpy constraint from >=2.4.2 to >=2.0.0 (mlx-whisper compatibility)
 
-#### Document Processing
-- ✅ Created `src/chunking/parent_child.py` - hierarchical chunking
-- ✅ Created `src/chunking/code_ast.py` - AST-aware code chunking
-- ✅ Created `src/processors/spreadsheet_processor.py` - Excel/CSV handling
+### Files Modified
+- `src/server.py` — added `/api/chat`, `/api/user-facts`, `/api/user-facts/{index}` endpoints
+- `src/ui/templates/dashboard.html` — chat FAB + panel, memory panel, CSS
+- `src/mcp_server/server.py` — session tracker init/logging/shutdown, backup MCP tools, semantic cache
+- `src/mcp_server/tools.py` — semantic cache wiring, real trigger_reindex, dead code removal
+- `src/memory/episodic_memory.py` — added SessionEvent, Session, SessionTracker classes
+- `src/executor.py` — version tracking after commit
+- `src/extractor.py` — audio/video extraction with graceful fallback
+- `src/cli/main.py` — fixed cmd_duplicates API mismatch
+- `requirements.txt` — added multimodal deps, httpx, fixed numpy constraint
+- `scripts/backfill_knowledge_graph.py` — new batch entity extraction script
 
-#### MCP Server
-- ✅ Created `src/mcp_server/server.py` - FastMCP implementation
-- ✅ Created `src/mcp_server/tools.py` - search_knowledge, list_recent_files, etc.
+### Results
+- All 12 integration phases complete
+- Knowledge graph populated: 979 entities, 165 relationships
+- Dashboard: chat window + memory panel functional
+- All 27 tests passing throughout all changes
 
 ---
 
-## 2026-01-31: Session 0 - Project Initialization
-
-### Session Summary
-First session focused on comprehensive project planning and architecture design.
+## 2026-02-01: Session 8 — MCP Desktop Connection + RAG Audit + Claude Desktop Review
 
 ### Work Completed
 
-#### Discovery Phase
-- ✅ Gathered user requirements via structured questions
-- ✅ Identified hardware: M4 Max 48GB RAM
-- ✅ Clarified use cases: content creation, AI context, future local LLM
-- ✅ Established constraints: privacy-first, local processing preferred
+- Fixed Claude Desktop MCP connection (three sequential issues: missing cwd → macOS script permissions → bash inline fix)
+- Removed old `va-claims-assistant` MCP entry from Claude Desktop config
+- Final config uses `/bin/bash -c "cd ... && exec ./venv/bin/python -m src.mcp_server.server"` to avoid macOS Gatekeeper blocking
+- Audited RAG database contents: 43 documents, 4,704 child chunks — all from Inbox (PHR/SPHR study materials + test files), no project source code leaked in
+- Claude Desktop successfully connected and called MCP tools (`get_user_context`, `search_knowledge`, etc.)
+- Claude Desktop reviewed codebase and generated two planning documents:
+  - `_project/Phase_6_Episodic_Memory.md` — detailed Phase 6 implementation plan (correction learning, session continuity, user profile)
+  - `_project/Roadmap_Future_Enhancements.md` — P0-P3 feature roadmap with code samples
+- Organized `_project/` folder: archived 5 obsolete files to `_project/archive/`
 
-#### Architecture Design
-- ✅ Created 4-layer system architecture
-- ✅ Defined 25+ metadata fields for documents
-- ✅ Specified 9 MCP tools with priorities
-- ✅ Designed personal context layer with 7 categories
-- ✅ Documented 3 deployment tiers (local, hybrid, beast mode)
+### Files Modified
+- `~/Library/Application Support/Claude/claude_desktop_config.json` — removed va-claims-assistant, fixed pkm entry
+- `scripts/mcp_server.sh` — created (unused due to macOS permissions)
+- `_project/` — archived obsolete files, added Claude Desktop planning docs
 
-#### Documentation
-- ✅ Created PKM_Design_System_Architecture.md
-- ✅ Created PKM_Design_Metadata_Schema.md
-- ✅ Created PKM_Design_MCP_Server.md
-- ✅ Created PKM_Design_Personal_Context.md
-- ✅ Created PKM_Design_Deployment_Options.md
-- ✅ Created PRD.md
-- ✅ Created Master_Prompt.md
-- ✅ Created project_memory.md
-- ✅ Created task_plan.md
-
-### Technical Decisions
-| Decision | Choice | Reasoning |
-|----------|--------|-----------|
-| Vector DB | LanceDB | Embedded, no server, handles TB scale |
-| Embeddings | nomic-embed-text-v1.5 | 768d, 8192 tokens, runs locally |
-| Audio | mlx-whisper | Apple Silicon optimized |
-| MCP Framework | FastMCP | Python-native, learning path aligned |
-| File Processing | Unstructured | Multi-format support |
+### Notes
+- Claude Desktop proactively calls `get_user_context` on session start — good behavior for when Phase 6 is wired
+- Roadmap code samples should be treated as pseudocode — scaffold APIs need verification before implementing
+- MCP server requires the project venv Python, not system Python
 
 ---
 
-## Module Summary
+## 2026-02-01: Session 7 — Phase 2: Wire Search Stack
 
-### By Category
+### Work Completed
 
-| Category | Modules | Status |
-|----------|---------|--------|
-| Core Infrastructure | 6 | ✅ Complete |
-| Search & Retrieval | 6 | ✅ Complete |
-| Document Processing | 4 | ✅ Complete |
-| Media Processing | 4 | ✅ Complete |
-| Quality & Safety | 6 | ✅ Complete |
-| Analytics | 2 | ✅ Complete |
-| Personal Context | 2 | ✅ Complete |
-| User Interface | 2 | ✅ Complete |
-| **Total** | **32** | ✅ Complete |
+- Wired HyDE query expansion into MCP server (`create_hyde_expander` with Ollama backend)
+- Fixed HyDE bug in `tools.py` — was passing `HyDEResult` object as string, now uses `.hypothetical_document`
+- Added time-decay scoring to search results (runs after reranking via `apply_decay_to_results`)
+- Added multi-query support — `use_multi_query=True` decomposes complex queries, runs sub-queries, fuses with RRF
+- Exported `DecayConfig`, `apply_decay_to_results`, `combined_temporal_scoring` from `src/search/__init__.py`
+- Updated CLAUDE.md with Phase 2 details and current status table
 
-### File Count
-- Source directories: 23
-- Python files: 74
-- `__init__.py` files: 23
-- Architecture docs: 16
-- Top-level docs: 10
+### Files Modified
+- `src/search/__init__.py` — added decay_scoring exports
+- `src/mcp_server/server.py` — wired HyDE expander in `_startup()`, added `use_multi_query` parameter
+- `src/mcp_server/tools.py` — fixed HyDE, added decay scoring, added multi-query with RRF fusion
+- `CLAUDE.md` — updated PII section, wiring plan status table, Phase 2 details
+
+---
+
+## 2026-02-01: Session 6 — PII Redesign (Three-Layer System)
+
+### Work Completed
+
+Replaced single LLM `is_sensitive` flag with three-layer PII detection:
+
+1. **Presidio + spaCy scan** at analysis time (was only at commit time before)
+2. **Custom PII dictionary** (`~/.pkm/pii_terms.yaml`) with exact string matching
+3. **LLM advisory** (`pii_observations` free-text field, not a binary flag)
+
+Plus manual override on dashboard ("Mark as Sensitive" checkbox).
+
+### Files Modified
+- `src/utils/privacy_audit.py` — added `CUSTOM`, `ACCOUNT`, `EMPLOYEE_ID`, `POLICY` to `SensitiveDataType`; added `load_custom_pii_terms()` and `scan_custom_terms()`
+- `src/intelligence.py` — removed `is_sensitive` from LLM prompt, replaced with `pii_observations` free-text
+- `src/processor.py` — runs Presidio + custom dictionary scan at analysis time, sets `is_sensitive`, `pii_detections`, `pii_observations`, `pii_source`
+- `src/executor.py` — `_redact_pii()` now includes custom dictionary matching with overlap deduplication
+- `src/ui/templates/dashboard.html` — relabeled: "PII DETECTED" → "SENSITIVE", "Contains PII?" → "Mark as Sensitive", added `renderPiiDetails()` showing detection summaries
+- `src/correction_log.py` — tracks `pii_source` overrides in both directions
+- `pii_terms.example.yaml` — new template file
+- `.gitignore` — added `pii_terms.yaml`/`pii_terms.yml`
+
+### Results
+- 0 false positives on re-run (was 6/41 with LLM-only approach)
+- 41/41 files completed, 0 errors
+- RAG verification: 41/43 GOOD (2 "bad" are test artifacts)
+
+---
+
+## 2026-02-01: Session 5 — Second Batch Ingestion + RAG Verification
+
+### Work Completed
+- Committed all PII redesign changes
+- Ran second batch of 41 files through ingestion
+- 41/41 completed, 0 errors, 0 PII false positives
+- 41 Obsidian files exported, 4702 child chunks + 52 parent chunks in LanceDB
+- RAG verification: avg char ratio 0.9533, word coverage 0.9535
+
+---
+
+## 2026-02-01: Session 4 — Test Suite Rewrite
+
+### Work Completed
+- Rewrote `tests/test_integration.py` — 5 tests for `process_document()` staging behavior
+- Rewrote `tests/test_hitl.py` — 4 tests for staging API and execution flow via FastAPI TestClient
+- Rewrote `tests/test_rules.py` — 3 tests for sorting rules override of AI classification
+- All 27 tests passing (26 golden set skipped)
+
+---
+
+## 2026-02-01: Session 3 — First Batch Ingestion + Intelligence Fix
+
+### Work Completed
+- Rewrote `src/intelligence.py` with split-brain Ollama workflow:
+  - Call 1: Structured JSON (category, year, type, summary, filename, pii_observations)
+  - Call 2: Full redacted text generation
+- First batch of 41 files: 41/41 summaries (was 0/41 before fix), 41/41 categories, 41/41 years
+- 6 PII false positives identified (all HR guides) — led to PII redesign
+
+---
+
+## 2026-02-01: Session 2 — MCP Server Fix (Phase 1)
+
+### Work Completed
+- Fixed MCP server to use stdio transport (was broken HTTP)
+- Fixed FastMCP lifespan manager for proper startup/shutdown
+- Wired HybridSearcher, EmbeddingService, CrossEncoderReranker, QueryAnalytics
+- Created CLAUDE.md with full architecture documentation
+- Configured Claude Desktop MCP connection
+
+### Files Modified
+- `src/mcp_server/server.py` — complete rewrite
+- `src/mcp_server/tools.py` — fixed `PKMTools` class and `search_knowledge`
+- `CLAUDE.md` — created
+
+---
+
+## 2026-01-31: Sessions 0-1 — Scaffold (Antigravity Agents)
+
+### Work Completed
+- 44 modules created across 23 directories
+- Architecture docs, PRD, conventions established
+- All modules were *created* but NOT *wired* into the running system
+- See `project_memory.md` for full module inventory
 
 ---
 
 ## Issues Resolved
 
-| Issue | Resolution | Date |
-|-------|------------|------|
-| Memory overflow during batch processing | SafeProcessor with 75% threshold | Session 2 |
-| PII exposure risk | Presidio + regex hybrid detection | Session 2 |
-| Search result staleness | Decay scoring with half-life | Session 3 |
-| Duplicate content | 3-tier detection (hash, MinHash, semantic) | Session 3 |
-| Missing __init__.py files | Created for all 12 directories | Session 4 |
+| Issue | Resolution | Session |
+|-------|------------|---------|
+| MCP server used HTTP instead of stdio | Rewrote server.py with FastMCP lifespan | Session 2 |
+| 0/41 summaries from LLM | Split-brain Ollama workflow in intelligence.py | Session 3 |
+| 6/41 PII false positives | Three-layer PII detection (Presidio > LLM) | Session 6 |
+| HyDE passing HyDEResult object as string | Fixed to use `.hypothetical_document` | Session 7 |
+| Decay scoring not wired | Added `apply_decay_to_results` after reranking | Session 7 |
+| Claude Desktop couldn't connect to MCP | Fixed cwd issue, macOS permissions, bash inline command | Session 8 |
+| `save_profile()` doesn't exist on EpisodicMemoryManager | Correct method is `save()` | Session 9 |
+| `stale_threshold_days` wrong param name | Correct param is `stale_days` | Session 9 |
+| numpy >=2.4.2 too strict | mlx-whisper needs <=2.3.5; relaxed to >=2.0.0 | Session 9 |
+| `cmd_duplicates` API mismatch | Updated field names to match `DuplicateReport` | Session 9 |
 
 ---
 
-## Next Steps (User Tasks)
+## Wiring Plan (12 Phases)
 
-See `SETUP_TASKS.md` for complete checklist:
-
-1. Install Presidio for PII detection
-2. Verify Vision.framework for OCR
-3. Configure environment variables
-4. Create test directories
-5. Build Golden Set test data
-6. Test MCP integration with Claude Desktop
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Fix MCP Server | **Complete** |
+| — | PII Redesign | **Complete** |
+| 2 | Wire Search Stack (HyDE, decay, multi-query) | **Complete** |
+| 3 | Wire OCR into ingestion | **Complete** |
+| 4 | Wire auto-tagging | **Complete** |
+| 5 | Wire knowledge graph | **Complete** |
+| 6 | Wire episodic memory | **Complete** |
+| 7 | Wire quality modules | **Complete** |
+| 8 | Wire utility modules | **Complete** |
+| 9 | Wire analytics & queue | **Complete** |
+| 10 | Wire multimodal | **Complete** |
+| 11 | Config cleanup & dead code removal | **Complete** |
+| 12 | CLI integration | **Complete** |
 
 ---
 
-*Progress tracking for PKM System | Started: 2026-01-31 | Status: Core Complete*
+*Progress tracking for PKM System | Started: 2026-01-31 | Last Updated: 2026-02-01*

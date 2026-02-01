@@ -17,6 +17,11 @@ from src.search.multi_query import (
     MultiQueryResult,
     multi_query_search,
 )
+from src.search.decay_scoring import (
+    DecayConfig,
+    apply_decay_to_results,
+    combined_temporal_scoring,
+)
 
 __all__ = [
     # HyDE
@@ -34,4 +39,8 @@ __all__ = [
     "FusedResult",
     "MultiQueryResult",
     "multi_query_search",
+    # Decay Scoring
+    "DecayConfig",
+    "apply_decay_to_results",
+    "combined_temporal_scoring",
 ]

@@ -57,6 +57,10 @@ class SensitiveDataType(Enum):
     DATE_OF_BIRTH = "date_of_birth"
     MEDICAL = "medical"
     FINANCIAL = "financial"
+    ACCOUNT = "account"
+    EMPLOYEE_ID = "employee_id"
+    POLICY = "policy"
+    CUSTOM = "custom"
 
 
 @dataclass
@@ -308,8 +312,11 @@ class PrivacyScanner:
         # Phase 2: Technical secrets scanning (API keys, passwords, etc.)
         matches.extend(self._scan_technical_secrets(content, context_chars))
 
-        # Phase 3: Keyword-based context scanning
-        matches.extend(self._scan_keywords(content, context_chars))
+        # Phase 3: Keyword-based context scanning (informational only)
+        # These are NOT included in match results or tier determination because
+        # topic words like "salary" and "hospital" are not PII — they cause
+        # false positives on policy documents, HR guides, etc.
+        # Kept for audit logging if needed in the future.
 
         # Deduplicate matches by position
         matches = self._deduplicate_matches(matches)
@@ -732,6 +739,124 @@ class PrivacyAuditManager:
         blocked_file = self.state_dir / "blocked_files.json"
         with open(blocked_file, 'w') as f:
             json.dump(list(self._blocked_files), f, indent=2)
+
+
+# ── Custom PII Dictionary ─────────────────────────────────────────────────────
+
+# Maps user-facing type names to SensitiveDataType enum values
+_CUSTOM_TYPE_MAP = {
+    "SSN": SensitiveDataType.SSN,
+    "EMAIL": SensitiveDataType.EMAIL,
+    "PHONE": SensitiveDataType.PHONE,
+    "ADDRESS": SensitiveDataType.ADDRESS,
+    "NAME": SensitiveDataType.NAME,
+    "CREDIT_CARD": SensitiveDataType.CREDIT_CARD,
+    "ACCOUNT": SensitiveDataType.ACCOUNT,
+    "EMPLOYEE_ID": SensitiveDataType.EMPLOYEE_ID,
+    "POLICY": SensitiveDataType.POLICY,
+    "FINANCIAL": SensitiveDataType.FINANCIAL,
+    "MEDICAL": SensitiveDataType.MEDICAL,
+    "CUSTOM": SensitiveDataType.CUSTOM,
+}
+
+
+def load_custom_pii_terms(path: Optional[Path] = None) -> list[dict]:
+    """Load user-defined PII terms from a YAML file.
+
+    Args:
+        path: Path to the YAML file. Defaults to ~/.pkm/pii_terms.yaml
+
+    Returns:
+        List of term dicts with 'value' and 'type' keys, or empty list if
+        the file doesn't exist or can't be parsed.
+    """
+    if path is None:
+        path = Path.home() / ".pkm" / "pii_terms.yaml"
+
+    if not path.exists():
+        return []
+
+    try:
+        import yaml
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+
+        if not data or not isinstance(data.get("terms"), list):
+            return []
+
+        terms = []
+        for entry in data["terms"]:
+            value = entry.get("value", "").strip()
+            type_name = entry.get("type", "CUSTOM").strip().upper()
+            if value:
+                terms.append({"value": value, "type": type_name})
+
+        logger.info(f"Loaded {len(terms)} custom PII terms from {path}")
+        return terms
+
+    except Exception as e:
+        logger.error(f"Failed to load custom PII terms from {path}: {e}")
+        return []
+
+
+def scan_custom_terms(
+    content: str, terms: list[dict], context_chars: int = 50
+) -> list[SensitiveMatch]:
+    """Match user-defined PII terms against document text.
+
+    Uses case-insensitive exact string matching. Each match gets
+    confidence=1.0 since these are user-confirmed PII values.
+
+    Args:
+        content: Document text to scan
+        terms: List of term dicts from load_custom_pii_terms()
+        context_chars: Characters of surrounding context to include
+
+    Returns:
+        List of SensitiveMatch objects for all matches found
+    """
+    if not terms:
+        return []
+
+    matches = []
+    content_lower = content.lower()
+
+    for term in terms:
+        value = term["value"]
+        type_name = term["type"]
+        dtype = _CUSTOM_TYPE_MAP.get(type_name, SensitiveDataType.CUSTOM)
+        value_lower = value.lower()
+
+        # Find all occurrences
+        start = 0
+        while True:
+            pos = content_lower.find(value_lower, start)
+            if pos == -1:
+                break
+
+            end_pos = pos + len(value)
+            ctx_start = max(0, pos - context_chars)
+            ctx_end = min(len(content), end_pos + context_chars)
+            context = content[ctx_start:ctx_end]
+
+            # Redact the value in matched_text and context
+            redacted_value = f"***{value[-4:]}" if len(value) > 4 else "***"
+
+            matches.append(SensitiveMatch(
+                data_type=dtype,
+                matched_text=redacted_value,
+                start_pos=pos,
+                end_pos=end_pos,
+                confidence=1.0,
+                context=context.replace(value, redacted_value),
+            ))
+
+            start = end_pos  # Move past this match
+
+    if matches:
+        logger.info(f"Custom PII dictionary matched {len(matches)} term(s)")
+
+    return matches
 
 
 # Convenience function for quick privacy check

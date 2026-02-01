@@ -310,18 +310,20 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
             recursive=args.recursive,
         )
 
-        print(f"\nScanned {report.files_scanned} files")
-        print(f"Found {report.duplicate_groups} duplicate groups")
-        print(f"Potential savings: {report.potential_savings_mb:.1f} MB")
+        total_dupes = report.exact_duplicates + report.near_duplicates + report.semantic_duplicates
+        print(f"\nScanned {report.total_files} files")
+        print(f"Found {total_dupes} duplicates "
+              f"(exact: {report.exact_duplicates}, near: {report.near_duplicates}, "
+              f"semantic: {report.semantic_duplicates})")
+        print(f"Potential savings: {report.space_reclaimable_bytes / (1024 * 1024):.1f} MB")
 
-        if report.duplicates:
-            print("\nDuplicate groups:")
-            for i, (original, matches) in enumerate(report.duplicates[:10], 1):
-                print(f"\n{color(f'Group {i}:', Colors.BOLD)}")
-                print(f"  Original: {Path(original).name}")
-                for match in matches[:5]:
-                    print(f"  Duplicate: {Path(match.file_path).name}")
-                    print(f"    Similarity: {match.similarity:.1%} ({match.match_type.value})")
+        if report.matches:
+            print("\nDuplicate pairs:")
+            for i, match in enumerate(report.matches[:10], 1):
+                print(f"\n{color(f'Pair {i}:', Colors.BOLD)}")
+                print(f"  File 1: {Path(match.file1).name}")
+                print(f"  File 2: {Path(match.file2).name}")
+                print(f"    Similarity: {match.similarity:.1%} ({match.match_type})")
 
         return 0
 
@@ -424,6 +426,93 @@ def cmd_tag(args: argparse.Namespace) -> int:
         return 1
 
 
+# === PII Dictionary Command ===
+
+def cmd_pii(args: argparse.Namespace) -> int:
+    """Manage custom PII dictionary."""
+    import yaml
+
+    pii_path = Path.home() / ".pkm" / "pii_terms.yaml"
+
+    if not args.pii_action:
+        print_error("Usage: pkm pii {list|add|remove}")
+        return 1
+
+    if args.pii_action == "list":
+        if not pii_path.exists():
+            print_info("No custom PII terms defined.")
+            print_info(f"File location: {pii_path}")
+            print_info("Add terms with: pkm pii add <term> --type TYPE")
+            return 0
+
+        with open(pii_path) as f:
+            data = yaml.safe_load(f) or {}
+
+        terms = data.get("terms", [])
+        if not terms:
+            print_info("No custom PII terms defined.")
+            return 0
+
+        print_header(f"Custom PII Terms ({len(terms)})")
+        for t in terms:
+            term_type = t.get("type", "CUSTOM")
+            value = t.get("value", "")
+            print(f"  [{color(term_type, Colors.CYAN)}] {value}")
+        return 0
+
+    elif args.pii_action == "add":
+        pii_path.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {"terms": []}
+        if pii_path.exists():
+            with open(pii_path) as f:
+                data = yaml.safe_load(f) or {"terms": []}
+        if not isinstance(data.get("terms"), list):
+            data["terms"] = []
+
+        # Check for duplicates
+        existing = {t.get("value", "").lower() for t in data["terms"]}
+        if args.term.lower() in existing:
+            print_warning(f"Term already exists: {args.term}")
+            return 1
+
+        data["terms"].append({"value": args.term, "type": args.type.upper()})
+        with open(pii_path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False)
+
+        print_success(f"Added PII term: [{args.type.upper()}] {args.term}")
+        print_info(f"Saved to {pii_path}")
+        return 0
+
+    elif args.pii_action == "remove":
+        if not pii_path.exists():
+            print_error("No PII terms file found.")
+            return 1
+
+        with open(pii_path) as f:
+            data = yaml.safe_load(f) or {"terms": []}
+
+        original_count = len(data.get("terms", []))
+        data["terms"] = [
+            t for t in data.get("terms", [])
+            if t.get("value", "").lower() != args.term.lower()
+        ]
+
+        if len(data["terms"]) == original_count:
+            print_warning(f"Term not found: {args.term}")
+            return 1
+
+        with open(pii_path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False)
+
+        print_success(f"Removed PII term: {args.term}")
+        return 0
+
+    else:
+        print_error("Usage: pkm pii {list|add|remove}")
+        return 1
+
+
 # === Main ===
 
 def create_parser() -> argparse.ArgumentParser:
@@ -487,6 +576,24 @@ def create_parser() -> argparse.ArgumentParser:
     tag_parser.add_argument("path", type=Path, help="File or directory to tag")
     tag_parser.add_argument("-r", "--recursive", action="store_true", default=True)
     tag_parser.set_defaults(func=cmd_tag)
+
+    # PII dictionary command
+    pii_parser = subparsers.add_parser("pii", help="Manage custom PII dictionary")
+    pii_sub = pii_parser.add_subparsers(dest="pii_action", help="PII actions")
+
+    pii_list_parser = pii_sub.add_parser("list", help="List custom PII terms")
+    pii_list_parser.set_defaults(func=cmd_pii)
+
+    pii_add_parser = pii_sub.add_parser("add", help="Add a PII term")
+    pii_add_parser.add_argument("term", help="PII term value")
+    pii_add_parser.add_argument(
+        "--type", default="CUSTOM", help="PII type (CUSTOM, SSN, EMAIL, PHONE, NAME, etc.)"
+    )
+    pii_add_parser.set_defaults(func=cmd_pii)
+
+    pii_remove_parser = pii_sub.add_parser("remove", help="Remove a PII term")
+    pii_remove_parser.add_argument("term", help="PII term to remove")
+    pii_remove_parser.set_defaults(func=cmd_pii)
 
     return parser
 

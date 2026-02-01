@@ -1,0 +1,35 @@
+folders:
+  Medical:
+  - Prescriptions
+  - Lab Results
+  - Insurance
+  Financial:
+  - Taxes
+  - Statements
+  - Receipts
+  Legal:
+  - Contracts
+  - Agreements
+  Personal:
+  - Identity
+  - Correspondence
+  - Military Records
+  - VA Records
+  Work:
+  - USAA
+  - Air Force
+  - Safe Place
+  Career Search:
+  - Resumes
+  - Applications
+  - Cover Letters
+  - Networking
+  Knowledge:
+  - Courses
+  - Certifications
+  - Hobbies
+  - Technology
+  - Research
+  - Certifications/SPHR
+  Unsorted: []
+rules: []

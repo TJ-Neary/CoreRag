@@ -151,7 +151,7 @@ class Taxonomy:
                 name="personal",
                 category="document-type",
                 keywords=["journal", "diary", "reflection", "thoughts", "personal"],
-                threshold=0.5,
+                threshold=0.6,
             ),
 
             # Topics
@@ -159,13 +159,13 @@ class Taxonomy:
                 name="python",
                 category="technology",
                 keywords=["python", "pip", "pytest", "django", "flask", "pandas", "numpy"],
-                threshold=0.3,
+                threshold=0.2,
             ),
             Tag(
                 name="javascript",
                 category="technology",
                 keywords=["javascript", "js", "node", "npm", "react", "vue", "typescript"],
-                threshold=0.3,
+                threshold=0.2,
             ),
             Tag(
                 name="machine-learning",
@@ -218,6 +218,32 @@ class Taxonomy:
                 category="content-type",
                 keywords=["reference", "cheatsheet", "quick reference", "lookup"],
                 threshold=0.4,
+            ),
+
+            # Domain-specific
+            Tag(
+                name="human-resources",
+                category="domain",
+                keywords=["hr", "human resources", "phr", "sphr", "shrm", "employee",
+                          "hiring", "onboarding", "performance review", "compensation",
+                          "benefits", "talent", "workforce", "labor"],
+                threshold=0.3,
+            ),
+            Tag(
+                name="compliance",
+                category="domain",
+                keywords=["compliance", "regulation", "policy", "osha", "eeoc",
+                          "ada", "fmla", "flsa", "hipaa", "gdpr", "audit",
+                          "labor law", "employment law"],
+                threshold=0.3,
+            ),
+            Tag(
+                name="finance",
+                category="domain",
+                keywords=["finance", "budget", "revenue", "expense", "roi",
+                          "accounting", "financial", "tax", "payroll", "invoice",
+                          "profit", "cost"],
+                threshold=0.3,
             ),
         ]
 

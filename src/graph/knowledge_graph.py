@@ -469,6 +469,34 @@ class KnowledgeGraph:
         finally:
             conn.close()
 
+    def find_related_documents(self, document_id: str, limit: int = 20) -> List[Dict]:
+        """
+        Find documents that share entities with the given document.
+
+        Returns list of dicts with document_id and shared_entities.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT e2.document_id, GROUP_CONCAT(DISTINCT e2.name)
+                FROM entities e1
+                JOIN entities e2 ON LOWER(e1.name) = LOWER(e2.name)
+                    AND e1.document_id != e2.document_id
+                WHERE e1.document_id = ?
+                GROUP BY e2.document_id
+                ORDER BY COUNT(DISTINCT e2.name) DESC
+                LIMIT ?
+            """, (document_id, limit))
+
+            return [
+                {"document_id": row[0], "shared_entities": row[1].split(",")}
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
+
     def delete_by_document(self, document_id: str):
         """Delete all entities and relationships from a document."""
         conn = sqlite3.connect(self.db_path)
