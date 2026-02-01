@@ -80,6 +80,15 @@ pytest -m "not requires_mlx"            # Skip Apple Silicon tests
 
 Pytest is configured with `--cov=src --cov-report=term-missing` and `asyncio_mode = "auto"` by default.
 
+### Data Sanitization
+
+**Read `SECURITY.md` before committing.** Key rules:
+- No real names, emails, usernames, or hardcoded `/Users/...` paths in tracked files
+- User-specific configs use the `.example` template pattern (real file gitignored)
+- Scripts use dynamic path resolution (`SCRIPT_DIR`, env vars), not hardcoded paths
+- Test fixtures use only synthetic data
+- Session logs and progress files stay gitignored
+
 ### Linting & Formatting
 ```bash
 black src/ tests/ --line-length 100
