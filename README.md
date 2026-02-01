@@ -259,5 +259,5 @@ Before full operation, complete the tasks in `SETUP_TASKS.md`:
 
 ---
 
-*AntiGravity PKM v2.0 | Created: 2026-01-31 | Owner: TJ*
+*AntiGravity PKM v2.0 | Created: 2026-01-31*
 # PKM_V1

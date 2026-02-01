@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Configuration
-PROJECT_DIR="/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$PROJECT_DIR/automation.log"
 DASHBOARD_URL="http://localhost:8000"
-INBOX_DIR="/Users/tjneary/Desktop/Inbox"
+INBOX_DIR="${INBOX_PATH:-$HOME/Desktop/Inbox}"
 
 cd "$PROJECT_DIR" || exit 1
 

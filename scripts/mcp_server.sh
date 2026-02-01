@@ -1,3 +1,5 @@
 #!/bin/bash
-cd "/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1"
-exec "/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1/venv/bin/python" -m src.mcp_server.server
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
+exec "$PROJECT_DIR/venv/bin/python" -m src.mcp_server.server

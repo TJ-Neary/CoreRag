@@ -257,7 +257,7 @@ The exported markdown files contain YAML frontmatter:
 ```yaml
 ---
 source_file: meeting_notes.pdf
-source_path: /Users/tjneary/Documents/PKM/Processed/2026-02-01_meeting_notes.pdf
+source_path: /Users/yourname/Documents/PKM/Processed/2026-02-01_meeting_notes.pdf
 ingested_at: 2026-02-01T14:30:00
 type: pkm_import
 tags:

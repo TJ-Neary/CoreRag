@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Copy to com.user.pkm.plist and replace /path/to/PKM_v1 with your actual project path -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.user.pkm.automation</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1/scripts/run_system.sh</string>
+        <string>/path/to/PKM_v1/scripts/run_system.sh</string>
     </array>
     <key>WatchPaths</key>
     <array>
-        <string>/Users/tjneary/Desktop/Inbox</string>
+        <string>/Users/YOURNAME/Desktop/Inbox</string>
     </array>
     <key>StandardOutPath</key>
-    <string>/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1/launchd.log</string>
+    <string>/path/to/PKM_v1/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1/launchd_error.log</string>
+    <string>/path/to/PKM_v1/launchd_error.log</string>
 </dict>
 </plist>

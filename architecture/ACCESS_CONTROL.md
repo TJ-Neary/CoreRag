@@ -22,7 +22,7 @@ While the PKM system is primarily single-user, this document outlines access con
 │                                         │
 │   ┌─────────┐      ┌─────────────────┐  │
 │   │  User   │──────│   PKM System    │  │
-│   │  (TJ)   │      │   (Full Access) │  │
+│   │ (Owner) │      │   (Full Access) │  │
 │   └─────────┘      └─────────────────┘  │
 │                                         │
 └─────────────────────────────────────────┘

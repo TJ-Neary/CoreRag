@@ -1,5 +1,6 @@
 #!/bin/bash
-PROJECT_DIR="/Users/tjneary/Documents/60_Tech_Projects/AI Projects/PKM_v1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PLIST_NAME="com.user.pkm.plist"
 SOURCE="$PROJECT_DIR/scripts/$PLIST_NAME"
 DEST="$HOME/Library/LaunchAgents/$PLIST_NAME"

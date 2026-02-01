@@ -9,9 +9,7 @@ description = "Personal Knowledge Management System with RAG"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-authors = [
-    {name = "TJ", email = "tjneary1@gmail.com"}
-]
+authors = []
 keywords = ["knowledge-management", "rag", "mcp", "embeddings", "lancedb"]
 classifiers = [
     "Development Status :: 3 - Alpha",

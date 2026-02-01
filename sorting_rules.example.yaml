@@ -1,3 +1,7 @@
+# sorting_rules.example.yaml
+# Copy to sorting_rules.yaml and customize with your own folder structure.
+# This file defines the document categories and subfolders for the ingestion pipeline.
+
 folders:
   Medical:
   - Prescriptions
@@ -13,23 +17,15 @@ folders:
   Personal:
   - Identity
   - Correspondence
-  - Military Records
-  - VA Records
   Work:
-  - USAA
-  - Air Force
-  - Safe Place
+  - Employer1
+  - Employer2
   Career Search:
   - Resumes
   - Applications
-  - Cover Letters
-  - Networking
   Knowledge:
   - Courses
   - Certifications
-  - Hobbies
-  - Technology
   - Research
-  - Certifications/SPHR
   Unsorted: []
 rules: []
