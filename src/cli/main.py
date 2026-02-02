@@ -522,6 +522,337 @@ def cmd_pii(args: argparse.Namespace) -> int:
         return 1
 
 
+# === Health Command ===
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Run system health checks."""
+    try:
+        from src.utils.health import HealthChecker
+
+        print_header("CoreRag Health Check")
+
+        checker = HealthChecker()
+        status = checker.run_all_checks()
+
+        status_colors = {
+            "healthy": Colors.GREEN,
+            "degraded": Colors.YELLOW,
+            "unhealthy": Colors.RED,
+            "unknown": Colors.DIM,
+        }
+
+        overall = status.status.value.lower()
+        print(f"\nOverall: {color(overall.upper(), status_colors.get(overall, Colors.DIM))}")
+        print(f"Uptime: {status.uptime_seconds:.0f}s")
+
+        for check in status.checks:
+            c = status_colors.get(check.status.value.lower(), Colors.DIM)
+            print(f"\n  {color(check.name, Colors.BOLD)}: {color(check.status.value, c)}")
+            print(f"    {check.message}")
+            if check.latency_ms > 0:
+                print(f"    Latency: {check.latency_ms:.0f}ms")
+            if args.verbose and check.details:
+                for k, v in check.details.items():
+                    print(f"    {k}: {v}")
+
+        return 0
+
+    except Exception as e:
+        print_error(f"Health check failed: {e}")
+        logger.exception("Health check error")
+        return 1
+
+
+# === Optimize Database Command ===
+
+def cmd_optimize_db(args: argparse.Namespace) -> int:
+    """Optimize LanceDB database."""
+    try:
+        from src.maintenance.db_optimizer import LanceDBOptimizer
+
+        print_header("Database Optimization")
+
+        optimizer = LanceDBOptimizer()
+
+        if args.report_only:
+            report = optimizer.get_health_report()
+            print(f"\nDatabase: {report.db_path}")
+            print(f"Total size: {report.total_size_mb:.1f} MB")
+            print(f"Fragmentation: {report.fragmentation_estimate:.0%}")
+
+            if report.tables:
+                print(f"\nTables:")
+                for t in report.tables:
+                    print(f"  {color(t['name'], Colors.BOLD)}: "
+                          f"{t['rows']} rows, {t['size_mb']:.1f} MB")
+
+            if report.recommendations:
+                print(f"\nRecommendations:")
+                for rec in report.recommendations:
+                    print(f"  - {rec}")
+            return 0
+
+        print_info("Running optimization (this may create a backup first)...")
+        results = optimizer.optimize_all()
+
+        for r in results:
+            if r.success:
+                print_success(
+                    f"{r.table_name}: {r.original_size_mb:.1f} MB -> "
+                    f"{r.optimized_size_mb:.1f} MB "
+                    f"(saved {r.space_saved_mb:.1f} MB in {r.duration_seconds:.1f}s)"
+                )
+            else:
+                print_error(f"{r.table_name}: {r.error}")
+
+        total_saved = sum(r.space_saved_mb for r in results if r.success)
+        if total_saved > 0:
+            print(f"\nTotal space saved: {total_saved:.1f} MB")
+
+        return 0
+
+    except Exception as e:
+        print_error(f"Optimization failed: {e}")
+        logger.exception("Optimization error")
+        return 1
+
+
+# === Backup Command ===
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    """Manage backups."""
+    try:
+        from src.config import STATE_DIR
+        from src.utils.backup import BackupManager
+
+        manager = BackupManager(data_dir=STATE_DIR)
+
+        if args.backup_action == "create":
+            print_header("Creating Backup")
+            info = manager.create_backup(
+                backup_name=args.name,
+                backup_type=args.type,
+            )
+            print_success(f"Backup created: {info.name}")
+            print(f"  Size: {info.size_bytes / (1024 * 1024):.1f} MB")
+            print(f"  Path: {info.path}")
+            return 0
+
+        elif args.backup_action == "list":
+            backups = manager.list_backups()
+            if not backups:
+                print_info("No backups found.")
+                return 0
+
+            print_header(f"Backups ({len(backups)})")
+            for b in backups:
+                size_mb = b.size_bytes / (1024 * 1024)
+                print(f"\n  {color(b.name, Colors.BOLD)}")
+                print(f"    Type: {b.backup_type} | Size: {size_mb:.1f} MB")
+                print(f"    Created: {b.timestamp}")
+            return 0
+
+        elif args.backup_action == "restore":
+            if not args.name:
+                print_error("Backup name required: corerag backup restore <name>")
+                return 1
+
+            print_header(f"Restoring Backup: {args.name}")
+            print_warning("This will overwrite current data!")
+
+            success = manager.restore_backup(args.name)
+            if success:
+                print_success("Backup restored successfully.")
+            else:
+                print_error("Restore failed.")
+            return 0 if success else 1
+
+        elif args.backup_action == "cleanup":
+            removed = manager.cleanup_old_backups(keep_count=args.keep)
+            print_success(f"Removed {removed} old backup(s).")
+            return 0
+
+        else:
+            print_error("Usage: corerag backup {create|list|restore|cleanup}")
+            return 1
+
+    except Exception as e:
+        print_error(f"Backup operation failed: {e}")
+        logger.exception("Backup error")
+        return 1
+
+
+# === Knowledge Graph Command ===
+
+def cmd_graph(args: argparse.Namespace) -> int:
+    """Query the knowledge graph."""
+    try:
+        from src.config import DB_PATH
+        from src.graph.knowledge_graph import KnowledgeGraph
+
+        graph_db_path = DB_PATH.parent / "knowledge_graph.db"
+        if not graph_db_path.exists():
+            print_warning("Knowledge graph not initialized. Ingest documents first.")
+            return 1
+
+        graph = KnowledgeGraph(graph_db_path)
+
+        if args.graph_action == "stats":
+            stats = graph.get_stats()
+            print_header("Knowledge Graph Statistics")
+            print(f"\n  Entities: {stats['total_entities']}")
+            print(f"  Relationships: {stats['total_relationships']}")
+
+            if stats.get("entity_types"):
+                print(f"\n  Entity types:")
+                for etype, count in sorted(
+                    stats["entity_types"].items(), key=lambda x: x[1], reverse=True
+                ):
+                    print(f"    {etype}: {count}")
+
+            if stats.get("relationship_types"):
+                print(f"\n  Relationship types:")
+                for rtype, count in sorted(
+                    stats["relationship_types"].items(), key=lambda x: x[1], reverse=True
+                )[:15]:
+                    print(f"    {rtype}: {count}")
+            return 0
+
+        elif args.graph_action == "query":
+            if not args.entity:
+                print_error("Entity name required: corerag graph query <entity>")
+                return 1
+
+            print_header(f"Graph: {args.entity}")
+            neighbors = graph.get_neighbors(args.entity)
+
+            if not neighbors:
+                print_warning(f"No connections found for '{args.entity}'.")
+                return 0
+
+            print(f"\nFound {len(neighbors)} connection(s):\n")
+            for n in neighbors[:20]:
+                direction = n.get("direction", "")
+                rel = n.get("relationship", "")
+                entity = n.get("entity", "")
+                arrow = "->" if direction == "outgoing" else "<-"
+                print(f"  {args.entity} {arrow} [{rel}] {arrow} {entity}")
+
+            if len(neighbors) > 20:
+                print(f"\n  ... and {len(neighbors) - 20} more")
+            return 0
+
+        elif args.graph_action == "path":
+            if not args.entity or not args.target:
+                print_error("Usage: corerag graph path <start> <end>")
+                return 1
+
+            path = graph.find_path(args.entity, args.target, max_hops=args.hops)
+            if path is None:
+                print_warning(f"No path found between '{args.entity}' and '{args.target}' "
+                              f"(max {args.hops} hops).")
+                return 0
+
+            print_header(f"Path: {args.entity} -> {args.target}")
+            for triple in path:
+                print(f"  {triple.subject} --[{triple.predicate}]--> {triple.object}")
+            return 0
+
+        else:
+            print_error("Usage: corerag graph {stats|query|path}")
+            return 1
+
+    except Exception as e:
+        print_error(f"Graph query failed: {e}")
+        logger.exception("Graph error")
+        return 1
+
+
+# === Memory Command ===
+
+def cmd_memory(args: argparse.Namespace) -> int:
+    """Manage episodic memory (user facts)."""
+    try:
+        from src.config import STATE_DIR
+        from src.memory.episodic_memory import EpisodicMemoryManager
+
+        manager = EpisodicMemoryManager(storage_path=STATE_DIR / "memory")
+        user_id = args.user or "default"
+
+        if args.memory_action == "list":
+            profile = manager.load_or_create(user_id)
+
+            if not profile.facts:
+                print_info(f"No facts stored for user '{user_id}'.")
+                return 0
+
+            print_header(f"User Facts: {user_id} ({len(profile.facts)} facts)")
+            for i, fact in enumerate(profile.facts, 1):
+                cat = fact.category.value if hasattr(fact.category, "value") else str(fact.category)
+                print(f"\n  {color(f'[{i}]', Colors.BOLD)} [{cat}] {fact.content}")
+                print(f"      Confidence: {fact.confidence:.0%} | Source: {fact.source}")
+                print(f"      Created: {fact.created_at}")
+                if fact.expires_at:
+                    print(f"      Expires: {fact.expires_at}")
+            return 0
+
+        elif args.memory_action == "add":
+            if not args.fact:
+                print_error("Fact content required: corerag memory add \"fact text\"")
+                return 1
+
+            from src.memory.episodic_memory import UserFact, FactCategory
+
+            profile = manager.load_or_create(user_id)
+
+            # Map category string to enum
+            cat_map = {c.value.lower(): c for c in FactCategory}
+            category = cat_map.get(args.category.lower(), FactCategory.PERSONAL)
+
+            fact = UserFact(
+                content=args.fact,
+                category=category,
+                confidence=1.0,
+                source="cli",
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat(),
+                expires_at=None,
+                context=None,
+            )
+            manager.add_fact(profile, fact)
+            manager.save(profile)
+
+            print_success(f"Added fact for '{user_id}': {args.fact}")
+            return 0
+
+        elif args.memory_action == "context":
+            profile = manager.load_or_create(user_id)
+            context = manager.get_context_injection(profile)
+
+            if not context.strip():
+                print_info(f"No context available for user '{user_id}'.")
+                return 0
+
+            print_header(f"Context Injection: {user_id}")
+            print(context)
+            return 0
+
+        elif args.memory_action == "export":
+            profile = manager.load_or_create(user_id)
+            output = manager.get_as_json(profile)
+            print(output)
+            return 0
+
+        else:
+            print_error("Usage: corerag memory {list|add|context|export}")
+            return 1
+
+    except Exception as e:
+        print_error(f"Memory operation failed: {e}")
+        logger.exception("Memory error")
+        return 1
+
+
 # === Main ===
 
 def create_parser() -> argparse.ArgumentParser:
@@ -607,6 +938,76 @@ def create_parser() -> argparse.ArgumentParser:
     pii_remove_parser = pii_sub.add_parser("remove", help="Remove a PII term")
     pii_remove_parser.add_argument("term", help="PII term to remove")
     pii_remove_parser.set_defaults(func=cmd_pii)
+
+    # Health check command
+    health_parser = subparsers.add_parser("health", help="Run system health checks")
+    health_parser.set_defaults(func=cmd_health)
+
+    # Optimize database command
+    optdb_parser = subparsers.add_parser("optimize-db", help="Optimize LanceDB database")
+    optdb_parser.add_argument(
+        "--report-only", action="store_true", help="Show health report without optimizing"
+    )
+    optdb_parser.set_defaults(func=cmd_optimize_db)
+
+    # Backup command
+    backup_parser = subparsers.add_parser("backup", help="Manage backups")
+    backup_sub = backup_parser.add_subparsers(dest="backup_action", help="Backup actions")
+
+    backup_create = backup_sub.add_parser("create", help="Create a backup")
+    backup_create.add_argument("--name", help="Backup name (auto-generated if omitted)")
+    backup_create.add_argument("--type", default="full", help="Backup type (full, incremental)")
+    backup_create.set_defaults(func=cmd_backup)
+
+    backup_list = backup_sub.add_parser("list", help="List backups")
+    backup_list.set_defaults(func=cmd_backup)
+
+    backup_restore = backup_sub.add_parser("restore", help="Restore from backup")
+    backup_restore.add_argument("name", help="Backup name to restore")
+    backup_restore.set_defaults(func=cmd_backup)
+
+    backup_cleanup = backup_sub.add_parser("cleanup", help="Remove old backups")
+    backup_cleanup.add_argument("--keep", type=int, default=5, help="Number of backups to keep")
+    backup_cleanup.set_defaults(func=cmd_backup)
+
+    # Knowledge graph command
+    graph_parser = subparsers.add_parser("graph", help="Query the knowledge graph")
+    graph_sub = graph_parser.add_subparsers(dest="graph_action", help="Graph actions")
+
+    graph_stats = graph_sub.add_parser("stats", help="Show graph statistics")
+    graph_stats.set_defaults(func=cmd_graph)
+
+    graph_query = graph_sub.add_parser("query", help="Find entity connections")
+    graph_query.add_argument("entity", help="Entity name to look up")
+    graph_query.set_defaults(func=cmd_graph)
+
+    graph_path = graph_sub.add_parser("path", help="Find path between entities")
+    graph_path.add_argument("entity", help="Start entity")
+    graph_path.add_argument("target", help="End entity")
+    graph_path.add_argument("--hops", type=int, default=3, help="Max hops (default: 3)")
+    graph_path.set_defaults(func=cmd_graph)
+
+    # Episodic memory command
+    mem_parser = subparsers.add_parser("memory", help="Manage episodic memory (user facts)")
+    mem_parser.add_argument("--user", default="default", help="User ID (default: 'default')")
+    mem_sub = mem_parser.add_subparsers(dest="memory_action", help="Memory actions")
+
+    mem_list = mem_sub.add_parser("list", help="List stored facts")
+    mem_list.set_defaults(func=cmd_memory)
+
+    mem_add = mem_sub.add_parser("add", help="Add a fact")
+    mem_add.add_argument("fact", help="Fact content")
+    mem_add.add_argument(
+        "--category", default="personal",
+        help="Fact category (personal, preference, life_event, project, work, health, financial)",
+    )
+    mem_add.set_defaults(func=cmd_memory)
+
+    mem_context = mem_sub.add_parser("context", help="Show context injection text")
+    mem_context.set_defaults(func=cmd_memory)
+
+    mem_export = mem_sub.add_parser("export", help="Export profile as JSON")
+    mem_export.set_defaults(func=cmd_memory)
 
     return parser
 

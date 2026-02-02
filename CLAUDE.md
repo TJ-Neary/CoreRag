@@ -42,6 +42,13 @@ python -m src.cli.main tag /path
 python -m src.cli.main pii list              # Manage custom PII dictionary
 python -m src.cli.main pii add "John" --type NAME
 python -m src.cli.main pii remove "John"
+python -m src.cli.main health                # System health checks
+python -m src.cli.main optimize-db           # Optimize LanceDB (--report-only for stats)
+python -m src.cli.main backup create         # Create backup (also: list, restore, cleanup)
+python -m src.cli.main graph stats           # Knowledge graph stats
+python -m src.cli.main graph query "entity"  # Find entity connections
+python -m src.cli.main graph path "A" "B"    # Find path between entities
+python -m src.cli.main memory list           # List user facts (also: add, context, export)
 ```
 
 ### Core Memory API (v1) — For External AI Systems
@@ -188,10 +195,10 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
 | `src/memory/` | Episodic memory for user context / search patterns | **Wired** (get_user_context, add_user_fact MCP tools) |
 | `src/maintenance/` | LanceDB optimizer, health reports, maintenance scheduler | **Wired** (MCP tools) |
-| `src/ocr/` | macOS Vision.framework text extraction | Unwired |
-| `src/audio/` | mlx-whisper transcription + topic segmentation | Unwired |
-| `src/video/` | OpenCV keyframe + scene detection | Unwired |
-| `src/multimodal/` | VLM image captioning (LLaVA) | Unwired |
+| `src/ocr/` | macOS Vision.framework text extraction | **Wired** (via extractor fallback) |
+| `src/audio/` | mlx-whisper transcription + topic segmentation | **Wired** (via extractor) |
+| `src/video/` | OpenCV keyframe + scene detection | **Wired** (via extractor) |
+| `src/multimodal/` | VLM image captioning (LLaVA) | **Wired** (via extractor) |
 | `src/menubar/` | macOS menu bar app (rumps) — CR icon, dashboard launcher, status polling | **Wired** |
 | `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | Partially wired |
 
@@ -273,8 +280,8 @@ The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB conn
 
 ## File Type Support
 
-**Currently working**: PDF, DOCX, TXT, Markdown, JSON, YAML, CSV, log files.
-**Planned (not yet wired)**: XLSX/XLS, Python/JS/TS/Go/Rust (AST chunking), MP3/WAV/M4A (mlx-whisper), MP4/MOV (keyframe + scene detection), PNG/JPG/WebP (Vision.framework OCR).
+**Currently working**: PDF (with OCR fallback for scanned docs), DOCX, TXT, Markdown, JSON, YAML, CSV, log files, PNG/JPG/WebP/HEIC (Vision.framework OCR + VLM captioning), MP3/WAV/M4A (mlx-whisper transcription), MP4/MOV (keyframe + scene detection + audio extraction).
+**Planned (not yet wired)**: XLSX/XLS, Python/JS/TS/Go/Rust (AST chunking).
 
 ## Wiring Plan
 
@@ -285,18 +292,18 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
 | 1 | Fix MCP Server (stdio transport, FastMCP) | **Complete** |
 | — | PII Redesign (three-layer detection, custom dictionary, manual override) | **Complete** |
 | 2 | Wire Search Stack (HyDE, multi-query, decay scoring) | **Complete** |
-| 3 | Wire OCR into ingestion | Pending |
+| 3 | Wire OCR into ingestion | **Complete** (extractor.py handles images, scanned PDFs, audio, video) |
 | 4 | Wire auto-tagging | **Complete** (processor.py calls AutoTagger) |
 | 5 | Wire knowledge graph | **Complete** (entity extraction in executor, search_by_entity MCP tool) |
 | 6 | Wire episodic memory | **Complete** (get_user_context, add_user_fact MCP tools) |
 | 7 | Wire quality modules | **Complete** (freshness, link checker, conflict detector, duplicate detector) |
-| 8 | Wire utility modules | Pending |
+| 8 | Wire utility modules | **In Progress** (SafeProcessor, QueueManager wired; checkpoint, incremental, health, feedback pending) |
 | 9 | Wire analytics & queue | **Complete** (QueryAnalytics, SemanticCache, SessionTracker initialized) |
-| 10 | Wire multimodal | Pending |
-| 11 | Config cleanup & dead code removal | Pending |
-| 12 | CLI integration | Pending |
+| 10 | Wire multimodal | **Complete** (OCR, VLM, Whisper, video all wired in extractor.py) |
+| 11 | Config cleanup & dead code removal | **In Progress** (centralized constants done, ~30 files with hardcoded paths remain) |
+| 12 | CLI integration | **Complete** (13 commands: search, ingest, status, check-links, duplicates, stale, tag, pii, health, optimize-db, backup, graph, memory) |
 
 ### Remaining Wiring Work
 
-Phases 3 (OCR), 8 (utility modules), 10 (multimodal), 11 (config cleanup), 12 (CLI integration) are pending.
+Phases 8 (utility modules) and 11 (config cleanup) have remaining work.
 - `HybridSearcher.search(query, query_vector, k, filters)` is async

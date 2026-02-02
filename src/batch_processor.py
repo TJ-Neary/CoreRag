@@ -7,7 +7,7 @@ from typing import Optional
 
 import psutil
 
-from src.config import INBOX_PATH
+from src.config import INBOX_PATH, STATE_DIR
 from src.processor import process_document
 from src.utils.queue_manager import QueueManager, Priority
 
@@ -38,7 +38,7 @@ class BatchProcessor:
 
         # QueueManager for persistent job tracking and retry support
         self._queue_manager = QueueManager(
-            state_dir=Path.home() / ".corerag" / "queue",
+            state_dir=STATE_DIR / "queue",
             rate_limit=5.0,
             burst_limit=10,
         )
