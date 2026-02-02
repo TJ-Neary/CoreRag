@@ -1,4 +1,4 @@
-# AntiGravity PKM - Personal Knowledge Management Reasoning Engine
+# CoreRag - Personal Knowledge Management Reasoning Engine
 
 A local-first, privacy-preserving knowledge management system that enables semantic search across all your documents via Claude Desktop's MCP protocol. Optimized for Apple Silicon (M4 Max, 48GB RAM).
 
@@ -10,18 +10,18 @@ All core features implemented. Ready for user setup and testing.
 
 ```bash
 # 1. Create Python environment
-python3 -m venv ~/.pkm/venv
-source ~/.pkm/venv/bin/activate
+python3 -m venv ~/.corerag/venv
+source ~/.corerag/venv/bin/activate
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Setup PKM folders
+# 3. Setup CoreRag folders
 python scripts/setup_folders.py
 
 # 4. Ingest documents (Inbox workflow)
-export PKM_INBOX_DIR=~/Documents/PKM/Inbox
-python -m src.cli.main ingest ~/Documents/PKM/Inbox -r
+export CORERAG_INBOX_DIR=~/Documents/CoreRag/Inbox
+python -m src.cli.main ingest ~/Documents/CoreRag/Inbox -r
 
 # 5. Search
 python -m src.cli.main search "your query"
@@ -35,9 +35,9 @@ python -m src.cli.main search "your query"
 - **Obsidian Integration**: Auto-exports ingested content to your vault with backlinks
 
 ### 📥 Inbox Workflow
-- **Drop & Forget**: Place files in `~/Documents/PKM/Inbox`
+- **Drop & Forget**: Place files in `~/Documents/CoreRag/Inbox`
 - **Auto-Processing**: System chunks, embeds, and indexes content
-- **Smart Filing**: Original moves to `Processed/`, markdown copy goes to `Obsidian/PKM Imports`
+- **Smart Filing**: Original moves to `Processed/`, markdown copy goes to `Obsidian/CoreRag Imports`
 
 ### 📄 Multi-Format Processing
 - **Documents**: PDF, DOCX, TXT, Markdown
@@ -62,21 +62,21 @@ python -m src.cli.main search "your query"
 
 ### 🔧 Advanced Features
 - **GraphRAG**: Entity-based knowledge graph for relationship queries
-- **Episodic Memory**: Track search history and patterns
+- **Episodic Memory**: *(Handed off to external AI assistant)*
 - **Parent-Child Chunking**: Context-preserving chunk hierarchy
 - **Zombie Reconciliation**: Detect orphaned entries from deleted files
 
 ## Project Structure
 
 ```
-AntiGravity_PKM/
+CoreRag/
 ├── README.md                 # This file
 ├── AGENT_INSTRUCTIONS.md     # AI agent instructions
 ├── SETUP_TASKS.md            # User setup checklist
 ├── PRD.md                    # Product requirements
 ├── CONVENTIONS.md            # Coding standards
 ├── requirements.txt          # Python dependencies
-├── .pkmignore                # Files to exclude from indexing
+├── .coreragignore                # Files to exclude from indexing
 │
 ├── architecture/             # Design documents
 │   ├── data_schema.md        # Data structures
@@ -134,7 +134,7 @@ AntiGravity_PKM/
 │   ├── graph/                # Knowledge graph
 │   │   └── knowledge_graph.py
 │   │
-│   ├── memory/               # Episodic memory
+│   ├── memory/               # Episodic memory (deprecated — handed off)
 │   │   └── episodic_memory.py
 │   │
 │   ├── cli/                  # Command-line interface
@@ -147,7 +147,7 @@ AntiGravity_PKM/
 │       ├── safe_processor.py   # Memory management
 │       ├── hardware_monitor.py
 │       ├── privacy_audit.py    # PII detection
-│       ├── pkmignore.py        # File exclusion
+│       ├── coreragignore.py        # File exclusion
 │       ├── checkpoint.py       # State recovery
 │       └── ...
 │
@@ -208,10 +208,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "pkm": {
+    "corerag": {
       "command": "python",
       "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/AntiGravity_PKM"
+      "cwd": "/path/to/CoreRag"
     }
   }
 }
@@ -222,10 +222,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Create `.env` in project root:
 
 ```bash
-PKM_DB_PATH=~/.pkm/lancedb
-PKM_LOG_LEVEL=INFO
-PKM_MEMORY_THRESHOLD=75
-PKM_BATCH_SIZE=32
+CORERAG_DB_PATH=~/.corerag/lancedb
+CORERAG_LOG_LEVEL=INFO
+CORERAG_MEMORY_THRESHOLD=75
+CORERAG_BATCH_SIZE=32
 ```
 
 ## User Setup Required
@@ -259,5 +259,5 @@ Before full operation, complete the tasks in `SETUP_TASKS.md`:
 
 ---
 
-*AntiGravity PKM v2.0 | Created: 2026-01-31*
-# PKM_V1
+*CoreRag v2.0 | Created: 2026-01-31*
+# CoreRag

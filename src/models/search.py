@@ -1,4 +1,4 @@
-"""Search result models for PKM System."""
+"""Search result models for CoreRag."""
 
 from dataclasses import dataclass, field
 from typing import List, Optional

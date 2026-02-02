@@ -1,15 +1,17 @@
 # Phase 6: Episodic Memory Implementation
 
-> **Status**: Planning  
-> **Created**: 2026-02-01  
-> **Priority**: High  
+> **Status**: **Handed off to external AI assistant**
+> **Created**: 2026-02-01
+> **Priority**: N/A (owned by external project)
 > **Dependencies**: Core ingestion pipeline (complete), MCP server (complete)
+
+> **Note (2026-02-01):** Episodic memory, user context, and session tracking responsibilities have been transferred to an external AI assistant project. That project's memory manager is now the single source of truth for user facts, preferences, and interaction history. CoreRag's `EpisodicMemoryManager` and `get_user_context` MCP tool are deprecated. This document is preserved for historical reference.
 
 ---
 
 ## Overview
 
-Phase 6 introduces episodic memory to AntiGravity PKM, enabling the system to learn from user corrections and maintain context continuity across MCP sessions. This transforms the system from a stateless tool into a collaborative assistant that improves over time.
+Phase 6 introduces episodic memory to CoreRag, enabling the system to learn from user corrections and maintain context continuity across MCP sessions. This transforms the system from a stateless tool into a collaborative assistant that improves over time.
 
 ### Core Objectives
 
@@ -341,7 +343,7 @@ def finalize_session(session_id: str):
         return
     
     # Generate summary with LLM
-    summary_prompt = f"""Summarize this PKM session in 2-3 sentences:
+    summary_prompt = f"""Summarize this CoreRag session in 2-3 sentences:
 
 Events:
 {format_events_for_summary(events)}
@@ -415,7 +417,7 @@ def infer_current_focus() -> str:
         all_topics.extend(s.get('topics', []))
     
     if not all_topics:
-        return "General PKM management"
+        return "General CoreRag management"
     
     # Return most frequent topic
     from collections import Counter
@@ -524,7 +526,7 @@ def infer_preferences() -> dict:
 ### Recommended: Single SQLite Database
 
 ```
-~/.pkm/episodic.db
+~/.corerag/episodic.db
 ├── corrections        # Correction events
 ├── session_events     # Raw session activity  
 ├── session_summaries  # LLM-generated summaries

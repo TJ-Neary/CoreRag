@@ -1,4 +1,4 @@
-"""Tests for MCP PKMTools class."""
+"""Tests for MCP CoreRagTools class."""
 
 import os
 import sys
@@ -15,7 +15,7 @@ os.environ.setdefault("VAULT_PATH", "/dummy/vault")
 os.environ.setdefault("ARCHIVE_PATH", "/dummy/archive")
 os.environ.setdefault("GOOGLE_API_KEY", "dummy_key")
 
-from src.mcp_server.tools import PKMTools
+from src.mcp_server.tools import CoreRagTools
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def mock_db():
 @pytest.fixture
 def tools(mock_retriever, mock_embedder, mock_db):
     with tempfile.TemporaryDirectory() as td:
-        yield PKMTools(
+        yield CoreRagTools(
             retriever=mock_retriever,
             embedder=mock_embedder,
             db=mock_db,

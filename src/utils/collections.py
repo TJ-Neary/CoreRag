@@ -1,5 +1,5 @@
 """
-Collections and organization for PKM.
+Collections and organization for CoreRag.
 
 Enable grouping documents into user-defined collections.
 """
@@ -49,7 +49,7 @@ class CollectionManager:
         Args:
             state_dir: Directory for collection storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "collections"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "collections"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._collections: Dict[str, Collection] = {}

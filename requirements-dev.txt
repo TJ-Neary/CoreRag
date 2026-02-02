@@ -1,4 +1,4 @@
-# Development dependencies for PKM System
+# Development dependencies for CoreRag
 # Install with: pip install -r requirements-dev.txt
 
 # =============================================================================

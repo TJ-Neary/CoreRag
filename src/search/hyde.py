@@ -1,5 +1,5 @@
 """
-HyDE (Hypothetical Document Embedding) implementation for PKM.
+HyDE (Hypothetical Document Embedding) implementation for CoreRag.
 
 Bridges the vocabulary gap between user queries and document content
 by generating a hypothetical answer before embedding.

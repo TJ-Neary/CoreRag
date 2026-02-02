@@ -1,5 +1,5 @@
 """
-Conflict Detection for PKM.
+Conflict Detection for CoreRag.
 
 Detect contradictions and inconsistencies across documents:
 - Semantic contradiction detection
@@ -268,7 +268,7 @@ class ConflictDetector:
             state_dir: Directory for state persistence
         """
         self.embedder = embedder
-        self.state_dir = state_dir or Path.home() / ".pkm" / "conflicts"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "conflicts"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.semantic_detector = (

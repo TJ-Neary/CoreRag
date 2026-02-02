@@ -1,5 +1,5 @@
 """
-Tagging workflow for PKM.
+Tagging workflow for CoreRag.
 
 Manage document tags with both manual and AI-powered tagging.
 """
@@ -56,7 +56,7 @@ class TagManager:
         Args:
             state_dir: Directory for tag storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "tags"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "tags"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._tags: Dict[str, Tag] = {}

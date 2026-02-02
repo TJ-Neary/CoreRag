@@ -1,4 +1,4 @@
-# Release Pipeline for PKM System
+# Release Pipeline for CoreRag
 # Triggered on version tags (v*.*.*)
 
 name: Release

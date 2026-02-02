@@ -1,5 +1,5 @@
 """
-Hardware monitoring for PKM System.
+Hardware monitoring for CoreRag.
 
 Monitors CPU, memory, and temperature to ensure safe operation
 on Apple Silicon M4 Max.

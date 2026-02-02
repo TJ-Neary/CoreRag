@@ -1,0 +1,11 @@
+# .security_terms — Private terms to scan for before committing
+# Copy to .security_terms and add your real terms (gitignored).
+#
+# One term per line. Case-insensitive matching.
+# Lines starting with # are comments.
+#
+# Examples of what to add:
+# YourEmployerName
+# YourPrivateProjectName
+# YourRealName
+# your.email@company.com

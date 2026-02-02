@@ -1,5 +1,5 @@
 """
-Search history and saved queries for PKM.
+Search history and saved queries for CoreRag.
 
 Track past searches and enable query bookmarking.
 """
@@ -60,7 +60,7 @@ class SearchHistory:
         Args:
             state_dir: Directory for history storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "search"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "search"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._history: List[SearchEntry] = []

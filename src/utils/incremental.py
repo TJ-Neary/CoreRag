@@ -1,5 +1,5 @@
 """
-Incremental update detection for PKM.
+Incremental update detection for CoreRag.
 
 Tracks file modifications to avoid reprocessing unchanged content.
 """
@@ -101,7 +101,7 @@ class IncrementalTracker:
             state_dir: Directory to store tracking state
             use_content_hash: Whether to compute content hashes (slower but thorough)
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "state"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "state"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_content_hash = use_content_hash

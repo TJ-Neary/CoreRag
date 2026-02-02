@@ -433,7 +433,7 @@ class SafeProcessor:
             "Reducing batch sizes."
         )
         self._send_notification(
-            "PKM System Warning",
+            "CoreRag Warning",
             f"Memory at {status.memory_used_gb:.1f}GB - reducing load",
         )
 
@@ -444,7 +444,7 @@ class SafeProcessor:
             "Pausing new work."
         )
         self._send_notification(
-            "PKM System Critical",
+            "CoreRag Critical",
             "High resource usage - processing paused",
         )
 
@@ -456,7 +456,7 @@ class SafeProcessor:
         )
         self.memory.cleanup(force=True)
         self._send_notification(
-            "PKM System EMERGENCY",
+            "CoreRag EMERGENCY",
             "Critical resource usage - stopping all work",
         )
 

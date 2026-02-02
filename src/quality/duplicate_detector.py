@@ -1,5 +1,5 @@
 """
-Duplicate Detection for PKM.
+Duplicate Detection for CoreRag.
 
 Identifies near-duplicate and exact-duplicate documents to:
 - Prevent index bloat
@@ -183,7 +183,7 @@ class DuplicateDetector:
             state_dir: Directory for state persistence
         """
         self.embedding_service = embedding_service
-        self.state_dir = state_dir or Path.home() / ".pkm" / "duplicates"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "duplicates"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._hasher = ContentHasher()

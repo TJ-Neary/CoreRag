@@ -1,5 +1,5 @@
 """
-Logging and debugging configuration for PKM.
+Logging and debugging configuration for CoreRag.
 
 Provides structured logging with multiple outputs and debug tools.
 """
@@ -88,10 +88,10 @@ def setup_logging(
     Returns:
         Root logger
     """
-    log_dir = log_dir or Path.home() / ".pkm" / "logs"
+    log_dir = log_dir or Path.home() / ".corerag" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    root_logger = logging.getLogger("pkm")
+    root_logger = logging.getLogger("corerag")
     root_logger.setLevel(getattr(logging, level.upper()))
 
     # Clear existing handlers
@@ -118,7 +118,7 @@ def setup_logging(
 
     # File handler for human-readable logs
     file_handler = logging.handlers.RotatingFileHandler(
-        log_dir / "pkm.log",
+        log_dir / "corerag.log",
         maxBytes=max_bytes,
         backupCount=backup_count
     )
@@ -131,7 +131,7 @@ def setup_logging(
     # JSON structured logs for machine parsing
     if json_logs:
         json_handler = logging.handlers.RotatingFileHandler(
-            log_dir / "pkm.json.log",
+            log_dir / "corerag.json.log",
             maxBytes=max_bytes,
             backupCount=backup_count
         )
@@ -141,7 +141,7 @@ def setup_logging(
 
     # Error-only log for quick problem identification
     error_handler = logging.handlers.RotatingFileHandler(
-        log_dir / "pkm.error.log",
+        log_dir / "corerag.error.log",
         maxBytes=max_bytes,
         backupCount=backup_count
     )
@@ -237,7 +237,7 @@ class DebugTimer:
 
     def __init__(self, name: str, logger: Optional[logging.Logger] = None):
         self.name = name
-        self.logger = logger or logging.getLogger("pkm.debug")
+        self.logger = logger or logging.getLogger("corerag.debug")
         self.start_time = None
         self.checkpoints = []
 
@@ -264,7 +264,7 @@ class QueryLogger:
     """
 
     def __init__(self, log_dir: Optional[Path] = None):
-        self.log_dir = log_dir or Path.home() / ".pkm" / "logs" / "queries"
+        self.log_dir = log_dir or Path.home() / ".corerag" / "logs" / "queries"
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def log_query(
@@ -328,4 +328,4 @@ from datetime import timedelta
 # Convenience function
 def get_logger(name: str) -> logging.Logger:
     """Get a logger for a module."""
-    return logging.getLogger(f"pkm.{name}")
+    return logging.getLogger(f"corerag.{name}")

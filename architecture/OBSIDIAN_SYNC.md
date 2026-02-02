@@ -4,7 +4,7 @@
 
 ## Overview
 
-The PKM system syncs with Obsidian to enable visual exploration of your knowledge base using Obsidian's graph view, linking, and search capabilities.
+The CoreRag system syncs with Obsidian to enable visual exploration of your knowledge base using Obsidian's graph view, linking, and search capabilities.
 
 ---
 
@@ -12,7 +12,7 @@ The PKM system syncs with Obsidian to enable visual exploration of your knowledg
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     PKM System                               │
+│                     CoreRag                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │   LanceDB   │  │   Metadata  │  │   Document Store    │  │
 │  │   (Vector)  │  │   (SQLite)  │  │    (Original)       │  │
@@ -30,7 +30,7 @@ The PKM system syncs with Obsidian to enable visual exploration of your knowledg
          ▼                 ▼                 ▼
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │   Export    │    │   Import    │    │  Conflict   │
-│  (PKM→Obs)  │    │  (Obs→PKM)  │    │  Resolver   │
+│  (CoreRag→Obs)  │    │  (Obs→CoreRag)  │    │  Resolver   │
 └─────────────┘    └─────────────┘    └─────────────┘
                            │
                     ┌──────▼──────┐
@@ -45,19 +45,19 @@ The PKM system syncs with Obsidian to enable visual exploration of your knowledg
 
 ### Mode 1: Export Only (Recommended for Start)
 
-PKM exports metadata to Obsidian; Obsidian is read-only mirror.
+CoreRag exports metadata to Obsidian; Obsidian is read-only mirror.
 
 ```python
 class ExportOnlySync:
-    """PKM is source of truth, Obsidian is display layer."""
+    """CoreRag is source of truth, Obsidian is display layer."""
 
     def sync(self):
-        for doc in pkm.get_all_documents():
+        for doc in corerag.get_all_documents():
             obsidian_path = self.map_to_vault_path(doc)
 
             if not obsidian_path.exists():
                 self.create_note(doc, obsidian_path)
-            elif self.pkm_is_newer(doc, obsidian_path):
+            elif self.corerag_is_newer(doc, obsidian_path):
                 self.update_note(doc, obsidian_path)
 ```
 
@@ -73,34 +73,34 @@ class BidirectionalSync:
     """Both systems can edit, conflicts require resolution."""
 
     def sync(self):
-        pkm_changes = self.detect_pkm_changes()
+        corerag_changes = self.detect_corerag_changes()
         obs_changes = self.detect_obsidian_changes()
 
         # Check for conflicts
-        conflicts = self.find_conflicts(pkm_changes, obs_changes)
+        conflicts = self.find_conflicts(corerag_changes, obs_changes)
 
         if conflicts:
             self.create_conflict_notes(conflicts)
             return  # User must resolve
 
         # Apply non-conflicting changes
-        self.apply_pkm_to_obsidian(pkm_changes - conflicts)
-        self.apply_obsidian_to_pkm(obs_changes - conflicts)
+        self.apply_corerag_to_obsidian(corerag_changes - conflicts)
+        self.apply_obsidian_to_corerag(obs_changes - conflicts)
 ```
 
 ### Mode 3: Obsidian as Primary
 
-Obsidian vault is source of truth; PKM indexes it.
+Obsidian vault is source of truth; CoreRag indexes it.
 
 ```python
 class ObsidianPrimarySync:
-    """Obsidian is source of truth, PKM indexes it."""
+    """Obsidian is source of truth, CoreRag indexes it."""
 
     def sync(self):
         for note in vault.get_all_notes():
             if self.note_changed_since_last_sync(note):
                 doc = self.convert_note_to_document(note)
-                pkm.upsert_document(doc)
+                corerag.upsert_document(doc)
 ```
 
 ---
@@ -114,34 +114,34 @@ Both systems modified the same document.
 **Detection**:
 ```python
 def detect_content_conflict(doc_id):
-    pkm_mtime = pkm.get_modified_time(doc_id)
+    corerag_mtime = corerag.get_modified_time(doc_id)
     obs_mtime = obsidian.get_modified_time(doc_id)
     last_sync = sync_log.get_last_sync_time(doc_id)
 
-    return pkm_mtime > last_sync and obs_mtime > last_sync
+    return corerag_mtime > last_sync and obs_mtime > last_sync
 ```
 
 **Resolution Options**:
 
-1. **Keep PKM version**
+1. **Keep CoreRag version**
    ```python
-   def resolve_keep_pkm(doc_id):
-       pkm_content = pkm.get_content(doc_id)
-       obsidian.write_note(doc_id, pkm_content)
+   def resolve_keep_corerag(doc_id):
+       corerag_content = corerag.get_content(doc_id)
+       obsidian.write_note(doc_id, corerag_content)
    ```
 
 2. **Keep Obsidian version**
    ```python
    def resolve_keep_obsidian(doc_id):
        obs_content = obsidian.read_note(doc_id)
-       pkm.update_content(doc_id, obs_content)
+       corerag.update_content(doc_id, obs_content)
    ```
 
 3. **Create conflict note**
    ```python
    def resolve_create_conflict(doc_id):
        # Keep both versions
-       obsidian.rename_note(doc_id, f"{doc_id} (PKM conflict)")
+       obsidian.rename_note(doc_id, f"{doc_id} (CoreRag conflict)")
        obsidian.write_note(
            f"{doc_id} (Obsidian version)",
            obsidian.read_note(doc_id)
@@ -151,15 +151,15 @@ def detect_content_conflict(doc_id):
 4. **Merge (if possible)**
    ```python
    def resolve_merge(doc_id):
-       pkm_content = pkm.get_content(doc_id)
+       corerag_content = corerag.get_content(doc_id)
        obs_content = obsidian.read_note(doc_id)
-       merged = three_way_merge(base, pkm_content, obs_content)
+       merged = three_way_merge(base, corerag_content, obs_content)
 
        if merged.has_conflicts:
            # Manual merge needed
            return resolve_create_conflict(doc_id)
 
-       pkm.update_content(doc_id, merged.content)
+       corerag.update_content(doc_id, merged.content)
        obsidian.write_note(doc_id, merged.content)
    ```
 
@@ -169,16 +169,16 @@ Document renamed in both systems to different names.
 
 **Resolution**:
 ```python
-def resolve_rename_conflict(doc_id, pkm_name, obs_name):
+def resolve_rename_conflict(doc_id, corerag_name, obs_name):
     # Create mapping note
     obsidian.create_note("_conflicts/rename_conflicts.md", f"""
     ## Rename Conflict: {doc_id}
 
-    - PKM name: {pkm_name}
+    - CoreRag name: {corerag_name}
     - Obsidian name: {obs_name}
 
-    [Keep PKM name](pkm://resolve/rename/{doc_id}/pkm)
-    [Keep Obsidian name](pkm://resolve/rename/{doc_id}/obsidian)
+    [Keep CoreRag name](corerag://resolve/rename/{doc_id}/corerag)
+    [Keep Obsidian name](corerag://resolve/rename/{doc_id}/obsidian)
     """)
 ```
 
@@ -190,12 +190,12 @@ Deleted in one system, modified in other.
 ```python
 def resolve_delete_conflict(doc_id, deleted_in, modified_in):
     # Always preserve modifications
-    if modified_in == "pkm":
-        pkm_content = pkm.get_content(doc_id)
-        obsidian.write_note(doc_id, pkm_content)
+    if modified_in == "corerag":
+        corerag_content = corerag.get_content(doc_id)
+        obsidian.write_note(doc_id, corerag_content)
     else:
         obs_content = obsidian.read_note(doc_id)
-        pkm.restore_and_update(doc_id, obs_content)
+        corerag.restore_and_update(doc_id, obs_content)
 ```
 
 ### Type 4: Tag/Link Conflict
@@ -220,22 +220,22 @@ Create a `_conflicts/` folder with resolution notes:
 ## Unresolved Conflicts (2)
 
 ### 1. [[Project Notes]] - Content Conflict
-**Modified in PKM**: 2024-01-15 14:30
+**Modified in CoreRag**: 2024-01-15 14:30
 **Modified in Obsidian**: 2024-01-15 15:45
 
-- [View PKM version](pkm://view/doc123)
-- [View Obsidian version](obsidian://open?vault=PKM&file=Project%20Notes)
+- [View CoreRag version](corerag://view/doc123)
+- [View Obsidian version](obsidian://open?vault=CoreRag&file=Project%20Notes)
 
 **Resolution**:
-- [ ] Keep PKM version
+- [ ] Keep CoreRag version
 - [ ] Keep Obsidian version
 - [ ] Merge manually
 
 ### 2. [[Meeting Notes]] - Rename Conflict
-**PKM name**: "Team Meeting 2024-01-15"
+**CoreRag name**: "Team Meeting 2024-01-15"
 **Obsidian name**: "Weekly Standup"
 
-- [ ] Use PKM name
+- [ ] Use CoreRag name
 - [ ] Use Obsidian name
 ```
 
@@ -266,7 +266,7 @@ def resolve_conflict(conflict_id: str, resolution: str):
 class SyncLogEntry:
     doc_id: str
     sync_time: str
-    pkm_hash: str  # Content hash at sync time
+    corerag_hash: str  # Content hash at sync time
     obs_hash: str
     sync_type: str  # "export", "import", "bidirectional"
     result: str  # "success", "conflict", "error"
@@ -278,7 +278,7 @@ class SyncLogEntry:
 {
   "doc123": {
     "last_sync": "2024-01-15T14:30:00Z",
-    "pkm_hash": "abc123",
+    "corerag_hash": "abc123",
     "obs_hash": "abc123",
     "obs_path": "Projects/Project Notes.md"
   }
@@ -289,11 +289,11 @@ class SyncLogEntry:
 
 ## Path Mapping
 
-### PKM to Obsidian Path
+### CoreRag to Obsidian Path
 
 ```python
-def map_pkm_to_obsidian(doc):
-    """Map PKM document to Obsidian vault path."""
+def map_corerag_to_obsidian(doc):
+    """Map CoreRag document to Obsidian vault path."""
 
     # Use folder from source path or topic
     if doc.source_path:
@@ -309,11 +309,11 @@ def map_pkm_to_obsidian(doc):
     return vault_root / folder / filename
 ```
 
-### Obsidian to PKM ID
+### Obsidian to CoreRag ID
 
 ```python
-def map_obsidian_to_pkm(note_path):
-    """Find PKM document ID for Obsidian note."""
+def map_obsidian_to_corerag(note_path):
+    """Find CoreRag document ID for Obsidian note."""
 
     # Check sync state
     for doc_id, state in sync_state.items():
@@ -322,7 +322,7 @@ def map_obsidian_to_pkm(note_path):
 
     # Try to match by title
     title = note_path.stem
-    matches = pkm.search_by_title(title)
+    matches = corerag.search_by_title(title)
 
     if len(matches) == 1:
         return matches[0].id
@@ -346,7 +346,7 @@ tags:
   - project
   - ml
   - research
-pkm_sync: true
+corerag_sync: true
 ---
 
 # Document Title
@@ -373,13 +373,13 @@ Full text content or key excerpts...
 
 | Field | Purpose |
 |-------|---------|
-| `id` | PKM document ID |
+| `id` | CoreRag document ID |
 | `source` | Original file path |
 | `created` | Creation timestamp |
 | `modified` | Last modification |
 | `tags` | Document tags |
-| `pkm_sync` | Marker for synced notes |
-| `pkm_hash` | Content hash for conflict detection |
+| `corerag_sync` | Marker for synced notes |
+| `corerag_hash` | Content hash for conflict detection |
 
 ---
 
@@ -411,11 +411,11 @@ if doc.type in ["pdf", "image", "audio"]:
 ```python
 def generate_backlinks(doc_id):
     """Find and create backlinks."""
-    mentions = pkm.find_documents_mentioning(doc_id)
+    mentions = corerag.find_documents_mentioning(doc_id)
 
     backlinks = []
     for mention in mentions:
-        obs_path = map_pkm_to_obsidian(mention)
+        obs_path = map_corerag_to_obsidian(mention)
         backlinks.append(f"[[{obs_path.stem}]]")
 
     return backlinks
@@ -437,15 +437,15 @@ SYNC_SCHEDULE = {
 ### Triggered Sync
 
 ```python
-# When PKM ingests new document
+# When CoreRag ingests new document
 @on_document_created
 def sync_new_to_obsidian(doc):
-    obsidian.create_note(map_pkm_to_obsidian(doc), doc.to_markdown())
+    obsidian.create_note(map_corerag_to_obsidian(doc), doc.to_markdown())
 
 # When Obsidian note changes (via file watcher)
 @on_obsidian_change
-def sync_change_to_pkm(note_path):
-    doc_id = map_obsidian_to_pkm(note_path)
+def sync_change_to_corerag(note_path):
+    doc_id = map_obsidian_to_corerag(note_path)
     if doc_id:
         check_for_conflicts(doc_id)
 ```

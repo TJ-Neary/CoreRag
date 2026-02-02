@@ -1,4 +1,4 @@
-"""Database maintenance module for PKM."""
+"""Database maintenance module for CoreRag."""
 
 from src.maintenance.db_optimizer import (
     LanceDBOptimizer,

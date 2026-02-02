@@ -356,7 +356,7 @@ async def rag_index():
     """Return a summary of all files indexed in the RAG database."""
     try:
         import lancedb
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         parents = db.open_table("parent_chunks")
@@ -392,7 +392,7 @@ async def rag_delete(file_name: str):
     """Remove a file from the RAG database by source_path filename."""
     try:
         import lancedb
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         for table_name in ["parent_chunks", "child_chunks"]:
@@ -444,7 +444,7 @@ async def get_user_facts():
     """Get user facts and correction patterns for dashboard display."""
     try:
         from src.memory.episodic_memory import EpisodicMemoryManager
-        storage_path = Path.home() / ".pkm" / "profiles"
+        storage_path = Path.home() / ".corerag" / "profiles"
         manager = EpisodicMemoryManager(storage_path)
         profile = manager.load_or_create("default")
 
@@ -489,7 +489,7 @@ async def delete_user_fact(index: int):
     """Delete a user fact by index."""
     try:
         from src.memory.episodic_memory import EpisodicMemoryManager
-        storage_path = Path.home() / ".pkm" / "profiles"
+        storage_path = Path.home() / ".corerag" / "profiles"
         manager = EpisodicMemoryManager(storage_path)
         profile = manager.load_or_create("default")
 
@@ -524,7 +524,7 @@ async def chat(request: Request):
             import lancedb
             from src.embeddings.embedding_service import create_embedding_service
 
-            db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+            db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
             db = lancedb.connect(db_path)
 
             if "child_chunks" in db.table_names():
@@ -600,12 +600,12 @@ async def api_manifest():
     Capability manifest for connecting AI systems.
 
     Returns schema info, available endpoints, accepted formats, and rules
-    so any client (Claude Desktop, Kendra, local LLM) can understand
+    so any client (Claude Desktop, external AI assistants, local LLMs) can understand
     how to interact with the knowledge base.
     """
     import lancedb
 
-    db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+    db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
 
     # Collect live stats
     stats = {"documents": 0, "chunks": 0, "entities": 0, "relationships": 0}
@@ -621,7 +621,7 @@ async def api_manifest():
 
     try:
         from src.graph.knowledge_graph import KnowledgeGraph
-        graph_db_path = Path(os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm"))) / "knowledge_graph.db"
+        graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
         if graph_db_path.exists():
             graph = KnowledgeGraph(graph_db_path)
             gs = graph.get_stats()
@@ -707,7 +707,7 @@ async def api_stats():
     """Database statistics for health monitoring."""
     import lancedb
 
-    db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+    db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
 
     stats = {
         "documents": 0,
@@ -731,7 +731,7 @@ async def api_stats():
 
     try:
         from src.graph.knowledge_graph import KnowledgeGraph
-        graph_db_path = Path(os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm"))) / "knowledge_graph.db"
+        graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
         if graph_db_path.exists():
             graph = KnowledgeGraph(graph_db_path)
             gs = graph.get_stats()
@@ -763,7 +763,7 @@ async def api_search(request: Request):
         import lancedb
         from src.embeddings.embedding_service import create_embedding_service
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         if "child_chunks" not in db.table_names():
@@ -839,7 +839,7 @@ async def api_ingest(request: Request):
         from src.embeddings.embedding_service import create_embedding_service
         from datetime import datetime
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
         chunker = ParentChildChunker()
         embedder = create_embedding_service()
@@ -913,7 +913,7 @@ async def api_ingest(request: Request):
         # Optional: extract entities for knowledge graph
         try:
             from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
-            graph_db_path = Path(os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm"))) / "knowledge_graph.db"
+            graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
             if graph_db_path.exists():
                 graph = KnowledgeGraph(graph_db_path)
                 extractor = EntityExtractor()
@@ -943,7 +943,7 @@ async def api_delete_document(document_id: str):
     try:
         import lancedb
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         deleted = {"parent_chunks": 0, "child_chunks": 0}
@@ -958,7 +958,7 @@ async def api_delete_document(document_id: str):
         # Also remove from knowledge graph
         try:
             from src.graph.knowledge_graph import KnowledgeGraph
-            graph_db_path = Path(os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm"))) / "knowledge_graph.db"
+            graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
             if graph_db_path.exists():
                 graph = KnowledgeGraph(graph_db_path)
                 graph.delete_by_document(document_id)
@@ -981,4 +981,4 @@ async def api_delete_document(document_id: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

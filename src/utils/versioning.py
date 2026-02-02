@@ -60,7 +60,7 @@ class VersionManager:
         Args:
             state_dir: Directory for version storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "versions"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "versions"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._versions: Dict[str, List[DocumentVersion]] = {}

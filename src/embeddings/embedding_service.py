@@ -1,5 +1,5 @@
 """
-Centralized Embedding Service for PKM.
+Centralized Embedding Service for CoreRag.
 
 Provides a single interface for all embedding operations:
 - Text embedding with sentence-transformers
@@ -84,7 +84,7 @@ class EmbeddingCache:
             persist: Whether to persist to disk
         """
         self.max_size = max_size
-        self.cache_dir = cache_dir or Path.home() / ".pkm" / "embedding_cache"
+        self.cache_dir = cache_dir or Path.home() / ".corerag" / "embedding_cache"
         self.persist = persist
 
         self._cache: Dict[str, List[float]] = {}

@@ -1,5 +1,5 @@
 """
-Ollama LLM wrapper for PKM components that need a .generate() async interface.
+Ollama LLM wrapper for CoreRag components that need a .generate() async interface.
 
 Used by EntityExtractor, FactExtractor, and other modules that accept an optional
 LLM parameter with the signature: await llm.generate(prompt, max_tokens=...) -> str

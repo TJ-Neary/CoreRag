@@ -23,16 +23,16 @@ class ObsidianExporter:
         Initialize exporter.
         
         Args:
-            vault_path: Path to Obsidian vault root. If None, uses PKM_OBSIDIAN_VAULT env var.
+            vault_path: Path to Obsidian vault root. If None, uses CoreRag_OBSIDIAN_VAULT env var.
         """
         self.vault_path = vault_path
         if not self.vault_path:
-            env_path = os.getenv("PKM_OBSIDIAN_VAULT")
+            env_path = os.getenv("CoreRag_OBSIDIAN_VAULT")
             if env_path:
                 self.vault_path = Path(env_path)
         
         if self.vault_path:
-            self.imports_dir = self.vault_path / "PKM Imports"
+            self.imports_dir = self.vault_path / "CoreRag Imports"
         else:
             self.imports_dir = None
 
@@ -53,7 +53,7 @@ class ObsidianExporter:
             return None
 
         # Check if export is enabled
-        if os.getenv("PKM_EXPORT_TO_OBSIDIAN", "true").lower() != "true":
+        if os.getenv("CoreRag_EXPORT_TO_OBSIDIAN", "true").lower() != "true":
             return None
 
         try:
@@ -84,8 +84,8 @@ class ObsidianExporter:
             "source_file": source_path.name,
             "source_path": str(source_path),
             "ingested_at": datetime.now().isoformat(),
-            "type": "pkm_import",
-            "tags": ["pkm/import"]
+            "type": "corerag_import",
+            "tags": ["corerag/import"]
         }
         
         # Add file type specific tags

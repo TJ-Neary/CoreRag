@@ -1,5 +1,5 @@
 """
-Export capabilities for PKM.
+Export capabilities for CoreRag.
 
 Export knowledge base data in various formats.
 """
@@ -30,7 +30,7 @@ class ExportFormat:
 
 class Exporter:
     """
-    Export PKM data in various formats.
+    Export CoreRag data in various formats.
 
     Supports full exports, filtered exports, and incremental exports.
     """
@@ -44,11 +44,11 @@ class Exporter:
         Initialize exporter.
 
         Args:
-            data_dir: PKM data directory
+            data_dir: CoreRag data directory
             export_dir: Directory for exports
         """
-        self.data_dir = data_dir or Path.home() / ".pkm" / "data"
-        self.export_dir = export_dir or Path.home() / ".pkm" / "exports"
+        self.data_dir = data_dir or Path.home() / ".corerag" / "data"
+        self.export_dir = export_dir or Path.home() / ".corerag" / "exports"
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
     def export_all(
@@ -67,7 +67,7 @@ class Exporter:
             Path to exported file/directory
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        export_name = f"pkm_export_{timestamp}"
+        export_name = f"corerag_export_{timestamp}"
 
         if format == ExportFormat.ZIP_BUNDLE:
             return self._export_zip_bundle(export_name, include_embeddings)
@@ -264,7 +264,7 @@ class Exporter:
             doc_file.write_text("\n".join(content))
 
         # Create index
-        index_content = ["# PKM Export", "", f"Exported: {datetime.now().isoformat()}", ""]
+        index_content = ["# CoreRag Export", "", f"Exported: {datetime.now().isoformat()}", ""]
         for doc in documents:
             index_content.append(f"- [{doc.get('title', doc['id'])}]({doc['id']}.md)")
 
@@ -385,7 +385,7 @@ class Exporter:
             "<!DOCTYPE html>",
             "<html>",
             "<head>",
-            "  <title>PKM Search Results</title>",
+            "  <title>CoreRag Search Results</title>",
             "  <style>",
             "    body { font-family: system-ui; max-width: 800px; margin: 0 auto; padding: 20px; }",
             "    .result { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; }",

@@ -1,4 +1,4 @@
-"""Classification module for PKM."""
+"""Classification module for CoreRag."""
 
 from src.classification.auto_tagger import (
     AutoTagger,

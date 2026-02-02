@@ -456,7 +456,7 @@ class SessionTracker:
     """
 
     def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".pkm" / "sessions"
+        self.storage_dir = storage_dir or Path.home() / ".corerag" / "sessions"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self._current: Optional[Session] = None

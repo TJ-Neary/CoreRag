@@ -4,24 +4,19 @@
 
 ## Active Files
 
-| File | Purpose |
-|------|---------|
-| `progress.md` | Session-by-session development log |
-| `project_memory.md` | Context preservation between sessions (what's working, what's scaffold) |
-| `task_plan.md` | 12-phase wiring plan with module status |
-| `findings.md` | Real findings from integration work |
+| File | Purpose | Tracked |
+|------|---------|---------|
+| `PHASE_6_EPISODIC_MEMORY.md` | Episodic memory design (handed off to external AI assistant) | Yes |
+| `ROADMAP_FUTURE_ENHANCEMENTS.md` | Post-Phase 6 enhancement roadmap | Yes |
+| `KENDRA_INTEGRATION.md` | Integration protocol with external AI assistant | No (gitignored) |
+| `progress.md` | Session-by-session development log | No (gitignored) |
+| `project_memory.md` | Context preservation between sessions | No (gitignored) |
+| `task_plan.md` | 12-phase wiring plan with module status | No (gitignored) |
+| `findings.md` | Real findings from integration work | No (gitignored) |
 
 ## Archive
 
 The `archive/` folder contains files from the initial scaffold phase (Jan 31) that are no longer actively maintained. They were written for the Antigravity agents and have been superseded by `CLAUDE.md` at the project root.
-
-| File | Why Archived |
-|------|-------------|
-| `AGENT_INSTRUCTIONS.md` | Superseded by CLAUDE.md |
-| `Master_Prompt.md` | Antigravity agent prompt, outdated status |
-| `PRD.md` | Requirements captured in CLAUDE.md and code |
-| `SETUP_TASKS.md` | Most items completed or covered in CLAUDE.md |
-| `MIGRATION_LOG.md` | One-time merge event, purely historical |
 
 ## Source of Truth
 

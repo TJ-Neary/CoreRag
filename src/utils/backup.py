@@ -1,5 +1,5 @@
 """
-Database backup and restore system for PKM.
+Database backup and restore system for CoreRag.
 
 Provides automated backups and point-in-time recovery.
 """
@@ -64,7 +64,7 @@ class BackupManager:
             max_backups: Maximum number of backups to retain
         """
         self.data_dir = Path(data_dir)
-        self.backup_dir = backup_dir or (Path.home() / ".pkm" / "backups")
+        self.backup_dir = backup_dir or (Path.home() / ".corerag" / "backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.max_backups = max_backups
 

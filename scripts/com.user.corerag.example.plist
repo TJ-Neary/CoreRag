@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Copy to com.user.pkm.plist and replace /path/to/PKM_v1 with your actual project path -->
+<!-- Copy to com.user.corerag.plist and replace /path/to/CoreRag with your actual project path -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.user.pkm.automation</string>
+    <string>com.user.corerag.automation</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/path/to/PKM_v1/scripts/run_system.sh</string>
+        <string>/path/to/CoreRag/scripts/run_system.sh</string>
     </array>
     <key>WatchPaths</key>
     <array>
         <string>/Users/YOURNAME/Desktop/Inbox</string>
     </array>
     <key>StandardOutPath</key>
-    <string>/path/to/PKM_v1/launchd.log</string>
+    <string>/path/to/CoreRag/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>/path/to/PKM_v1/launchd_error.log</string>
+    <string>/path/to/CoreRag/launchd_error.log</string>
 </dict>
 </plist>

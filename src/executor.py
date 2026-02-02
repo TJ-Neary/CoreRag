@@ -19,7 +19,7 @@ def _redact_pii(text: str, file_name: str) -> str:
 
     Uses three detection layers:
     1. Presidio NER + regex patterns (SSNs, emails, phones, names, etc.)
-    2. Custom PII dictionary (~/.pkm/pii_terms.yaml) for user-defined terms
+    2. Custom PII dictionary (~/.corerag/pii_terms.yaml) for user-defined terms
     3. Technical secret patterns (API keys, passwords, etc.)
 
     Replaces matches with type-specific placeholders like [REDACTED-SSN],
@@ -83,7 +83,7 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
         from src.chunking.parent_child import ParentChildChunker
         from src.embeddings.embedding_service import create_embedding_service
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
         chunker = ParentChildChunker()
         embedder = create_embedding_service()
@@ -170,7 +170,7 @@ def _extract_entities(text: str, file_name: str) -> None:
         from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
 
         graph_db_path = Path(
-            os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+            os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         ).parent / "knowledge_graph.db"
         graph = KnowledgeGraph(graph_db_path)
 

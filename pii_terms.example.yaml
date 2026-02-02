@@ -1,4 +1,4 @@
-# Personal PII Terms — Copy to ~/.pkm/pii_terms.yaml and fill in your values.
+# Personal PII Terms — Copy to ~/.corerag/pii_terms.yaml and fill in your values.
 #
 # These terms will be matched against all documents during ingestion.
 # Matches trigger the "SENSITIVE" flag and get redacted in Obsidian/RAG exports.
@@ -7,8 +7,8 @@
 #   SSN, EMAIL, PHONE, ADDRESS, NAME, CREDIT_CARD,
 #   ACCOUNT, EMPLOYEE_ID, POLICY, FINANCIAL, MEDICAL, CUSTOM
 #
-# The file at ~/.pkm/pii_terms.yaml is never committed to git.
-# Set file permissions: chmod 600 ~/.pkm/pii_terms.yaml
+# The file at ~/.corerag/pii_terms.yaml is never committed to git.
+# Set file permissions: chmod 600 ~/.corerag/pii_terms.yaml
 
 terms:
   # - value: "123-45-6789"

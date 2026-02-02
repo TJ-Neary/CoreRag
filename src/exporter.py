@@ -79,7 +79,7 @@ def _generate_backlinks(text: str, original_filename: str) -> str:
         from src.graph.knowledge_graph import KnowledgeGraph
 
         graph_db_path = Path(
-            os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+            os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         ).parent / "knowledge_graph.db"
 
         if not graph_db_path.exists():

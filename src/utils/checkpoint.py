@@ -125,7 +125,7 @@ class CheckpointManager:
         Args:
             checkpoint_dir: Directory to store checkpoints
         """
-        self.checkpoint_dir = checkpoint_dir or Path.home() / ".pkm" / "checkpoints"
+        self.checkpoint_dir = checkpoint_dir or Path.home() / ".corerag" / "checkpoints"
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.completed_dir = self.checkpoint_dir / "completed"
         self.completed_dir.mkdir(exist_ok=True)

@@ -1,5 +1,5 @@
 """
-Citation and source tracking for PKM.
+Citation and source tracking for CoreRag.
 
 Provides precise source attribution for all search results.
 """
@@ -125,7 +125,7 @@ class Citation:
     original_source: Optional[str] = None
     chain_of_custody: List[str] = field(default_factory=list)
 
-    def to_link(self, scheme: str = "pkm") -> str:
+    def to_link(self, scheme: str = "corerag") -> str:
         """Generate clickable link to source."""
         anchor = self.location.to_anchor()
         base = f"{scheme}://open/{quote(self.source_path)}"
@@ -159,7 +159,7 @@ class CitationManager:
         Args:
             state_dir: Directory for citation storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "citations"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "citations"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._citations: Dict[str, Citation] = {}

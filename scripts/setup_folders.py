@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup PKM folder structure.
+Setup CoreRag folder structure.
 
 Creates the standard folders for inbox workflow and Obsidian integration.
 """
@@ -9,20 +9,20 @@ import os
 from pathlib import Path
 
 
-def setup_pkm_folders():
-    """Create PKM folder structure."""
+def setup_corerag_folders():
+    """Create CoreRag folder structure."""
     
     # Get base directory from env or use default
-    base_dir = Path(os.getenv("PKM_BASE_DIR", Path.home() / "Documents" / "PKM"))
+    base_dir = Path(os.getenv("CoreRag_BASE_DIR", Path.home() / "Documents" / "CoreRag"))
     
     folders = {
         "inbox": base_dir / "Inbox",
         "processed": base_dir / "Processed",
         "obsidian": base_dir / "Obsidian",
-        "obsidian_imports": base_dir / "Obsidian" / "PKM Imports",
+        "obsidian_imports": base_dir / "Obsidian" / "CoreRag Imports",
     }
     
-    print(f"Setting up PKM folders in: {base_dir}")
+    print(f"Setting up CoreRag folders in: {base_dir}")
     print()
     
     for name, path in folders.items():
@@ -39,13 +39,13 @@ def setup_pkm_folders():
     
     print()
     print("Environment variables to set:")
-    print(f'export PKM_INBOX_DIR="{folders["inbox"]}"')
-    print(f'export PKM_PROCESSED_DIR="{folders["processed"]}"')
-    print(f'export PKM_OBSIDIAN_VAULT="{folders["obsidian"]}"')
-    print(f'export PKM_WATCH_DIR="{folders["inbox"]}"')
+    print(f'export CORERAG_INBOX_DIR="{folders["inbox"]}"')
+    print(f'export CoreRag_PROCESSED_DIR="{folders["processed"]}"')
+    print(f'export CoreRag_OBSIDIAN_VAULT="{folders["obsidian"]}"')
+    print(f'export CoreRag_WATCH_DIR="{folders["inbox"]}"')
     print()
     print("Folder setup complete!")
 
 
 if __name__ == "__main__":
-    setup_pkm_folders()
+    setup_corerag_folders()

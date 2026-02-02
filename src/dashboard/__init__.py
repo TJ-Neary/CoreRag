@@ -1,4 +1,4 @@
-"""PKM Dashboard module."""
+"""CoreRag Dashboard module."""
 
 from src.dashboard.health_dashboard import (
     HealthDashboard,

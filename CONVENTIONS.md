@@ -79,7 +79,7 @@ def search_documents(
 ## Project Structure
 
 ```
-AntiGravity_PKM/
+CoreRag/
 ├── src/
 │   ├── __init__.py
 │   │
@@ -150,9 +150,9 @@ AntiGravity_PKM/
 │   │   ├── __init__.py
 │   │   └── knowledge_graph.py   # GraphRAG implementation
 │   │
-│   ├── memory/                  # Conversation memory
+│   ├── memory/                  # Episodic memory (deprecated — handed off)
 │   │   ├── __init__.py
-│   │   └── episodic_memory.py   # Session memory
+│   │   └── episodic_memory.py   # Session memory (deprecated)
 │   │
 │   ├── sync/                    # Synchronization
 │   │   ├── __init__.py
@@ -192,7 +192,7 @@ AntiGravity_PKM/
 │   ├── data_schema.md
 │   ├── HARDWARE_SAFETY.md
 │   ├── PERFORMANCE_GUIDE.md
-│   └── PKM_Design_*.md
+│   └── CoreRag_Design_*.md
 │
 └── docs/
     └── USER_GUIDE.md            # End-user documentation
@@ -263,8 +263,8 @@ import os
 @dataclass
 class Config:
     # Paths
-    pkm_home: Path = field(default_factory=lambda: Path.home() / ".pkm")
-    db_path: Path = field(default_factory=lambda: Path.home() / ".pkm" / "lancedb")
+    corerag_home: Path = field(default_factory=lambda: Path.home() / ".corerag")
+    db_path: Path = field(default_factory=lambda: Path.home() / ".corerag" / "lancedb")
 
     # Chunking
     chunk_size: int = 512
@@ -283,9 +283,9 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
-            pkm_home=Path(os.getenv("PKM_HOME", str(cls().pkm_home))),
-            chunk_size=int(os.getenv("PKM_CHUNK_SIZE", cls().chunk_size)),
-            memory_pause_threshold=float(os.getenv("PKM_MEMORY_PAUSE", cls().memory_pause_threshold)),
+            corerag_home=Path(os.getenv("CORERAG_HOME", str(cls().corerag_home))),
+            chunk_size=int(os.getenv("CORERAG_CHUNK_SIZE", cls().chunk_size)),
+            memory_pause_threshold=float(os.getenv("CORERAG_MEMORY_PAUSE", cls().memory_pause_threshold)),
         )
 
 # Usage
@@ -298,23 +298,23 @@ config = Config.from_env()
 
 ### Custom Exceptions
 ```python
-class PKMError(Exception):
-    """Base exception for PKM system."""
+class CoreRagError(Exception):
+    """Base exception for CoreRag system."""
     pass
 
-class ProcessingError(PKMError):
+class ProcessingError(CoreRagError):
     """Error during file processing."""
     pass
 
-class EmbeddingError(PKMError):
+class EmbeddingError(CoreRagError):
     """Error generating embeddings."""
     pass
 
-class DatabaseError(PKMError):
+class DatabaseError(CoreRagError):
     """Error with vector database operations."""
     pass
 
-class MemoryError(PKMError):
+class MemoryError(CoreRagError):
     """Memory threshold exceeded."""
     pass
 ```
@@ -345,14 +345,14 @@ def process_file(file_path: Path) -> Optional[Document]:
 import logging
 from pathlib import Path
 
-def setup_logging(log_dir: Path = Path.home() / ".pkm" / "logs"):
+def setup_logging(log_dir: Path = Path.home() / ".corerag" / "logs"):
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
-            logging.FileHandler(log_dir / "pkm.log"),
+            logging.FileHandler(log_dir / "corerag.log"),
             logging.StreamHandler()
         ]
     )
@@ -478,7 +478,7 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(
-        description="PKM System CLI",
+        description="CoreRag CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 

@@ -1,6 +1,6 @@
-# PKM System User Guide
+# CoreRag User Guide
 
-A comprehensive Personal Knowledge Management system with AI-powered semantic search.
+CoreRag is a local-first knowledge engine with AI-powered semantic search, PII detection, and MCP integration.
 
 ---
 
@@ -34,14 +34,14 @@ A comprehensive Personal Knowledge Management system with AI-powered semantic se
 1. Clone the repository:
    ```bash
    cd ~/Projects
-   git clone <repository-url> AntiGravity_PKM
-   cd AntiGravity_PKM
+   git clone <repository-url> CoreRag
+   cd CoreRag
    ```
 
 2. Create and activate virtual environment:
    ```bash
-   python3 -m venv ~/.pkm/venv
-   source ~/.pkm/venv/bin/activate
+   python3 -m venv ~/.corerag/venv
+   source ~/.corerag/venv/bin/activate
    ```
 
 3. Install dependencies:
@@ -51,8 +51,8 @@ A comprehensive Personal Knowledge Management system with AI-powered semantic se
 
 4. Create required directories:
    ```bash
-   mkdir -p ~/.pkm/{lancedb,logs,cache,checkpoints,backups}
-   mkdir -p ~/PKM/{inbox,processed,vault}
+   mkdir -p ~/.corerag/{lancedb,logs,cache,checkpoints,backups}
+   mkdir -p ~/CoreRag/{inbox,processed,vault}
    ```
 
 5. (Optional) Install PII detection:
@@ -78,7 +78,7 @@ python -m src.cli.main search "machine learning concepts"
 
 ## CLI Commands
 
-The PKM system includes a comprehensive command-line interface.
+The CoreRag system includes a comprehensive command-line interface.
 
 ### Search
 
@@ -185,7 +185,7 @@ python -m src.cli.main tag /path/to/folder -r
 
 ### Excluded by Default
 
-See `.pkmignore` for full list:
+See `.coreragignore` for full list:
 - System files (`.DS_Store`, `node_modules/`)
 - Build artifacts (`dist/`, `build/`)
 - Version control (`.git/`)
@@ -218,8 +218,6 @@ The system automatically manages memory:
 - Resumes at 65% RAM usage
 - Throttles CPU at 90°C
 
-- Throttles CPU at 90°C
-
 ---
 
 ## Inbox & Obsidian Workflow
@@ -231,11 +229,11 @@ The system provides a seamless workflow for processing files and integrating wit
 Run `python scripts/setup_folders.py` to create:
 
 ```
-~/Documents/PKM/
+~/Documents/CoreRag/
 ├── Inbox/          ← Drop new files here
 ├── Processed/      ← Files moved here after ingestion
 └── Obsidian/       ← Your vault
-    └── PKM Imports/  ← New .md files created from ingested content
+    └── CoreRag Imports/  ← New .md files created from ingested content
 ```
 
 ### The "Drop & Forget" Workflow
@@ -243,11 +241,11 @@ Run `python scripts/setup_folders.py` to create:
 1. **Drop a file** (PDF, Docx, etc.) into `Inbox/`.
 2. **Run Ingestion**:
    ```bash
-   python -m src.cli.main ingest ~/Documents/PKM/Inbox -r
+   python -m src.cli.main ingest ~/Documents/CoreRag/Inbox -r
    ```
 3. **Automatic Actions**:
    - File is chunked, embedded, and stored in LanceDB.
-   - A markdown copy is created in `Obsidian/PKM Imports/` with metadata.
+   - A markdown copy is created in `Obsidian/CoreRag Imports/` with metadata.
    - Original file is moved to `Processed/` with a date prefix (e.g., `2026-02-01_note.pdf`).
 
 ### Obsidian Integration Details
@@ -257,11 +255,11 @@ The exported markdown files contain YAML frontmatter:
 ```yaml
 ---
 source_file: meeting_notes.pdf
-source_path: /Users/yourname/Documents/PKM/Processed/2026-02-01_meeting_notes.pdf
+source_path: /Users/yourname/Documents/CoreRag/Processed/2026-02-01_meeting_notes.pdf
 ingested_at: 2026-02-01T14:30:00
-type: pkm_import
+type: corerag_import
 tags:
-  - pkm/import
+  - corerag/import
   - type/pdf
 ---
 
@@ -333,12 +331,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "pkm": {
+    "corerag": {
       "command": "python",
       "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/AntiGravity_PKM",
+      "cwd": "/path/to/CoreRag",
       "env": {
-        "PKM_HOME": "/Users/yourname/.pkm"
+        "CORERAG_HOME": "/Users/yourname/.corerag"
       }
     }
   }
@@ -533,8 +531,8 @@ print(f"Size: {info.size_mb:.1f} MB")
 Configure in environment:
 
 ```bash
-export PKM_AUTO_BACKUP=true
-export PKM_BACKUP_INTERVAL=24  # hours
+export CoreRag_AUTO_BACKUP=true
+export CoreRag_BACKUP_INTERVAL=24  # hours
 ```
 
 ### Restoring from Backup
@@ -578,10 +576,10 @@ The system should automatically pause, but if issues persist:
 
 ```bash
 # Reduce batch size
-export PKM_EMBEDDING_BATCH=16
+export CORERAG_EMBEDDING_BATCH=16
 
 # Reduce workers
-export PKM_MAX_WORKERS=4
+export CORERAG_MAX_WORKERS=4
 ```
 
 #### Slow Embedding Performance
@@ -621,13 +619,13 @@ print(f"MLX Metal available: {mx.metal.is_available()}")
 
 2. Verify config path is correct
 3. Restart Claude Desktop
-4. Check logs: `~/.pkm/logs/pkm.log`
+4. Check logs: `~/.corerag/logs/corerag.log`
 
 ### Debug Mode
 
 ```bash
 # Enable debug logging
-PKM_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
+CORERAG_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
 ```
 
 ### Getting Help
@@ -645,30 +643,30 @@ PKM_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PKM_HOME` | `~/.pkm` | Data directory |
-| `PKM_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Embedding model |
-| `PKM_EMBEDDING_BATCH` | `32` | Batch size |
-| `PKM_LOG_LEVEL` | `INFO` | Logging verbosity |
-| `PKM_MAX_WORKERS` | `8` | Parallel workers |
-| `PKM_MEMORY_PAUSE` | `0.75` | Memory pause threshold |
-| `PKM_MEMORY_RESUME` | `0.65` | Memory resume threshold |
+| `CORERAG_HOME` | `~/.corerag` | Data directory |
+| `CORERAG_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Embedding model |
+| `CORERAG_EMBEDDING_BATCH` | `32` | Batch size |
+| `CORERAG_LOG_LEVEL` | `INFO` | Logging verbosity |
+| `CORERAG_MAX_WORKERS` | `8` | Parallel workers |
+| `CORERAG_MEMORY_PAUSE` | `0.75` | Memory pause threshold |
+| `CORERAG_MEMORY_RESUME` | `0.65` | Memory resume threshold |
 
 ### Performance Tuning
 
 For M4 Max (48GB):
 ```bash
-export PKM_EMBEDDING_BATCH=64
-export PKM_MAX_WORKERS=12
-export PKM_CHUNK_SIZE=1000
+export CORERAG_EMBEDDING_BATCH=64
+export CORERAG_MAX_WORKERS=12
+export CORERAG_CHUNK_SIZE=1000
 ```
 
 For M1/M2 (16GB):
 ```bash
-export PKM_EMBEDDING_BATCH=16
-export PKM_MAX_WORKERS=4
-export PKM_CHUNK_SIZE=500
+export CORERAG_EMBEDDING_BATCH=16
+export CORERAG_MAX_WORKERS=4
+export CORERAG_CHUNK_SIZE=500
 ```
 
 ---
 
-*PKM System User Guide | Version 2.0 | Last Updated: 2026-01-31*
+*CoreRag User Guide | Version 2.0 | Last Updated: 2026-01-31*

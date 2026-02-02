@@ -1,5 +1,5 @@
 """
-Auto-Tagging Module for PKM.
+Auto-Tagging Module for CoreRag.
 
 Automatically classify and tag documents during ingestion:
 - Keyword-based classification
@@ -467,7 +467,7 @@ class AutoTagger:
         """
         self.taxonomy = taxonomy or Taxonomy()
         self.embedder = embedder
-        self.state_dir = state_dir or Path.home() / ".pkm" / "tagging"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "tagging"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize taggers

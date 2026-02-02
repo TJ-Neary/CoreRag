@@ -84,12 +84,13 @@ secrets.json
 credentials.json
 pii_terms.yaml
 pii_terms.yml
+.security_terms
 
 # =============================================================================
-# PKM System Data (runtime data, not code)
+# CoreRag Data (runtime data, not code)
 # =============================================================================
 # These are created at runtime, not part of the codebase
-~/.pkm/
+~/.corerag/
 *.lancedb/
 *.lance/
 staging_manifest.json
@@ -123,16 +124,17 @@ sorting_rules.yaml
 sorting_rules.yml
 
 # Personal context design doc contains real identity info
-architecture/PKM_Design_Personal_Context.md
+architecture/CoreRag_Design_Personal_Context.md
 
 # LaunchAgent plist contains hardcoded user paths
-scripts/com.user.pkm.plist
+scripts/com.user.corerag.plist
 
 # Project session logs contain personal name, document references, hardware info
 _project/progress.md
 _project/project_memory.md
 _project/task_plan.md
 _project/findings.md
+_project/KENDRA_INTEGRATION.md
 
 # =============================================================================
 # Project Internal (archived planning docs from scaffold phase)

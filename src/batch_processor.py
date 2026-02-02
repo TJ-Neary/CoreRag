@@ -38,7 +38,7 @@ class BatchProcessor:
 
         # QueueManager for persistent job tracking and retry support
         self._queue_manager = QueueManager(
-            state_dir=Path.home() / ".pkm" / "queue",
+            state_dir=Path.home() / ".corerag" / "queue",
             rate_limit=5.0,
             burst_limit=10,
         )

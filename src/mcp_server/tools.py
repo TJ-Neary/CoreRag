@@ -1,7 +1,7 @@
 """
 MCP Tools with Debug Mode
 
-Provides tools for Claude/Antigravity agents to interact with the PKM system.
+Provides tools for Claude/Antigravity agents to interact with the CoreRag system.
 Includes debug mode for observability when tuning retrieval.
 """
 
@@ -45,9 +45,9 @@ class SearchResultWithDebug:
     debug: Optional[DebugContext] = None
 
 
-class PKMTools:
+class CoreRagTools:
     """
-    MCP tools for the PKM system.
+    MCP tools for the CoreRag system.
 
     These tools are exposed to Claude/Antigravity agents via FastMCP.
     """
@@ -673,7 +673,7 @@ class PKMTools:
         """Lazily initialize memory manager and load user profile."""
         if self._memory_manager is None:
             from src.memory.episodic_memory import EpisodicMemoryManager
-            storage_path = Path.home() / ".pkm" / "profiles"
+            storage_path = Path.home() / ".corerag" / "profiles"
             self._memory_manager = EpisodicMemoryManager(storage_path)
             self._user_profile = self._memory_manager.load_or_create("default")
 

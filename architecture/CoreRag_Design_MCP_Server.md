@@ -20,12 +20,12 @@ The MCP (Model Context Protocol) server exposes your personal knowledge base to 
 ```json
 {
   "mcpServers": {
-    "pkm": {
+    "corerag": {
       "command": "python",
-      "args": ["-m", "pkm_mcp_server"],
+      "args": ["-m", "corerag_mcp_server"],
       "env": {
-        "PKM_DB_PATH": "/Users/tj/PKM/vector_db",
-        "PKM_PRIVACY_MODE": "hybrid"
+        "CORERAG_DB_PATH": "/Users/yourname/.corerag/lancedb",
+        "CoreRag_PRIVACY_MODE": "hybrid"
       }
     }
   }
@@ -36,11 +36,11 @@ The MCP (Model Context Protocol) server exposes your personal knowledge base to 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PKM_DB_PATH` | Path to LanceDB/vector database | `~/.pkm/db` |
-| `PKM_OBSIDIAN_VAULT` | Path to Obsidian vault | `~/.pkm/obsidian` |
-| `PKM_PRIVACY_MODE` | `local_only`, `hybrid`, `cloud_ok` | `hybrid` |
-| `PKM_EMBEDDING_MODEL` | Model for query embeddings | `nomic-embed-text` |
-| `PKM_LOG_LEVEL` | Logging verbosity | `INFO` |
+| `CORERAG_DB_PATH` | Path to LanceDB/vector database | `~/.corerag/db` |
+| `CoreRag_OBSIDIAN_VAULT` | Path to Obsidian vault | `~/.corerag/obsidian` |
+| `CoreRag_PRIVACY_MODE` | `local_only`, `hybrid`, `cloud_ok` | `hybrid` |
+| `CORERAG_EMBEDDING_MODEL` | Model for query embeddings | `nomic-embed-text` |
+| `CORERAG_LOG_LEVEL` | Logging verbosity | `INFO` |
 
 ---
 
@@ -321,7 +321,7 @@ class Document:
 ## Server Implementation Skeleton
 
 ```python
-# pkm_mcp_server/__main__.py
+# corerag_mcp_server/__main__.py
 
 from mcp.server import Server
 from mcp.server.fastmcp import FastMCP
@@ -333,14 +333,14 @@ import os
 mcp = FastMCP("Personal Knowledge Manager")
 
 # Connect to vector database
-db_path = os.environ.get("PKM_DB_PATH", "~/.pkm/db")
+db_path = os.environ.get("CORERAG_DB_PATH", "~/.corerag/db")
 db = lancedb.connect(db_path)
 documents_table = db.open_table("documents")
 chunks_table = db.open_table("chunks")
 
 # Load embedding model
 embed_model = SentenceTransformer(
-    os.environ.get("PKM_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5"),
+    os.environ.get("CORERAG_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5"),
     trust_remote_code=True
 )
 
@@ -443,7 +443,7 @@ if __name__ == "__main__":
 ## Directory Structure
 
 ```
-pkm_mcp_server/
+corerag_mcp_server/
 ├── __init__.py
 ├── __main__.py           # Server entry point
 ├── config.py             # Configuration management

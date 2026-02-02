@@ -1,4 +1,4 @@
-"""Video processing module for PKM."""
+"""Video processing module for CoreRag."""
 
 from src.video.scene_detector import (
     SceneDetector,

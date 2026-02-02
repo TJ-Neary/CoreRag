@@ -1,4 +1,4 @@
-"""Search module for PKM."""
+"""Search module for CoreRag."""
 
 from src.search.hyde import (
     HyDEExpander,

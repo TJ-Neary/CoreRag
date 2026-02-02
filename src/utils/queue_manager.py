@@ -167,7 +167,7 @@ class QueueManager:
             rate_limit: Jobs per second
             burst_limit: Maximum burst size
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "queue"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "queue"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._queue: List[QueuedJob] = []

@@ -38,7 +38,7 @@ CHECKPOINT_STATES = {
 ### Checkpoint File Structure
 
 ```
-~/.pkm/checkpoints/
+~/.corerag/checkpoints/
 ├── job_abc123.json           # Active job checkpoint
 ├── job_abc123.progress       # Detailed progress log
 └── completed/
@@ -54,13 +54,13 @@ CHECKPOINT_STATES = {
     "created_at": "2026-01-31T10:00:00Z",
     "updated_at": "2026-01-31T12:30:00Z",
     "status": "in_progress",
-    "source_directory": "/Users/tj/PKM/Research",
+    "source_directory": "/Users/yourname/CoreRag/Research",
     "total_files": 10000,
     "processed": 8000,
     "succeeded": 7950,
     "failed": 50,
     "skipped": 0,
-    "current_file": "/Users/tj/PKM/Research/paper_8001.pdf",
+    "current_file": "/Users/yourname/CoreRag/Research/paper_8001.pdf",
     "files_status": {
         "/path/to/file1.pdf": {"status": "completed", "doc_id": "uuid1"},
         "/path/to/file2.pdf": {"status": "failed", "error": "Corrupted PDF"},
@@ -236,12 +236,12 @@ class ChangeSet:
 
 | Component | Location | Priority |
 |-----------|----------|----------|
-| Vector database | `~/.pkm/lancedb/` | Critical |
-| File states | `~/.pkm/state/` | Critical |
-| Configuration | `~/.pkm/config/` | High |
-| Personal context | `~/.pkm/context/` | High |
-| Checkpoints | `~/.pkm/checkpoints/` | Medium |
-| Logs | `~/.pkm/logs/` | Low |
+| Vector database | `~/.corerag/lancedb/` | Critical |
+| File states | `~/.corerag/state/` | Critical |
+| Configuration | `~/.corerag/config/` | High |
+| Personal context | `~/.corerag/context/` | High |
+| Checkpoints | `~/.corerag/checkpoints/` | Medium |
+| Logs | `~/.corerag/logs/` | Low |
 
 ### Backup Script
 
@@ -249,15 +249,15 @@ class ChangeSet:
 #!/bin/bash
 # scripts/backup.sh
 
-BACKUP_DIR="$HOME/.pkm/backups"
+BACKUP_DIR="$HOME/.corerag/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="pkm_backup_$TIMESTAMP"
+BACKUP_NAME="corerag_backup_$TIMESTAMP"
 
 mkdir -p "$BACKUP_DIR"
 
 # Create backup
 tar -czf "$BACKUP_DIR/$BACKUP_NAME.tar.gz" \
-    -C "$HOME/.pkm" \
+    -C "$HOME/.corerag" \
     lancedb state config context
 
 # Keep only last 7 backups
@@ -280,14 +280,14 @@ if [ -z "$BACKUP_FILE" ]; then
 fi
 
 # Stop any running services
-pkill -f "pkm_server" || true
+pkill -f "corerag_server" || true
 
 # Backup current state (just in case)
-mv "$HOME/.pkm" "$HOME/.pkm.old.$(date +%s)"
+mv "$HOME/.corerag" "$HOME/.corerag.old.$(date +%s)"
 
 # Restore
-mkdir -p "$HOME/.pkm"
-tar -xzf "$BACKUP_FILE" -C "$HOME/.pkm"
+mkdir -p "$HOME/.corerag"
+tar -xzf "$BACKUP_FILE" -C "$HOME/.corerag"
 
 echo "Restored from: $BACKUP_FILE"
 ```
@@ -297,7 +297,7 @@ echo "Restored from: $BACKUP_FILE"
 ```python
 # Add to crontab: crontab -e
 # Run backup daily at 2am
-# 0 2 * * * /path/to/scripts/backup.sh >> ~/.pkm/logs/backup.log 2>&1
+# 0 2 * * * /path/to/scripts/backup.sh >> ~/.corerag/logs/backup.log 2>&1
 ```
 
 ---

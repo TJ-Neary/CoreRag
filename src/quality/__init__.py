@@ -1,4 +1,4 @@
-"""Quality assurance module for PKM.
+"""Quality assurance module for CoreRag.
 
 Imports are lazy to avoid pulling in optional dependencies (e.g., aiohttp)
 when only a subset of quality tools is needed.

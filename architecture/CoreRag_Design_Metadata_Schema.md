@@ -24,7 +24,7 @@
 | Field | Type | Description | Example |
 |-------|------|-------------|---------|
 | `id` | UUID | Unique identifier for this document | `550e8400-e29b-41d4-a716-446655440000` |
-| `source_path` | string | Original file location | `/Users/tj/Research/AI/paper.pdf` |
+| `source_path` | string | Original file location | `/Users/yourname/Research/AI/paper.pdf` |
 | `source_filename` | string | Original filename | `attention_is_all_you_need.pdf` |
 | `source_type` | enum | File format | `pdf`, `docx`, `audio`, `video`, `image`, `webpage`, `note` |
 | `source_url` | string? | Original URL if web-sourced | `https://arxiv.org/abs/1706.03762` |
@@ -86,7 +86,7 @@
 | `related_documents` | UUID[] | Manually or AI-linked related docs | `[...]` |
 | `parent_document` | UUID? | If this is a section of a larger work | `...` |
 | `collection` | string | Logical grouping | `research`, `personal`, `context` |
-| `project` | string? | Associated project if any | `PKM System Development` |
+| `project` | string? | Associated project if any | `CoreRag Development` |
 
 ---
 
@@ -203,7 +203,7 @@ Each chunk (vector) also carries:
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "source_path": "/Users/tj/Research/AI/attention_paper.pdf",
+  "source_path": "/Users/yourname/Research/AI/attention_paper.pdf",
   "source_filename": "attention_is_all_you_need.pdf",
   "source_type": "pdf",
   "source_url": "https://arxiv.org/abs/1706.03762",

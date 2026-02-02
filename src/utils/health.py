@@ -1,5 +1,5 @@
 """
-Health checks and status dashboard for PKM.
+Health checks and status dashboard for CoreRag.
 
 Provides system monitoring, diagnostics, and status reporting.
 """
@@ -93,8 +93,8 @@ class HealthChecker:
             data_dir: Data directory to check
             state_dir: State directory for health logs
         """
-        self.data_dir = data_dir or Path.home() / ".pkm" / "data"
-        self.state_dir = state_dir or Path.home() / ".pkm" / "health"
+        self.data_dir = data_dir or Path.home() / ".corerag" / "data"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "health"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._start_time = time.time()
@@ -165,7 +165,7 @@ class HealthChecker:
         status = self.run_all_checks()
 
         lines = [
-            f"PKM System Status: {status.status.value.upper()}",
+            f"CoreRag Status: {status.status.value.upper()}",
             f"Version: {status.version}",
             f"Uptime: {self._format_uptime(status.uptime_seconds)}",
             "",
@@ -473,7 +473,7 @@ class MetricsCollector:
 
     def __init__(self, state_dir: Optional[Path] = None):
         """Initialize metrics collector."""
-        self.state_dir = state_dir or Path.home() / ".pkm" / "metrics"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "metrics"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
     def record_metric(

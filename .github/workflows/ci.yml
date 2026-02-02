@@ -1,4 +1,4 @@
-# CI/CD Pipeline for PKM System
+# CI/CD Pipeline for CoreRag
 # Runs on every push and pull request to main
 
 name: CI

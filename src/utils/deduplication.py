@@ -1,5 +1,5 @@
 """
-Deduplication system for PKM.
+Deduplication system for CoreRag.
 
 Detects and handles duplicate files and content at multiple levels:
 - File hash: Exact byte-for-byte duplicates
@@ -71,7 +71,7 @@ class DeduplicationManager:
             state_dir: Directory to store dedup state
             semantic_threshold: Similarity threshold for semantic duplicates
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "state"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "state"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.semantic_threshold = semantic_threshold

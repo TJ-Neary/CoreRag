@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AntiGravity PKM is a local-first, privacy-preserving Personal Knowledge Management system running on Apple Silicon (M4 Max, 48GB RAM). It ingests documents from an inbox folder, processes them through an AI pipeline (text extraction, three-layer PII detection, LLM-based classification), stages them for human review via a web dashboard, then archives originals and exports redacted markdown to an Obsidian vault. Semantic search is exposed to Claude Desktop via MCP.
+CoreRag is a local-first, privacy-preserving knowledge engine running on Apple Silicon (M4 Max, 48GB RAM). It ingests documents from an inbox folder, processes them through an AI pipeline (text extraction, three-layer PII detection, LLM-based classification), stages them for human review via a web dashboard, then archives originals and exports redacted markdown to an Obsidian vault. Search is exposed via MCP (stdio) and REST API v1.
+
+**CoreRag is the knowledge engine; a separate AI assistant project handles the user-facing layer.** That external project owns chat, voice, personality, user memory, skills, and intent routing. CoreRag owns document ingestion, RAG indexing, PII detection, chunking, knowledge graph, quality checks, the HITL dashboard, and Obsidian export. External consumers connect via MCP client (stdio) and REST API (`localhost:8000/api/v1/*`), using the manifest endpoint for capability discovery.
 
 ## Development Commands
 
@@ -89,6 +91,15 @@ Pytest is configured with `--cov=src --cov-report=term-missing` and `asyncio_mod
 - Test fixtures use only synthetic data
 - Session logs and progress files stay gitignored
 
+**Run the security scanner before every commit:**
+```bash
+./scripts/security_scan.sh              # Scan all tracked files
+./scripts/security_scan.sh --staged     # Scan only staged changes
+./scripts/security_scan.sh --fix        # Show suggested fixes
+```
+
+Scans for: API keys/secrets, hardcoded user paths, PII (SSN, email, phone, credit card), sensitive files that should be gitignored, database/binary files, dangerous code patterns (`shell=True`, `verify=False`, `0.0.0.0` binding, `eval()`). Custom private terms (employer names, project names) can be added to `.security_terms` (gitignored; see `.security_terms.example`).
+
 ### Linting & Formatting
 ```bash
 black src/ tests/ --line-length 100
@@ -127,7 +138,7 @@ The LLM analyzes each document and returns: category, year, type, summary, sugge
 PII is detected at **analysis time** in `processor.py` (not deferred to commit time):
 
 1. **Presidio + spaCy** (`en_core_web_lg`): NER-based detection of names, organizations, locations, dates, plus regex patterns for SSNs, phone numbers, emails, credit cards, API keys, IP addresses. Keyword scanner is **disabled** (caused false positives on policy/HR documents).
-2. **Custom PII dictionary** (`~/.pkm/pii_terms.yaml`): User-defined terms (SSN, email, employee ID, etc.) matched with confidence=1.0. Template at `pii_terms.example.yaml`. Protected by file permissions + `.gitignore`.
+2. **Custom PII dictionary** (`~/.corerag/pii_terms.yaml`): User-defined terms (SSN, email, employee ID, etc.) matched with confidence=1.0. Template at `pii_terms.example.yaml`. Protected by file permissions + `.gitignore`.
 3. **LLM advisory** (`pii_observations`): Free-text field where the LLM notes specific PII it sees. Not used for the `is_sensitive` boolean — purely informational on the dashboard.
 
 **Manual override**: Dashboard "Mark as Sensitive" checkbox lets the user override auto-detection in either direction. Sets `pii_source: "manual"` in metadata.
@@ -172,7 +183,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
 | `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Wired** (via exporter) |
 | `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | Unwired |
-| `src/memory/` | Episodic memory for user context / search patterns | Unwired |
+| `src/memory/` | Episodic memory for user context / search patterns | **Deprecated** — handed off to external AI assistant |
 | `src/ocr/` | macOS Vision.framework text extraction | Unwired |
 | `src/audio/` | mlx-whisper transcription + topic segmentation | Unwired |
 | `src/video/` | OpenCV keyframe + scene detection | Unwired |
@@ -202,9 +213,9 @@ ARCHIVE_PATH=~/Documents                  # Long-term storage for originals (in 
 GOOGLE_API_KEY=...                        # Optional: Gemini API (omit to use local Ollama)
 OLLAMA_HOST=http://localhost:11434        # Ollama endpoint (default)
 OLLAMA_MODEL=qwen2.5:32b                 # Ollama model for analysis (default)
-PKM_DB_PATH=~/.pkm/lancedb               # LanceDB vector database path
-PKM_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
-PKM_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
+CORERAG_DB_PATH=~/.corerag/lancedb               # LanceDB vector database path
+CORERAG_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
+CORERAG_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
 ```
 
 ### Claude Desktop MCP Setup
@@ -213,33 +224,28 @@ Already configured in `~/Library/Application Support/Claude/claude_desktop_confi
 ```json
 {
   "mcpServers": {
-    "pkm": {
-      "command": "/path/to/PKM_v1/venv/bin/python",
+    "corerag": {
+      "command": "/path/to/CoreRag/venv/bin/python",
       "args": ["-m", "src.mcp_server.server"],
-      "cwd": "/path/to/PKM_v1"
+      "cwd": "/path/to/CoreRag"
     }
   }
 }
 ```
 
-The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB connection, HybridSearcher with FTS index, EmbeddingService, CrossEncoderReranker, and PKMTools.
-
-### macOS Automation
-```bash
-./scripts/install_automation.sh      # Install launchd agent (triggers on Inbox changes)
-```
+The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB connection, HybridSearcher with FTS index, EmbeddingService, CrossEncoderReranker, and CoreRagTools.
 
 ## Conventions
 
-- Python 3.13+, type hints on all function signatures
+- Python 3.11+ (per pyproject.toml), type hints on all function signatures
 - PEP 8 + `black` at 100 char line length, `ruff` for linting
 - Imports: stdlib -> third-party -> local (`from src.models import ...`)
 - Dataclasses or Pydantic for data structures
 - All file processors inherit from `BaseProcessor` (see `CONVENTIONS.md`)
 - Heavy processing wrapped in `SafeProcessor` for memory throttling
-- Custom exception hierarchy: `PKMError` -> `ProcessingError`, `EmbeddingError`, `DatabaseError`
+- Custom exception hierarchy: `CoreRagError` -> `ProcessingError`, `EmbeddingError`, `DatabaseError`
 - Commit format: `<type>: <description>` (feat/fix/docs/refactor/test/chore/perf)
-- `.pkmignore` controls which files are excluded from indexing (gitignore syntax)
+- `.coreragignore` controls which files are excluded from indexing (gitignore syntax)
 - CUI prefix: files with detected PII get `CUI_` prepended to suggested filenames
 
 ## Memory Safety
@@ -266,7 +272,7 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
 | 3 | Wire OCR into ingestion | Pending |
 | 4 | Wire auto-tagging | Pending |
 | 5 | Wire knowledge graph | Pending |
-| 6 | Wire episodic memory | Pending |
+| 6 | ~~Wire episodic memory~~ | **Handed off to external AI assistant** |
 | 7 | Wire quality modules | Pending |
 | 8 | Wire utility modules | Pending |
 | 9 | Wire analytics & queue | Pending |
@@ -277,7 +283,7 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
 ### Phase 2 Details — Search Stack Wiring
 
 Files to modify:
-- `src/mcp_server/server.py` — instantiate HyDEExpander + DecayConfig in `_startup()`, pass to PKMTools
+- `src/mcp_server/server.py` — instantiate HyDEExpander + DecayConfig in `_startup()`, pass to CoreRagTools
 - `src/mcp_server/tools.py` — fix HyDE to use `result.hypothetical_document` (not HyDEResult object), apply `apply_decay_to_results()` after reranking, add `use_multi_query` parameter
 - `src/search/__init__.py` — export decay_scoring module
 

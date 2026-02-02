@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pkm-system"
+name = "corerag-system"
 version = "0.1.0"
-description = "Personal Knowledge Management System with RAG"
+description = "CoreRag - Local-first knowledge engine with RAG, PII detection, and MCP integration"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -45,8 +45,8 @@ dev = [
 ]
 
 [project.scripts]
-pkm = "src.cli:main"
-pkm-server = "src.mcp_server.server:main"
+corerag = "src.cli:main"
+corerag-server = "src.mcp_server.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

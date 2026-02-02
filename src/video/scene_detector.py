@@ -1,5 +1,5 @@
 """
-Video scene detection and keyframe extraction for PKM.
+Video scene detection and keyframe extraction for CoreRag.
 
 Extracts representative keyframes from videos using scene change detection,
 then passes them to VLM for captioning to enable semantic video search.
@@ -95,7 +95,7 @@ class SceneDetector:
         self.min_scene_length = min_scene_length_seconds
         self.threshold = threshold
         self.max_keyframes = max_keyframes
-        self.output_dir = output_dir or Path(tempfile.mkdtemp(prefix="pkm_keyframes_"))
+        self.output_dir = output_dir or Path(tempfile.mkdtemp(prefix="corerag_keyframes_"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def extract_keyframes(self, video_path: Path) -> VideoAnalysis:
@@ -241,7 +241,7 @@ class SceneDetector:
 
 class VideoProcessor:
     """
-    Complete video processing pipeline for PKM.
+    Complete video processing pipeline for CoreRag.
 
     Combines:
     - Scene detection for keyframe extraction
@@ -265,7 +265,7 @@ class VideoProcessor:
             whisper_transcriber: Whisper for audio transcription
             output_dir: Directory for outputs
         """
-        self.output_dir = output_dir or Path.home() / ".pkm" / "video_cache"
+        self.output_dir = output_dir or Path.home() / ".corerag" / "video_cache"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.scene_detector = scene_detector or SceneDetector(
@@ -281,7 +281,7 @@ class VideoProcessor:
         caption_keyframes: bool = True,
     ) -> VideoAnalysis:
         """
-        Process a video file for PKM ingestion.
+        Process a video file for CoreRag ingestion.
 
         Args:
             video_path: Path to video file

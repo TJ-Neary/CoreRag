@@ -1,5 +1,5 @@
 """
-Sample documents for testing the PKM system.
+Sample documents for testing the CoreRag system.
 
 Provides realistic test data for:
 - Embedding quality tests

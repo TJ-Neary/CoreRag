@@ -26,7 +26,7 @@ export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
 FILE_COUNT=$(find "$INBOX_DIR" -maxdepth 1 -not -name '.*' -type f 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "$FILE_COUNT" -eq 0 ]; then
-    osascript -e 'display notification "Inbox is empty, nothing to process." with title "PKM"'
+    osascript -e 'display notification "Inbox is empty, nothing to process." with title "CoreRag"'
     echo "$(date) - Inbox empty, exiting." >> "$LOG_FILE"
     exit 0
 fi

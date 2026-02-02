@@ -1,7 +1,7 @@
 """
-MCP Server Entry Point for PKM System.
+MCP Server Entry Point for CoreRag.
 
-Exposes PKM tools to Claude via the Model Context Protocol (MCP).
+Exposes CoreRag tools to Claude via the Model Context Protocol (MCP).
 Uses FastMCP for easy tool registration and serving.
 
 Usage:
@@ -19,7 +19,7 @@ import lancedb
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
-from src.mcp_server.tools import PKMTools
+from src.mcp_server.tools import CoreRagTools
 from src.embeddings.embedding_service import EmbeddingService
 from src.search.hybrid_search import HybridSearcher
 from src.search.reranker import CrossEncoderReranker
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 # Global instances (initialized on startup)
-_pkm_tools: Optional[PKMTools] = None
+_corerag_tools: Optional[CoreRagTools] = None
 _embedding_service: Optional[EmbeddingService] = None
 _safe_processor: Optional[SafeProcessor] = None
 _query_analytics: Optional[QueryAnalytics] = None
@@ -43,24 +43,24 @@ _session_tracker = None
 def get_config() -> dict:
     """Load configuration from environment or defaults."""
     return {
-        "db_path": os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb")),
+        "db_path": os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb")),
         "vault_path": os.getenv("VAULT_PATH", str(Path.home() / "Documents" / "ObsidianVault")),
-        "embedding_model": os.getenv("PKM_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+        "embedding_model": os.getenv("CORERAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
         "reranker_model": os.getenv(
-            "PKM_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            "CORERAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
         ),
-        "state_dir": os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm")),
-        "enable_analytics": os.getenv("PKM_ENABLE_ANALYTICS", "true").lower() == "true",
-        "enable_cache": os.getenv("PKM_ENABLE_CACHE", "true").lower() == "true",
+        "state_dir": os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag")),
+        "enable_analytics": os.getenv("CoreRag_ENABLE_ANALYTICS", "true").lower() == "true",
+        "enable_cache": os.getenv("CoreRag_ENABLE_CACHE", "true").lower() == "true",
     }
 
 
 async def _startup():
-    """Initialize PKM components on server startup."""
-    global _pkm_tools, _embedding_service, _safe_processor, _query_analytics
+    """Initialize CoreRag components on server startup."""
+    global _corerag_tools, _embedding_service, _safe_processor, _query_analytics
 
     config = get_config()
-    logger.info(f"Starting PKM server with config: {config}")
+    logger.info(f"Starting CoreRag server with config: {config}")
 
     # Initialize safe processor (memory management)
     _safe_processor = SafeProcessor()
@@ -119,8 +119,8 @@ async def _startup():
     # Vault root for file listing / folder structure tools
     vault_root = Path(config["vault_path"]).expanduser().resolve()
 
-    # Build async embedder callable for PKMTools
-    # PKMTools.search_knowledge calls: query_vector = await self.embedder(query)
+    # Build async embedder callable for CoreRagTools
+    # CoreRagTools.search_knowledge calls: query_vector = await self.embedder(query)
     async def _embed_query(text: str) -> list[float]:
         return _embedding_service.embed_query(text)
 
@@ -142,8 +142,8 @@ async def _startup():
     )
     logger.info("Conflict detector initialized (semantic + numeric modes)")
 
-    # Initialize PKM tools with correct constructor signature
-    _pkm_tools = PKMTools(
+    # Initialize CoreRag tools with correct constructor signature
+    _corerag_tools = CoreRagTools(
         retriever=searcher,
         embedder=_embed_query,
         reranker=reranker,
@@ -161,7 +161,7 @@ async def _startup():
     _session_tracker = SessionTracker()
     logger.info(f"Session tracker started: {_session_tracker._current.session_id}")
 
-    logger.info("PKM server initialized successfully")
+    logger.info("CoreRag server initialized successfully")
 
 
 async def _shutdown():
@@ -180,7 +180,7 @@ async def _shutdown():
     if _query_analytics:
         _query_analytics.flush()
 
-    logger.info("PKM server shut down")
+    logger.info("CoreRag server shut down")
 
 
 @asynccontextmanager
@@ -193,7 +193,7 @@ async def lifespan(app):
 
 # Initialize FastMCP server with lifespan manager
 mcp = FastMCP(
-    name="pkm-server",
+    name="corerag-server",
     version="1.0.0",
     instructions="Personal Knowledge Management System with RAG capabilities",
     lifespan=lifespan,
@@ -227,13 +227,13 @@ async def search_knowledge(
     Returns:
         Search results with content, sources, and optional debug info
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
     import time as _time
     _search_start = _time.time()
 
-    result = await _pkm_tools.search_knowledge(
+    result = await _corerag_tools.search_knowledge(
         query=query,
         k=k,
         use_reranker=use_reranker,
@@ -273,10 +273,10 @@ async def search_by_entity(
     Returns:
         Related entities and their connections
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.search_by_entity(
+    return await _corerag_tools.search_by_entity(
         entity_name=entity_name,
         relationship_type=relationship_type,
         max_hops=max_hops,
@@ -302,10 +302,10 @@ async def list_recent_files(
     Returns:
         List of recent files with metadata
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.list_recent_files(
+    return await _corerag_tools.list_recent_files(
         days=days,
         limit=limit,
         file_types=file_types,
@@ -327,10 +327,10 @@ async def get_folder_structure(
     Returns:
         Hierarchical folder structure with file counts
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.get_folder_structure(
+    return await _corerag_tools.get_folder_structure(
         path=path,
         max_depth=max_depth,
     )
@@ -344,10 +344,10 @@ async def get_user_context() -> dict:
     Returns:
         User preferences, facts, and recent context
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.get_user_context()
+    return await _corerag_tools.get_user_context()
 
 
 # === SYSTEM TOOLS ===
@@ -390,10 +390,10 @@ async def add_user_fact(
     Returns:
         Confirmation of added fact
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.add_user_fact(fact=fact, category=category)
+    return await _corerag_tools.add_user_fact(fact=fact, category=category)
 
 
 # === INGESTION TOOLS ===
@@ -413,10 +413,10 @@ async def trigger_reindex(
     Returns:
         Indexing status and queued files
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.trigger_reindex(path=path, force=force)
+    return await _corerag_tools.trigger_reindex(path=path, force=force)
 
 
 @mcp.tool()
@@ -427,10 +427,10 @@ async def get_ingestion_queue() -> dict:
     Returns:
         Queue length, currently processing file, and recent completions
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.get_ingestion_queue()
+    return await _corerag_tools.get_ingestion_queue()
 
 
 # === QUALITY TOOLS ===
@@ -525,10 +525,10 @@ async def detect_conflicts(
     Returns:
         Conflict report with evidence and resolution suggestions
     """
-    if not _pkm_tools:
-        return {"error": "PKM tools not initialized"}
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
 
-    return await _pkm_tools.detect_conflicts(path=path, limit=limit)
+    return await _corerag_tools.detect_conflicts(path=path, limit=limit)
 
 
 # === BACKUP TOOLS ===
@@ -539,7 +539,7 @@ async def create_backup(
     backup_type: str = "full",
 ) -> dict:
     """
-    Create a backup of the PKM database and state.
+    Create a backup of the CoreRag database and state.
 
     Args:
         name: Optional name prefix for the backup
@@ -568,7 +568,7 @@ async def create_backup(
 @mcp.tool()
 async def list_backups() -> dict:
     """
-    List available PKM backups.
+    List available CoreRag backups.
 
     Returns:
         List of backups with name, timestamp, and size
@@ -597,14 +597,14 @@ async def list_backups() -> dict:
 
 # === RESOURCE ENDPOINTS ===
 
-@mcp.resource("pkm://status")
+@mcp.resource("corerag://status")
 async def get_status_resource() -> str:
-    """Get PKM system status as a resource."""
+    """Get CoreRag system status as a resource."""
     status = await get_system_status()
-    return f"PKM Status: {status}"
+    return f"CoreRag Status: {status}"
 
 
-@mcp.resource("pkm://recent/{days}")
+@mcp.resource("corerag://recent/{days}")
 async def get_recent_resource(days: int = 7) -> str:
     """Get recent files as a resource."""
     files = await list_recent_files(days=days)

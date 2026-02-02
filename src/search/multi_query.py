@@ -1,5 +1,5 @@
 """
-Multi-Query Fusion for PKM.
+Multi-Query Fusion for CoreRag.
 
 Handle complex questions by decomposing into sub-queries:
 - Break complex questions into simpler parts

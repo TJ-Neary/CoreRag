@@ -1,7 +1,7 @@
 """
-Health Dashboard for PKM.
+Health Dashboard for CoreRag.
 
-A lightweight web dashboard for monitoring PKM system health:
+A lightweight web dashboard for monitoring CoreRag system health:
 - Memory and CPU usage
 - Database statistics
 - Ingestion queue status
@@ -84,15 +84,15 @@ class HealthReport:
 
 
 class MetricsCollector:
-    """Collect metrics from various PKM subsystems."""
+    """Collect metrics from various CoreRag subsystems."""
 
     def __init__(
         self,
         db_path: Optional[Path] = None,
         state_dir: Optional[Path] = None,
     ):
-        self.db_path = db_path or Path.home() / ".pkm" / "lancedb"
-        self.state_dir = state_dir or Path.home() / ".pkm"
+        self.db_path = db_path or Path.home() / ".corerag" / "lancedb"
+        self.state_dir = state_dir or Path.home() / ".corerag"
 
     def get_system_metrics(self) -> SystemMetrics:
         """Get current system metrics."""
@@ -255,7 +255,7 @@ DASHBOARD_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PKM Health Dashboard</title>
+    <title>CoreRag Health Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -366,7 +366,7 @@ DASHBOARD_HTML = """
 </head>
 <body>
     <div class="header">
-        <h1>🧠 PKM Health Dashboard</h1>
+        <h1>🧠 CoreRag Health Dashboard</h1>
         <div style="display: flex; gap: 10px; align-items: center;">
             <span id="status-badge" class="status-badge">Loading...</span>
             <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>

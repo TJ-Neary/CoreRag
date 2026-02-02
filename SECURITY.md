@@ -377,7 +377,7 @@ For APIs that will be accessed by other systems:
 
 ```python
 # Simple bearer token auth for local services
-API_TOKEN = os.getenv("PKM_API_TOKEN")
+API_TOKEN = os.getenv("CORERAG_API_TOKEN")
 
 async def verify_token(request: Request):
     auth = request.headers.get("Authorization", "")

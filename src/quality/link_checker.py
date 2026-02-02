@@ -1,5 +1,5 @@
 """
-Link Rot Checker for PKM.
+Link Rot Checker for CoreRag.
 
 Detects and reports dead URLs in your knowledge base:
 - Async HTTP HEAD requests for efficiency
@@ -190,7 +190,7 @@ class LinkCache:
             cache_dir: Directory for cache storage
             cache_duration: How long to cache results
         """
-        self.cache_dir = cache_dir or Path.home() / ".pkm" / "link_cache"
+        self.cache_dir = cache_dir or Path.home() / ".corerag" / "link_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_duration = cache_duration
         self._cache: Dict[str, LinkCheckResult] = {}
@@ -293,7 +293,7 @@ class LinkChecker:
         timeout: float = 10.0,
         max_concurrent: int = 10,
         rate_limit_delay: float = 0.1,
-        user_agent: str = "PKM-LinkChecker/1.0",
+        user_agent: str = "CoreRag-LinkChecker/1.0",
     ):
         """
         Initialize link checker.

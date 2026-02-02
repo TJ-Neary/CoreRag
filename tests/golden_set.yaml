@@ -12,7 +12,7 @@
 metadata:
   version: "1.0"
   created: "2026-01-31"
-  description: "Regression test suite for PKM retrieval quality"
+  description: "Regression test suite for CoreRag retrieval quality"
 
 # Test configuration
 config:
@@ -98,7 +98,7 @@ queries:
     tags: ["operations", "code"]
 
   - query: "Files to exclude from indexing"
-    expected_file: ".pkmignore"
+    expected_file: ".coreragignore"
     expected_in_top: 3
     tags: ["configuration"]
 

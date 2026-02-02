@@ -1,8 +1,8 @@
 """
-.pkmignore File Parser
+.coreragignore File Parser
 
 Parses gitignore-style patterns to determine which files should be excluded
-from indexing. Supports nested .pkmignore files (like .gitignore).
+from indexing. Supports nested .coreragignore files (like .gitignore).
 """
 
 import fnmatch
@@ -62,41 +62,41 @@ class IgnorePattern:
         return bool(self.regex.search(path))
 
 
-class PKMIgnore:
+class CoreRagIgnore:
     """
-    Parser for .pkmignore files.
+    Parser for .coreragignore files.
 
     Supports:
     - Standard gitignore patterns
     - Negation with !
     - Directory-only patterns with trailing /
     - Comments with #
-    - Nested .pkmignore files
+    - Nested .coreragignore files
     """
 
-    IGNORE_FILENAME = ".pkmignore"
+    IGNORE_FILENAME = ".coreragignore"
 
     def __init__(self, root_path: Optional[Path] = None):
         """
         Initialize ignore parser.
 
         Args:
-            root_path: Root directory to search for .pkmignore files
+            root_path: Root directory to search for .coreragignore files
         """
         self.root_path = Path(root_path) if root_path else Path.cwd()
         self.patterns: List[IgnorePattern] = []
         self._load_patterns()
 
     def _load_patterns(self):
-        """Load patterns from root .pkmignore and any nested ones."""
-        # Load root .pkmignore
+        """Load patterns from root .coreragignore and any nested ones."""
+        # Load root .coreragignore
         root_ignore = self.root_path / self.IGNORE_FILENAME
         if root_ignore.exists():
             self._load_file(root_ignore, "")
             logger.info(f"Loaded {len(self.patterns)} patterns from {root_ignore}")
 
     def _load_file(self, path: Path, prefix: str):
-        """Load patterns from a single .pkmignore file."""
+        """Load patterns from a single .coreragignore file."""
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -115,7 +115,7 @@ class PKMIgnore:
                     if negation:
                         line = line[1:]
 
-                    # Add prefix for nested .pkmignore
+                    # Add prefix for nested .coreragignore
                     if prefix and not line.startswith("/"):
                         line = prefix + "/" + line
 
@@ -127,7 +127,7 @@ class PKMIgnore:
             logger.warning(f"Failed to load {path}: {e}")
 
     def add_nested_ignore(self, ignore_path: Path):
-        """Add patterns from a nested .pkmignore file."""
+        """Add patterns from a nested .coreragignore file."""
         if ignore_path.exists():
             prefix = str(ignore_path.parent.relative_to(self.root_path))
             self._load_file(ignore_path, prefix)
@@ -198,7 +198,7 @@ class IgnoreChecker:
 
     def __init__(self, root_path: Path):
         self.root_path = root_path
-        self.pkmignore = PKMIgnore(root_path)
+        self.coreragignore = CoreRagIgnore(root_path)
         self._cache: dict = {}
 
     def should_process(self, path: Path) -> bool:
@@ -226,7 +226,7 @@ class IgnoreChecker:
                         self._cache[path_str] = False
                         return False
                 else:
-                    is_ignored = self.pkmignore.is_ignored(partial)
+                    is_ignored = self.coreragignore.is_ignored(partial)
                     self._cache[partial_str] = not is_ignored
                     if is_ignored:
                         self._cache[path_str] = False
@@ -236,7 +236,7 @@ class IgnoreChecker:
             pass
 
         # Check the file itself
-        result = not self.pkmignore.is_ignored(path)
+        result = not self.coreragignore.is_ignored(path)
         self._cache[path_str] = result
         return result
 
@@ -251,9 +251,9 @@ def should_ignore(path: Path, root: Path) -> bool:
 
     Args:
         path: Path to check
-        root: Root directory containing .pkmignore
+        root: Root directory containing .coreragignore
 
     Returns:
         True if file should be ignored
     """
-    return PKMIgnore(root).is_ignored(path)
+    return CoreRagIgnore(root).is_ignored(path)

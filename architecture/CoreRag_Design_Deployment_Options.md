@@ -501,7 +501,7 @@ capabilities:
   autonomous_tasks: Can run scheduled jobs (daily summarization, etc.)
   computer_use: Compatible with Claude Computer Use / OpenManus patterns
   air_gapped_option: Complete offline operation possible
-  knowledge_base: Entire PKM corpus loaded and queryable
+  knowledge_base: Entire CoreRag corpus loaded and queryable
   personalization: Full context layer, learns preferences
 
 # What this replaces (API costs saved)
@@ -531,7 +531,7 @@ With this configuration, the Mac Studio becomes:
 │                                                                     │
 │  KNOWLEDGE LAYER                                                    │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │  Your entire PKM corpus: Research, Personal, Context        │    │
+│  │  Your entire CoreRag corpus: Research, Personal, Context        │    │
 │  │  Terabytes of documents, fully indexed and searchable       │    │
 │  │  Continuously updated as new content is added               │    │
 │  └────────────────────────────────────────────────────────────┘    │
@@ -752,6 +752,6 @@ estimated_monthly_cost: $20-35 (mostly Claude Pro)
 
 ## Related Documents
 
-- [System Architecture](./PKM_Design_System_Architecture.md)
-- [Metadata Schema](./PKM_Design_Metadata_Schema.md)
-- [MCP Server Design](./PKM_Design_MCP_Server.md)
+- [System Architecture](./CoreRag_Design_System_Architecture.md)
+- [Metadata Schema](./CoreRag_Design_Metadata_Schema.md)
+- [MCP Server Design](./CoreRag_Design_MCP_Server.md)

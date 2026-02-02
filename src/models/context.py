@@ -1,4 +1,4 @@
-"""Personal context model for PKM System."""
+"""Personal context model for CoreRag."""
 
 from dataclasses import dataclass, field
 from datetime import datetime

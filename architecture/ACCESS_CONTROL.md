@@ -4,7 +4,7 @@
 
 ## Overview
 
-While the PKM system is primarily single-user, this document outlines access control for:
+While the CoreRag system is primarily single-user, this document outlines access control for:
 - Future multi-user scenarios
 - Shared knowledge bases
 - API access control
@@ -21,7 +21,7 @@ While the PKM system is primarily single-user, this document outlines access con
 │              Local Machine              │
 │                                         │
 │   ┌─────────┐      ┌─────────────────┐  │
-│   │  User   │──────│   PKM System    │  │
+│   │  User   │──────│   CoreRag    │  │
 │   │ (Owner) │      │   (Full Access) │  │
 │   └─────────┘      └─────────────────┘  │
 │                                         │

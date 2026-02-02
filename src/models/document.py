@@ -1,4 +1,4 @@
-"""Document and Chunk models for PKM System."""
+"""Document and Chunk models for CoreRag."""
 
 from dataclasses import dataclass, field
 from datetime import datetime

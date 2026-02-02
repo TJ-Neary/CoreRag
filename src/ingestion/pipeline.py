@@ -1,5 +1,5 @@
 """
-Ingestion Pipeline Orchestrator for PKM.
+Ingestion Pipeline Orchestrator for CoreRag.
 
 Routes files to appropriate processors based on type:
 - Documents (MD, TXT, DOCX, PDF) → Text extraction + chunking
@@ -180,9 +180,9 @@ class IngestionPipeline:
             enable_watch: Whether to enable file watching
         """
         # Get defaults from environment or use standard paths
-        default_watch = os.getenv("PKM_WATCH_DIR", str(Path.home() / "Documents" / "PKM_Input"))
-        default_state = os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm" / "ingestion"))
-        default_db = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        default_watch = os.getenv("CoreRag_WATCH_DIR", str(Path.home() / "Documents" / "CoreRag_Input"))
+        default_state = os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag" / "ingestion"))
+        default_db = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         
         self.watch_dirs = watch_dirs or [Path(default_watch)]
         self.state_dir = state_dir or Path(default_state)
@@ -442,8 +442,8 @@ class IngestionPipeline:
     def _move_to_processed(self, file_path: Path) -> Path:
         """Move file from inbox to processed folder with date prefix."""
         # Check if file is in inbox
-        inbox_dir = Path(os.getenv("PKM_INBOX_DIR", str(Path.home() / "Documents" / "PKM" / "Inbox")))
-        processed_dir = Path(os.getenv("PKM_PROCESSED_DIR", str(Path.home() / "Documents" / "PKM" / "Processed")))
+        inbox_dir = Path(os.getenv("CORERAG_INBOX_DIR", str(Path.home() / "Documents" / "CoreRag" / "Inbox")))
+        processed_dir = Path(os.getenv("CoreRag_PROCESSED_DIR", str(Path.home() / "Documents" / "CoreRag" / "Processed")))
         
         # Only move if the file is actually in the inbox directory tree
         try:
@@ -727,9 +727,9 @@ class IngestionPipeline:
         return hasher.hexdigest()
 
     def _load_ignore_patterns(self) -> None:
-        """Load ignore patterns from .pkmignore."""
+        """Load ignore patterns from .coreragignore."""
         for watch_dir in self.watch_dirs:
-            ignore_file = watch_dir / ".pkmignore"
+            ignore_file = watch_dir / ".coreragignore"
             if ignore_file.exists():
                 with open(ignore_file) as f:
                     for line in f:

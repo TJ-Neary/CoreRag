@@ -1,5 +1,5 @@
 """MCP Server module for Model Context Protocol integration and tools."""
 
-from .tools import PKMTools
+from .tools import CoreRagTools
 
-__all__ = ["PKMTools"]
+__all__ = ["CoreRagTools"]

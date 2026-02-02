@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-PKM Command-Line Interface.
+CoreRag Command-Line Interface.
 
-A comprehensive CLI for manual PKM operations:
+A comprehensive CLI for manual CoreRag operations:
 - Search and query
 - File ingestion
 - System status
@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("pkm-cli")
+logger = logging.getLogger("corerag-cli")
 
 
 class Colors:
@@ -89,7 +89,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 
         # Connect to LanceDB
         import lancedb
-        db_path = args.db_path or Path.home() / ".pkm" / "lancedb"
+        db_path = args.db_path or Path.home() / ".corerag" / "lancedb"
         db = lancedb.connect(str(db_path))
 
         if "child_chunks" not in db.table_names():
@@ -194,7 +194,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     try:
         import psutil
 
-        print_header("PKM System Status")
+        print_header("CoreRag Status")
 
         # Memory
         memory = psutil.virtual_memory()
@@ -209,7 +209,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"CPU: {color(f'{cpu_percent:.1f}%', cpu_color)} used")
 
         # Database
-        db_path = Path.home() / ".pkm" / "lancedb"
+        db_path = Path.home() / ".corerag" / "lancedb"
         if db_path.exists():
             import lancedb
             db = lancedb.connect(str(db_path))
@@ -225,7 +225,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(f"\nDatabase: {color('Not initialized', Colors.YELLOW)}")
 
         # State directory
-        state_dir = Path.home() / ".pkm"
+        state_dir = Path.home() / ".corerag"
         if state_dir.exists():
             total_size = sum(f.stat().st_size for f in state_dir.rglob("*") if f.is_file())
             print(f"\nState directory: {total_size / (1024**2):.1f} MB")
@@ -432,17 +432,17 @@ def cmd_pii(args: argparse.Namespace) -> int:
     """Manage custom PII dictionary."""
     import yaml
 
-    pii_path = Path.home() / ".pkm" / "pii_terms.yaml"
+    pii_path = Path.home() / ".corerag" / "pii_terms.yaml"
 
     if not args.pii_action:
-        print_error("Usage: pkm pii {list|add|remove}")
+        print_error("Usage: corerag pii {list|add|remove}")
         return 1
 
     if args.pii_action == "list":
         if not pii_path.exists():
             print_info("No custom PII terms defined.")
             print_info(f"File location: {pii_path}")
-            print_info("Add terms with: pkm pii add <term> --type TYPE")
+            print_info("Add terms with: corerag pii add <term> --type TYPE")
             return 0
 
         with open(pii_path) as f:
@@ -509,7 +509,7 @@ def cmd_pii(args: argparse.Namespace) -> int:
         return 0
 
     else:
-        print_error("Usage: pkm pii {list|add|remove}")
+        print_error("Usage: corerag pii {list|add|remove}")
         return 1
 
 
@@ -518,7 +518,7 @@ def cmd_pii(args: argparse.Namespace) -> int:
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     parser = argparse.ArgumentParser(
-        prog="pkm",
+        prog="corerag",
         description="Personal Knowledge Management CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

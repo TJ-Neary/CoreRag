@@ -1,4 +1,4 @@
-# PKM System Ignore File
+# CoreRag Ignore File
 # Files and directories matching these patterns will NOT be indexed.
 # Syntax: Same as .gitignore
 
@@ -11,8 +11,8 @@
 Thumbs.db
 desktop.ini
 
-# PKM System Internals (don't index our own database)
-.pkm/
+# CoreRag Internals (don't index our own database)
+.corerag/
 _transcripts/
 
 # IDE

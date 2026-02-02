@@ -1,4 +1,4 @@
-# AntiGravity PKM: Future Enhancements Roadmap
+# CoreRag: Future Enhancements Roadmap
 
 > **Created**: 2026-02-01  
 > **Status**: Planning  
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document captures enhancement opportunities identified during a comprehensive review of the AntiGravity PKM v2.0 codebase. These suggestions build on the existing architecture and leverage code that's already written but not fully wired up.
+This document captures enhancement opportunities identified during a comprehensive review of the CoreRag v2.0 codebase. These suggestions build on the existing architecture and leverage code that's already written but not fully wired up.
 
 ### Priority Tiers
 
@@ -36,11 +36,11 @@ This document captures enhancement opportunities identified during a comprehensi
 
 from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
 
-class PKMTools:
+class CoreRagTools:
     def __init__(self, ..., graph_db_path: Optional[Path] = None):
         # ... existing init ...
         self.knowledge_graph = KnowledgeGraph(
-            graph_db_path or Path.home() / ".pkm" / "knowledge_graph.db"
+            graph_db_path or Path.home() / ".corerag" / "knowledge_graph.db"
         )
     
     async def search_by_entity(
@@ -111,7 +111,7 @@ from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
 async def _extract_and_store_entities(text: str, document_id: str, file_name: str):
     """Extract entities and relationships, store in knowledge graph."""
     try:
-        graph = KnowledgeGraph(Path.home() / ".pkm" / "knowledge_graph.db")
+        graph = KnowledgeGraph(Path.home() / ".corerag" / "knowledge_graph.db")
         extractor = EntityExtractor()  # Uses regex fallback if no LLM
         
         entities, relationships = await extractor.extract(text[:10000], document_id)
@@ -135,13 +135,15 @@ async def _extract_and_store_entities(text: str, document_id: str, file_name: st
 
 ---
 
-### 2. Query Analytics → Episodic Memory Unification
+### 2. ~~Query Analytics → Episodic Memory Unification~~ *(Handed off to external AI assistant)*
+
+> **Note (2026-02-01):** Episodic memory and user context are now owned by an external AI assistant project. CoreRag retains `QueryAnalytics` for search observability, but the unified memory system described below should be built in the external project instead.
 
 **Current State**: `src/analytics/query_analytics.py` tracks searches separately from the planned episodic memory system. This creates two parallel observability systems.
 
 **Impact**: Unified context for Claude that includes search behavior, knowledge gaps, and session history in one place.
 
-**Implementation**:
+**Implementation (reference only — build in external project, not CoreRag)**:
 
 ```python
 # In src/memory/episodic_memory.py (new consolidated module)
@@ -180,7 +182,7 @@ class UnifiedMemorySystem:
     """
     
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or Path.home() / ".pkm" / "memory.db"
+        self.db_path = db_path or Path.home() / ".corerag" / "memory.db"
         self.analytics = QueryAnalytics(state_dir=self.db_path.parent / "analytics")
         self._init_db()
     
@@ -460,7 +462,7 @@ async def run_database_optimization(table_name: str = None) -> dict:
 
 **Current State**: `src/obsidian/obsidian_export.py` creates standalone markdown files with frontmatter but no connections to existing vault content.
 
-**Impact**: Transforms PKM imports from isolated files into connected knowledge nodes.
+**Impact**: Transforms CoreRag imports from isolated files into connected knowledge nodes.
 
 **Implementation**:
 
@@ -589,7 +591,7 @@ class ObsidianExporter:
         if self.vault_path:
             self.backlink_generator = BacklinkGenerator(
                 self.vault_path,
-                Path.home() / ".pkm" / "knowledge_graph.db"
+                Path.home() / ".corerag" / "knowledge_graph.db"
             )
     
     def export_to_vault(
@@ -623,8 +625,8 @@ class ObsidianExporter:
 
 ```yaml
 # In .env or config
-PKM_OBSIDIAN_AUTO_BACKLINKS=true
-PKM_OBSIDIAN_RELATED_SECTION=true
+CORERAG_OBSIDIAN_AUTO_BACKLINKS=true
+CORERAG_OBSIDIAN_RELATED_SECTION=true
 ```
 
 **Files to modify**:
@@ -920,7 +922,7 @@ const dashboard = new DashboardEnhancements();
 
 ### 6. PII Dictionary Management via MCP
 
-**Current State**: PII redaction loads custom terms from `~/.pkm/pii_terms.yaml` but requires manual file editing.
+**Current State**: PII redaction loads custom terms from `~/.corerag/pii_terms.yaml` but requires manual file editing.
 
 **Impact**: Claude can help manage PII patterns during conversation.
 
@@ -932,7 +934,7 @@ const dashboard = new DashboardEnhancements();
 import yaml
 from pathlib import Path
 
-PII_TERMS_PATH = Path.home() / ".pkm" / "pii_terms.yaml"
+PII_TERMS_PATH = Path.home() / ".corerag" / "pii_terms.yaml"
 
 async def get_pii_terms(self) -> Dict[str, Any]:
     """Get current custom PII terms."""
@@ -1465,7 +1467,7 @@ class DocumentVersionStore:
     """
     
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or Path.home() / ".pkm" / "versions.db"
+        self.db_path = db_path or Path.home() / ".corerag" / "versions.db"
         self._init_db()
     
     def _init_db(self):
@@ -1743,7 +1745,7 @@ class LearnedRulesManager:
     ):
         self.rules_path = rules_path or Path("sorting_rules.yaml")
         self.corrections_path = corrections_path or Path("corrections_log.json")
-        self.learned_rules_path = Path.home() / ".pkm" / "learned_rules.yaml"
+        self.learned_rules_path = Path.home() / ".corerag" / "learned_rules.yaml"
     
     def analyze_corrections(self) -> Dict[str, Dict]:
         """Analyze correction history to derive patterns."""
@@ -1921,7 +1923,7 @@ Support multiple Obsidian vaults with different purposes (Work, Personal, Resear
 
 ### 12. Collaborative Features
 
-Shared PKM with family members, permission levels for sensitive content.
+Shared CoreRag with family members, permission levels for sensitive content.
 
 ### 13. External Integrations
 
@@ -1955,7 +1957,7 @@ iOS Shortcut or lightweight app for quick capture to Inbox.
 
 | Task | Effort | Owner |
 |------|--------|-------|
-| Query Analytics → Episodic Memory | 8-12h | — |
+| ~~Query Analytics → Episodic Memory~~ | — | External |
 | Obsidian Backlinks | 6-8h | — |
 
 ### Weeks 5-6: P1 Batch 2
@@ -2002,7 +2004,7 @@ iOS Shortcut or lightweight app for quick capture to Inbox.
 
 ## References
 
-- `docs/PHASE_6_EPISODIC_MEMORY.md` — Detailed Phase 6 design
+- `_project/PHASE_6_EPISODIC_MEMORY.md` — Phase 6 design (handed off to external project)
 - `architecture/` — System design documents
 - `src/` — Implementation reference
 

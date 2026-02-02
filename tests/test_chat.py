@@ -41,7 +41,7 @@ class TestChatEndpoint:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "message": {"content": "Hello! I'm your PKM assistant."}
+            "message": {"content": "Hello! I'm your CoreRag assistant."}
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -54,7 +54,7 @@ class TestChatEndpoint:
 
         data = resp.json()
         assert "response" in data
-        assert data["response"] == "Hello! I'm your PKM assistant."
+        assert data["response"] == "Hello! I'm your CoreRag assistant."
         assert data["rag_used"] is False
         assert data["sources"] == []
 

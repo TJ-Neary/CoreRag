@@ -1,5 +1,5 @@
 """
-User feedback loop system for PKM.
+User feedback loop system for CoreRag.
 
 Learns from user interactions to improve search relevance.
 """
@@ -70,7 +70,7 @@ class FeedbackCollector:
         Args:
             state_dir: Directory for feedback storage
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "feedback"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "feedback"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._events: List[FeedbackEvent] = []

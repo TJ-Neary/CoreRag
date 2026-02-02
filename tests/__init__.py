@@ -1,5 +1,5 @@
 """
-PKM System Test Suite.
+CoreRag Test Suite.
 
 Provides test fixtures, sample data, and utilities for testing.
 """

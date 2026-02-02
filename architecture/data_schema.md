@@ -50,7 +50,7 @@ class Document:
     file_extension: str
 
     # Timestamps
-    created_at: datetime             # When added to PKM
+    created_at: datetime             # When added to CoreRag
     modified_at: datetime            # Last file modification
     indexed_at: datetime             # When last processed
 

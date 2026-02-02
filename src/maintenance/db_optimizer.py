@@ -85,9 +85,9 @@ class LanceDBOptimizer:
         if not LANCEDB_AVAILABLE:
             raise ImportError("LanceDB required. Install: pip install lancedb")
 
-        self.db_path = db_path or Path.home() / ".pkm" / "lancedb"
+        self.db_path = db_path or Path.home() / ".corerag" / "lancedb"
         self.backup_before_optimize = backup_before_optimize
-        self.backup_dir = backup_dir or Path.home() / ".pkm" / "backups"
+        self.backup_dir = backup_dir or Path.home() / ".corerag" / "backups"
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
         self._db: Optional[lancedb.DBConnection] = None
@@ -378,7 +378,7 @@ class MaintenanceScheduler:
             state_file: File to track last run times
         """
         self.optimizer = optimizer or LanceDBOptimizer()
-        self.state_file = state_file or Path.home() / ".pkm" / "maintenance_state.json"
+        self.state_file = state_file or Path.home() / ".corerag" / "maintenance_state.json"
 
     def should_run_optimization(self, min_hours_between: int = 168) -> bool:
         """Check if enough time has passed since last optimization."""

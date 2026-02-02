@@ -17,7 +17,7 @@ def _get_rag_text(file_name: str) -> Optional[str]:
     try:
         import lancedb
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         try:
@@ -47,7 +47,7 @@ def _get_rag_file_list() -> list[str]:
     try:
         import lancedb
 
-        db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
         db = lancedb.connect(db_path)
 
         try:

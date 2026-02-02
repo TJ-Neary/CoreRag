@@ -114,7 +114,7 @@ def read_files_parallel(file_paths: List[Path]):
 import lancedb
 
 # ✅ CORRECT: Use appropriate index for dataset size
-db = lancedb.connect("~/.pkm/lancedb")
+db = lancedb.connect("~/.corerag/lancedb")
 
 # For < 100K vectors: Flat index is fine (no index needed)
 table = db.create_table("chunks", data)
@@ -281,12 +281,12 @@ for batch in process_files(files):
 # .env file
 
 # Parallelism
-PKM_MAX_WORKERS=8                    # CPU workers (leave cores for system)
-PKM_EMBEDDING_BATCH_SIZE=32          # GPU batch size
+CORERAG_MAX_WORKERS=8                    # CPU workers (leave cores for system)
+CORERAG_EMBEDDING_BATCH_SIZE=32          # GPU batch size
 
 # Memory limits
-PKM_MAX_MEMORY_GB=40                 # Leave 8GB for system
-PKM_CHUNK_BUFFER_SIZE=1000           # Chunks to buffer before DB write
+CoreRag_MAX_MEMORY_GB=40                 # Leave 8GB for system
+CORERAG_CHUNK_BUFFER_SIZE=1000           # Chunks to buffer before DB write
 
 # MLX/Metal settings
 PYTORCH_ENABLE_MPS_FALLBACK=1        # Fallback for unsupported ops

@@ -39,8 +39,8 @@ def main():
     parser.add_argument("--clear", action="store_true", help="Clear existing graph before backfill")
     args = parser.parse_args()
 
-    db_path = os.getenv("PKM_DB_PATH", str(Path.home() / ".pkm" / "lancedb"))
-    graph_db_path = Path(os.getenv("PKM_STATE_DIR", str(Path.home() / ".pkm"))) / "knowledge_graph.db"
+    db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+    graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
 
     logger.info(f"Connecting to LanceDB at {db_path}")
     db = lancedb.connect(db_path)

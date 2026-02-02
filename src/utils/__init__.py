@@ -1,4 +1,4 @@
-"""Utility modules for PKM System."""
+"""Utility modules for CoreRag."""
 
 from src.utils.hardware_monitor import HardwareMonitor, SystemStatus, SafetyLevel
 from src.utils.throttle_controller import ThrottleController

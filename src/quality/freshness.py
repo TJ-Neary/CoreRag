@@ -1,5 +1,5 @@
 """
-Freshness Indicators for PKM.
+Freshness Indicators for CoreRag.
 
 Tracks content freshness and provides staleness warnings:
 - Time since last modification
@@ -82,7 +82,7 @@ class FreshnessIndicator:
         self.aging_days = aging_days
         self.stale_days = stale_days
 
-        self.state_dir = state_dir or Path.home() / ".pkm" / "freshness"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "freshness"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # Access tracking

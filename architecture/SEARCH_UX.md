@@ -235,7 +235,7 @@ Unavailable:
       "snippet": "...neural networks learn through...",
       "score": 0.89,
       "source": "📄 ML-Guide.pdf, Page 12",
-      "link": "pkm://doc/abc123#chunk-5"
+      "link": "corerag://doc/abc123#chunk-5"
     }
   ],
   "meta": {

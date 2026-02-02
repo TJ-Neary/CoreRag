@@ -615,7 +615,7 @@ def send_notification(
 def alert_on_critical(status: SystemStatus):
     """Alert handler for critical status."""
     send_notification(
-        title="PKM System Warning",
+        title="CoreRag Warning",
         message=f"Memory at {status.memory_used_gb:.1f}GB - reducing load",
         subtitle="Processing paused"
     )
@@ -624,7 +624,7 @@ def alert_on_critical(status: SystemStatus):
 def alert_on_emergency(status: SystemStatus):
     """Alert handler for emergency status."""
     send_notification(
-        title="PKM System EMERGENCY",
+        title="CoreRag EMERGENCY",
         message="System resources critical - stopping all processing",
         sound=True
     )
@@ -654,7 +654,7 @@ from datetime import datetime
 class ResourceLogger:
     """Log resource usage over time."""
 
-    def __init__(self, log_dir: Path = Path.home() / ".pkm" / "logs"):
+    def __init__(self, log_dir: Path = Path.home() / ".corerag" / "logs"):
         self.log_dir = log_dir
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = log_dir / f"resources_{datetime.now():%Y%m%d}.jsonl"

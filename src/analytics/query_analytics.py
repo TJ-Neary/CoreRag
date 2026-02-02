@@ -1,5 +1,5 @@
 """
-Query Analytics for PKM.
+Query Analytics for CoreRag.
 
 Tracks and analyzes search queries to:
 - Identify patterns and frequent queries
@@ -93,7 +93,7 @@ class QueryAnalytics:
             max_events: Maximum events to keep in memory
             enable_patterns: Enable pattern detection
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "analytics"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "analytics"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.max_events = max_events
         self.enable_patterns = enable_patterns

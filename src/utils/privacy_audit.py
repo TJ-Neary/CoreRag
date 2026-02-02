@@ -1,5 +1,5 @@
 """
-Privacy audit system for PKM.
+Privacy audit system for CoreRag.
 
 Scans content for sensitive information and enforces privacy tiers.
 
@@ -574,7 +574,7 @@ class PrivacyAuditManager:
             state_dir: Directory for audit logs
             auto_block_restricted: Block processing of restricted content
         """
-        self.state_dir = state_dir or Path.home() / ".pkm" / "privacy"
+        self.state_dir = state_dir or Path.home() / ".corerag" / "privacy"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.scanner = PrivacyScanner()
@@ -764,14 +764,14 @@ def load_custom_pii_terms(path: Optional[Path] = None) -> list[dict]:
     """Load user-defined PII terms from a YAML file.
 
     Args:
-        path: Path to the YAML file. Defaults to ~/.pkm/pii_terms.yaml
+        path: Path to the YAML file. Defaults to ~/.corerag/pii_terms.yaml
 
     Returns:
         List of term dicts with 'value' and 'type' keys, or empty list if
         the file doesn't exist or can't be parsed.
     """
     if path is None:
-        path = Path.home() / ".pkm" / "pii_terms.yaml"
+        path = Path.home() / ".corerag" / "pii_terms.yaml"
 
     if not path.exists():
         return []

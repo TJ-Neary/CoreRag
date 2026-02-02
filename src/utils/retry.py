@@ -1,5 +1,5 @@
 """
-Retry logic with exponential backoff for PKM.
+Retry logic with exponential backoff for CoreRag.
 
 Handles transient failures in API calls and processing.
 """
