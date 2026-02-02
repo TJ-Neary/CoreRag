@@ -41,17 +41,16 @@ _session_tracker = None
 
 
 def get_config() -> dict:
-    """Load configuration from environment or defaults."""
+    """Load configuration from central config module."""
+    from src.config import DB_PATH, VAULT_PATH, EMBEDDING_MODEL, RERANKER_MODEL, STATE_DIR
     return {
-        "db_path": os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb")),
-        "vault_path": os.getenv("VAULT_PATH", str(Path.home() / "Documents" / "ObsidianVault")),
-        "embedding_model": os.getenv("CORERAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
-        "reranker_model": os.getenv(
-            "CORERAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
-        ),
-        "state_dir": os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag")),
-        "enable_analytics": os.getenv("CoreRag_ENABLE_ANALYTICS", "true").lower() == "true",
-        "enable_cache": os.getenv("CoreRag_ENABLE_CACHE", "true").lower() == "true",
+        "db_path": str(DB_PATH),
+        "vault_path": str(VAULT_PATH),
+        "embedding_model": EMBEDDING_MODEL,
+        "reranker_model": RERANKER_MODEL,
+        "state_dir": str(STATE_DIR),
+        "enable_analytics": os.getenv("CORERAG_ENABLE_ANALYTICS", "true").lower() == "true",
+        "enable_cache": os.getenv("CORERAG_ENABLE_CACHE", "true").lower() == "true",
     }
 
 

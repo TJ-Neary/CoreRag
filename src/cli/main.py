@@ -89,7 +89,8 @@ def cmd_search(args: argparse.Namespace) -> int:
 
         # Connect to LanceDB
         import lancedb
-        db_path = args.db_path or Path.home() / ".corerag" / "lancedb"
+        from src.config import DB_PATH
+        db_path = args.db_path or DB_PATH
         db = lancedb.connect(str(db_path))
 
         if "child_chunks" not in db.table_names():
@@ -215,7 +216,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"CPU: {color(f'{cpu_percent:.1f}%', cpu_color)} used")
 
         # Database
-        db_path = Path.home() / ".corerag" / "lancedb"
+        from src.config import DB_PATH, STATE_DIR as _state_dir
+        db_path = DB_PATH
         if db_path.exists():
             import lancedb
             db = lancedb.connect(str(db_path))
@@ -231,7 +233,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(f"\nDatabase: {color('Not initialized', Colors.YELLOW)}")
 
         # State directory
-        state_dir = Path.home() / ".corerag"
+        state_dir = _state_dir
         if state_dir.exists():
             total_size = sum(f.stat().st_size for f in state_dir.rglob("*") if f.is_file())
             print(f"\nState directory: {total_size / (1024**2):.1f} MB")
@@ -438,7 +440,8 @@ def cmd_pii(args: argparse.Namespace) -> int:
     """Manage custom PII dictionary."""
     import yaml
 
-    pii_path = Path.home() / ".corerag" / "pii_terms.yaml"
+    from src.config import STATE_DIR
+    pii_path = STATE_DIR / "pii_terms.yaml"
 
     if not args.pii_action:
         print_error("Usage: corerag pii {list|add|remove}")

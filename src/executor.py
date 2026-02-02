@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from src import config
 from src.staging import get_item, update_item, load_manifest, save_manifest
 from src.archiver import archive_to_target
 from src.exporter import export_to_vault
@@ -83,7 +84,7 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
         from src.chunking.parent_child import ParentChildChunker
         from src.embeddings.embedding_service import create_embedding_service
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+        db_path = str(config.DB_PATH)
         db = lancedb.connect(db_path)
         chunker = ParentChildChunker()
         embedder = create_embedding_service()
@@ -180,7 +181,7 @@ def _extract_entities(text: str, file_name: str) -> None:
         from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
 
         graph_db_path = Path(
-            os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+            str(config.DB_PATH)
         ).parent / "knowledge_graph.db"
         graph = KnowledgeGraph(graph_db_path)
 

@@ -5,15 +5,10 @@ import re
 
 import requests
 
-from src.config import GOOGLE_API_KEY
+from src.config import GOOGLE_API_KEY, OLLAMA_HOST, OLLAMA_MODEL
 from src.correction_log import get_recent_examples
 
 logger = logging.getLogger(__name__)
-
-# ── Provider Configuration ────────────────────────────────────────────────────
-
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
 
 # Ollama generation settings
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))

@@ -21,8 +21,9 @@ class OllamaLLM:
         host: Optional[str] = None,
         timeout: float = 60.0,
     ):
-        self.model = model or os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
-        self.host = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        from src.config import OLLAMA_MODEL, OLLAMA_HOST
+        self.model = model or OLLAMA_MODEL
+        self.host = host or OLLAMA_HOST
         self.timeout = timeout
 
     async def generate(self, prompt: str, max_tokens: int = 1000) -> str:
