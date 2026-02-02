@@ -25,13 +25,16 @@ python -m spacy download en_core_web_lg  # PII detection NER model
 python -m src.server                     # Dashboard server only (port 8000)
 python -m src.watchdog                   # File watcher only
 python -m src.mcp_server.server          # MCP server for Claude Desktop (stdio)
+python -m src.menubar                    # Menu bar app (opens dashboard, shows status)
+./scripts/install_menubar.sh             # Install menu bar app as login item
+./scripts/install_menubar.sh --remove    # Uninstall menu bar login item
 ```
 
 ### CLI
 ```bash
 python -m src.cli.main status
 python -m src.cli.main search "query"
-python -m src.cli.main ingest /path/to/folder -r
+python -m src.cli.main ingest /path/to/folder -r -t sphr-study -t cert-prep
 python -m src.cli.main check-links /path
 python -m src.cli.main duplicates /path
 python -m src.cli.main stale /path --days 365
@@ -46,10 +49,10 @@ python -m src.cli.main pii remove "John"
 # Capability manifest (handshake protocol)
 curl http://localhost:8000/api/v1/manifest
 
-# Semantic search
+# Semantic search (optionally filter by collection tags)
 curl -X POST http://localhost:8000/api/v1/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "authentication setup", "k": 5}'
+  -d '{"query": "authentication setup", "k": 5, "tags": ["sphr-study"]}'
 
 # Ingest content
 curl -X POST http://localhost:8000/api/v1/ingest \
@@ -179,7 +182,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/storage/` | LanceDB vector store wrapper | Unwired (direct LanceDB used instead) |
 | `src/chunking/` | Parent-child hierarchical chunking + AST-based code chunking | **Wired** (via executor) |
 | `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | Unwired |
-| `src/classification/` | Keyword + embedding-based auto-tagging | Unwired |
+| `src/classification/` | Keyword + embedding-based auto-tagging | **Wired** (via processor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
 | `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Wired** (via exporter) |
 | `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | Unwired |
@@ -188,20 +191,32 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/audio/` | mlx-whisper transcription + topic segmentation | Unwired |
 | `src/video/` | OpenCV keyframe + scene detection | Unwired |
 | `src/multimodal/` | VLM image captioning (LLaVA) | Unwired |
+| `src/menubar/` | macOS menu bar app (rumps) — CR icon, dashboard launcher, status polling | **Wired** |
 | `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | Partially wired |
 
 ### Data Models
 
 Core models in `src/models/` and defined in `architecture/data_schema.md`:
 - **Document**: Source file with metadata, privacy tier (public/private/sensitive), processing status
-- **Chunk**: Text segment with 384d embedding vector (all-MiniLM-L6-v2), parent-child hierarchy
+- **Chunk**: Text segment with 384d embedding vector (all-MiniLM-L6-v2), parent-child hierarchy, tags
 - **SearchResult**: Scored result with context snippets
+
+### Collection Tags
+
+Tags let you isolate source material for focused search sessions (e.g., tag SPHR study materials with `sphr-study`, then search only within that collection).
+
+- **Storage**: Comma-delimited string in LanceDB (`",tag1,tag2,"`) for `LIKE '%,tag,%'` filtering
+- **Ingest-time**: Apply via CLI (`-t sphr-study`), auto-tagger, or dashboard UI
+- **Dashboard**: Editable tag pills per card + "Apply Tag to All" bulk action
+- **Search filtering**: Pass `tags` param to MCP `search_knowledge()`, REST `/api/v1/search`, or hybrid search
+- **Post-ingestion**: Edit tags on committed documents via `POST /api/documents/{doc_id}/tags`
+- **Registry**: `TagManager` (`src/utils/tagging.py`) tracks all tags in `~/.corerag/tags/`
 
 ### Staging Manifest
 
 `staging_manifest.json` tracks each document through the pipeline:
 - Status flow: `processing` -> `pending` -> `approved` -> `completed` (or `error`)
-- Each item stores: original path, AI metadata (category, year, type, summary, is_sensitive), redacted text, proposed filename/target_folder
+- Each item stores: original path, AI metadata (category, year, type, summary, is_sensitive), redacted text, proposed filename/target_folder/tags
 
 ## Configuration
 

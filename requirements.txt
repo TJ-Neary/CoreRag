@@ -46,3 +46,6 @@ mlx-whisper>=0.4.0              # Audio transcription (Apple Silicon)
 
 # HTTP client (for Ollama chat integration)
 httpx>=0.28.0
+
+# macOS menu bar app
+rumps>=0.4.0
