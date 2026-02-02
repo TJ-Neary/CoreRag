@@ -89,6 +89,7 @@ def add_to_staging(original_path: Path, metadata: dict, redacted_text: str, sugg
                 "category": metadata.get("category", "Unsorted"),
                 "year": metadata.get("year", "Unknown"),
                 "type": metadata.get("type", "Doc"),
+                "tags": metadata.get("tags", []),
             },
         }
 

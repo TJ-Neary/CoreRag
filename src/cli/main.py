@@ -136,6 +136,8 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             return 1
 
         print_header(f"Ingesting: {target}")
+        if args.tags:
+            print_info(f"Tags: {', '.join(args.tags)}")
 
         pipeline = IngestionPipeline(
             enable_watch=False,
@@ -151,6 +153,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         else:
             count = pipeline.add_directory(target, recursive=args.recursive)
             print_success(f"Queued {count} files")
+
+        # Store tags for the batch processor to pick up
+        if args.tags:
+            pipeline.set_metadata({"tags": args.tags})
 
         # Start processing
         print_info("Processing...")
@@ -545,6 +551,10 @@ def create_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("-r", "--recursive", action="store_true", help="Recursive")
     ingest_parser.add_argument("-f", "--force", action="store_true", help="Force re-ingestion")
     ingest_parser.add_argument("-w", "--workers", type=int, default=4, help="Worker threads")
+    ingest_parser.add_argument(
+        "-t", "--tag", action="append", default=[], dest="tags",
+        help="Collection tag to apply (repeatable, e.g. -t sphr-study -t cert-prep)",
+    )
     ingest_parser.set_defaults(func=cmd_ingest)
 
     # Status command

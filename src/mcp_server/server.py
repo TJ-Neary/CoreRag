@@ -210,6 +210,7 @@ async def search_knowledge(
     use_hyde: bool = False,
     use_multi_query: bool = False,
     filters: Optional[dict] = None,
+    tags: Optional[list] = None,
     debug: bool = False,
 ) -> dict:
     """
@@ -222,6 +223,7 @@ async def search_knowledge(
         use_hyde: Use HyDE query expansion (default: False)
         use_multi_query: Decompose complex queries into sub-queries and fuse results (default: False)
         filters: Optional filters (e.g., {"file_type": "md", "category": "work"})
+        tags: Optional collection tags to filter by (e.g., ["sphr-study"]). Only returns documents with ALL specified tags.
         debug: Return detailed debug information (default: False)
 
     Returns:
@@ -240,6 +242,7 @@ async def search_knowledge(
         use_hyde=use_hyde,
         use_multi_query=use_multi_query,
         filters=filters,
+        tags=tags,
         debug=debug,
     )
 

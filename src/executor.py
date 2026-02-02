@@ -109,6 +109,14 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
         child_texts = [c.content for c in children]
         embeddings = embedder.embed_documents(child_texts, show_progress=False)
 
+        # Build comma-delimited tags string for LIKE-based filtering
+        # Format: ",tag1,tag2," — enables WHERE tags LIKE '%,tag1,%'
+        raw_tags = metadata.get("tags", [])
+        if isinstance(raw_tags, list) and raw_tags:
+            tags_str = "," + ",".join(raw_tags) + ","
+        else:
+            tags_str = ""
+
         parent_data = []
         for p in parents:
             parent_data.append({
@@ -119,6 +127,7 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                 "section_title": p.section_title or "",
                 "token_count": p.token_count,
                 "created_at": datetime.now().isoformat(),
+                "tags": tags_str,
             })
 
         child_data = []
@@ -131,6 +140,7 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                 "vector": emb,
                 "chunk_index": c.chunk_index,
                 "source_path": file_name,
+                "tags": tags_str,
             })
 
         # Store parents
@@ -262,6 +272,7 @@ def execute_approved_item(item_id: str):
             "category": proposed.get("category"),
             "year": proposed.get("year"),
             "type": proposed.get("type"),
+            "tags": proposed.get("tags", []),
         })
 
         # Extract full text BEFORE archiving (archive moves the file)

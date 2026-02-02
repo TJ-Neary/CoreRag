@@ -152,6 +152,24 @@ class HybridSearcher:
 
         return fused[:k]
 
+    def _build_filter_clause(self, filters: Dict[str, Any]) -> str:
+        """Build a WHERE clause from filters dict.
+
+        The 'tags' key is special: it uses LIKE-based matching against
+        the comma-delimited tags column (e.g. ",sphr-study,cert-prep,").
+        All other keys use exact equality matching.
+        """
+        clauses = []
+        for key, value in filters.items():
+            if key == "tags":
+                # Tags stored as ",tag1,tag2," — match with LIKE '%,tag,%'
+                tag_list = value if isinstance(value, list) else [value]
+                for tag in tag_list:
+                    clauses.append(f"tags LIKE '%,{tag},%'")
+            else:
+                clauses.append(f"{key} = '{value}'")
+        return " AND ".join(clauses)
+
     async def _vector_search(
         self,
         query_vector: List[float],
@@ -162,8 +180,7 @@ class HybridSearcher:
         search = self.table.search(query_vector).limit(k)
 
         if filters:
-            for key, value in filters.items():
-                search = search.where(f"{key} = '{value}'")
+            search = search.where(self._build_filter_clause(filters))
 
         return search.to_list()
 
@@ -178,8 +195,7 @@ class HybridSearcher:
             search = self.table.search(query, query_type="fts").limit(k)
 
             if filters:
-                for key, value in filters.items():
-                    search = search.where(f"{key} = '{value}'")
+                search = search.where(self._build_filter_clause(filters))
 
             return search.to_list()
         except Exception as e:

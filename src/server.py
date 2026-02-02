@@ -22,6 +22,7 @@ from src.folder_manager import (
 )
 from src.intelligence import suggest_folder_structure
 from src.config import validate_config
+from src.utils.tagging import TagManager
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # Singleton batch processor (for AI analysis phase)
 _batch = BatchProcessor()
 _batch_lock = threading.Lock()
+
+# Singleton tag manager
+_tag_manager = TagManager()
 
 # ── Commit Runner (sequential, memory-safe) ──────────────────────────────────
 
@@ -584,6 +588,81 @@ async def chat(request: Request):
         return {"error": f"LLM call failed: {e}", "sources": sources}
 
 
+# ── Tag Management Routes ────────────────────────────────────────────────────
+
+@app.get("/api/tags")
+async def list_tags():
+    """List all known tags from the tag registry."""
+    tags = _tag_manager.get_all_tags()
+    return {
+        "tags": [
+            {"name": t.name, "color": t.color, "use_count": t.use_count, "description": t.description}
+            for t in tags
+        ]
+    }
+
+
+@app.post("/api/tags/bulk")
+async def bulk_tag(request: Request):
+    """Apply a tag to all pending staged items."""
+    body = await request.json()
+    tag = body.get("tag", "").strip()
+    if not tag:
+        return {"error": "No tag provided"}
+
+    pending = get_pending_items()
+    count = 0
+    for item_id, item in pending.items():
+        if item.get("status") in ("pending", "processing"):
+            current_tags = item.get("proposed", {}).get("tags", [])
+            if tag not in current_tags:
+                current_tags.append(tag)
+                update_item(item_id, {"proposed": {"tags": current_tags}})
+                count += 1
+
+    _tag_manager.create_tag(tag)
+    return {"success": True, "applied_to": count, "tag": tag}
+
+
+@app.post("/api/documents/{doc_id}/tags")
+async def update_document_tags(doc_id: str, request: Request):
+    """Update tags on an already-committed document in LanceDB."""
+    body = await request.json()
+    tags = body.get("tags", [])
+
+    if not isinstance(tags, list):
+        return {"error": "tags must be a list of strings"}
+
+    tags_str = "," + ",".join(tags) + "," if tags else ""
+
+    try:
+        import lancedb
+        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+        db = lancedb.connect(db_path)
+
+        updated = 0
+        for table_name in ["parent_chunks", "child_chunks"]:
+            if table_name in db.table_names():
+                tbl = db.open_table(table_name)
+                # LanceDB update: delete + re-add rows matching document_id
+                rows = tbl.search().where(f"document_id = '{doc_id}'").limit(10000).to_list()
+                if rows:
+                    for row in rows:
+                        row["tags"] = tags_str
+                    tbl.delete(f"document_id = '{doc_id}'")
+                    tbl.add(rows)
+                    updated += len(rows)
+
+        # Update tag manager registry
+        _tag_manager.set_tags(doc_id, tags)
+
+        return {"success": True, "document_id": doc_id, "tags": tags, "chunks_updated": updated}
+
+    except Exception as e:
+        logger.error(f"Tag update failed for {doc_id}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 # ── Legacy bulk approve (kept for backwards compat) ──────────────────────────
 
 @app.post("/api/approve-all")
@@ -642,12 +721,12 @@ async def api_manifest():
             "tables": {
                 "parent_chunks": {
                     "fields": ["id", "document_id", "content", "source_path",
-                               "section_title", "token_count", "created_at"],
+                               "section_title", "token_count", "created_at", "tags"],
                     "description": "Full-context parent chunks for retrieval augmentation",
                 },
                 "child_chunks": {
                     "fields": ["id", "parent_id", "document_id", "content",
-                               "vector", "chunk_index", "source_path"],
+                               "vector", "chunk_index", "source_path", "tags"],
                     "description": "Embedded child chunks for vector search",
                 },
             },
@@ -657,6 +736,12 @@ async def api_manifest():
                 "endpoint": "/api/v1/search",
                 "method": "POST",
                 "description": "Semantic search over the knowledge base",
+                "parameters": {
+                    "query": "str (required) — natural language search query",
+                    "k": "int (default 5) — max results",
+                    "tags": "list[str] (optional) — filter by collection tags",
+                    "use_hyde": "bool (default false) — HyDE query expansion",
+                },
             },
             "ingest": {
                 "endpoint": "/api/v1/ingest",
@@ -755,6 +840,7 @@ async def api_search(request: Request):
     query = body.get("query", "")
     k = body.get("k", 5)
     use_hyde = body.get("use_hyde", False)
+    tags = body.get("tags", [])
 
     if not query:
         return {"error": "No query provided", "results": []}
@@ -788,10 +874,20 @@ async def api_search(request: Request):
 
         query_vector = embedder.embed_query(search_text)
         child_table = db.open_table("child_chunks")
-        results_raw = child_table.search(query_vector).limit(k).to_list()
+        search_op = child_table.search(query_vector).limit(k)
+
+        # Apply tag filtering if specified
+        if tags:
+            tag_clauses = [f"tags LIKE '%,{t},%'" for t in tags]
+            search_op = search_op.where(" AND ".join(tag_clauses))
+
+        results_raw = search_op.to_list()
 
         results = []
         for r in results_raw:
+            # Parse tags from comma-delimited string back to list
+            raw_tags = r.get("tags", "")
+            result_tags = [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
             results.append({
                 "content": r.get("content", ""),
                 "source_path": r.get("source_path", ""),
@@ -799,6 +895,7 @@ async def api_search(request: Request):
                 "parent_id": r.get("parent_id", ""),
                 "chunk_index": r.get("chunk_index", 0),
                 "score": float(r.get("_distance", 0)),
+                "tags": result_tags,
             })
 
         return {"results": results, "total": len(results), "query": query}
@@ -864,6 +961,13 @@ async def api_ingest(request: Request):
         child_texts = [c.content for c in children]
         embeddings = embedder.embed_documents(child_texts, show_progress=False)
 
+        # Build comma-delimited tags string for LIKE-based filtering
+        raw_tags = metadata.get("tags", [])
+        if isinstance(raw_tags, list) and raw_tags:
+            tags_str = "," + ",".join(raw_tags) + ","
+        else:
+            tags_str = ""
+
         parent_data = []
         for p in parents:
             parent_data.append({
@@ -874,6 +978,7 @@ async def api_ingest(request: Request):
                 "section_title": p.section_title or "",
                 "token_count": p.token_count,
                 "created_at": datetime.now().isoformat(),
+                "tags": tags_str,
             })
 
         child_data = []
@@ -886,6 +991,7 @@ async def api_ingest(request: Request):
                 "vector": emb,
                 "chunk_index": c.chunk_index,
                 "source_path": source,
+                "tags": tags_str,
             })
 
         # Store parents

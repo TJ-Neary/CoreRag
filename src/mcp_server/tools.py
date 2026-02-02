@@ -87,6 +87,7 @@ class CoreRagTools:
         query: str,
         k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None,
         use_reranker: bool = True,
         use_hyde: bool = False,
         use_multi_query: bool = False,
@@ -99,6 +100,7 @@ class CoreRagTools:
             query: Natural language query
             k: Number of results to return
             filters: Optional metadata filters (file_type, date_range, etc.)
+            tags: Optional collection tags to filter by (e.g. ["sphr-study"])
             use_reranker: Whether to apply cross-encoder re-ranking
             use_hyde: Whether to use HyDE query expansion
             use_multi_query: Decompose complex queries into sub-queries and fuse
@@ -109,6 +111,11 @@ class CoreRagTools:
         """
         import time
         start_time = time.time()
+
+        # Merge tags into filters dict
+        if tags:
+            filters = dict(filters) if filters else {}
+            filters["tags"] = tags
 
         # Check semantic cache (skip for debug, multi-query, or HyDE — those need fresh results)
         if self._semantic_cache and not debug and not use_multi_query and not use_hyde:
