@@ -329,6 +329,16 @@ def execute_approved_item(item_id: str):
         except Exception as e:
             logger.warning(f"Version tracking failed for {current_path.name}: {e}")
 
+        # Register tags in central tag registry
+        try:
+            from src.utils.tagging import TagManager
+            _tm = TagManager()
+            for tag in final_metadata.get("tags", []):
+                _tm.create_tag(tag)
+                _tm.add_tag(document_id, tag)
+        except Exception as e:
+            logger.warning(f"Tag registry update failed for {current_path.name}: {e}")
+
         # Log any human corrections for AI learning
         log_correction(item)
 

@@ -192,7 +192,12 @@ class CoreRagTools:
         # Format results
         results = self._format_results(final_dicts)
 
+        # Enrich with knowledge graph context
+        graph_context = self._get_graph_context(final_dicts)
+
         response = {"results": results}
+        if graph_context:
+            response["graph_context"] = graph_context
 
         # Store in semantic cache
         if self._semantic_cache and results and not debug:
@@ -286,6 +291,62 @@ class CoreRagTools:
 
             formatted.append(entry)
         return formatted
+
+    def _get_graph_context(self, results: List[Dict]) -> Dict[str, Any]:
+        """Extract related entities and documents from the knowledge graph.
+
+        Runs after reranking. For each result's document_id, finds entities
+        in the graph and their 1-hop neighbors. Returns context that helps
+        Claude understand relationships between search results.
+        """
+        if not self._knowledge_graph:
+            return {}
+
+        try:
+            # Collect document IDs from results
+            result_doc_ids = {r.get("document_id", "") for r in results if r.get("document_id")}
+            if not result_doc_ids:
+                return {}
+
+            # Find entities mentioned in result documents
+            mentioned_entities = set()
+            for doc_id in result_doc_ids:
+                try:
+                    related = self._knowledge_graph.find_related_documents(doc_id, limit=5)
+                    for rel in related:
+                        for entity_name in rel.get("shared_entities", []):
+                            mentioned_entities.add(entity_name)
+                except Exception:
+                    continue
+
+            if not mentioned_entities:
+                return {}
+
+            # Find 1-hop neighbors for discovered entities
+            related_doc_ids = set()
+            neighbor_entities = set()
+            for entity in list(mentioned_entities)[:20]:  # Cap to avoid slow queries
+                try:
+                    neighbors = self._knowledge_graph.get_neighbors(entity)
+                    for n in neighbors[:5]:
+                        neighbor_entities.add(n.get("entity", n.get("name", "")))
+                        if n.get("document_id") and n["document_id"] not in result_doc_ids:
+                            related_doc_ids.add(n["document_id"])
+                except Exception:
+                    continue
+
+            if not mentioned_entities and not related_doc_ids:
+                return {}
+
+            return {
+                "mentioned_entities": sorted(mentioned_entities)[:15],
+                "related_entities": sorted(neighbor_entities - mentioned_entities)[:10],
+                "related_documents": sorted(related_doc_ids)[:5],
+            }
+
+        except Exception as e:
+            logger.debug(f"Graph context enrichment failed: {e}")
+            return {}
 
     async def _multi_query_search(
         self,

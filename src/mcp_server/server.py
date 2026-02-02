@@ -598,6 +598,213 @@ async def list_backups() -> dict:
         return {"error": str(e)}
 
 
+# === QUALITY TOOLS ===
+
+@mcp.tool()
+async def find_duplicates(
+    path: Optional[str] = None,
+    include_semantic: bool = False,
+) -> dict:
+    """
+    Scan a directory for duplicate files (exact, near-duplicate, and optionally semantic).
+
+    Args:
+        path: Directory to scan (defaults to vault root)
+        include_semantic: Enable semantic duplicate detection via embeddings (slower)
+
+    Returns:
+        Duplicate report with matches, counts, and reclaimable space
+    """
+    try:
+        from src.quality.duplicate_detector import DuplicateDetector
+
+        config = get_config()
+        check_path = Path(path).expanduser() if path else Path(config["vault_path"]).expanduser()
+
+        embedder = _embedding_service if include_semantic and _embedding_service else None
+        detector = DuplicateDetector(embedding_service=embedder)
+        report = detector.scan_directory(check_path, recursive=True)
+
+        return {
+            "path": str(check_path),
+            "total_files": report.total_files,
+            "exact_duplicates": report.exact_duplicates,
+            "near_duplicates": report.near_duplicates,
+            "semantic_duplicates": report.semantic_duplicates,
+            "space_reclaimable_bytes": report.space_reclaimable_bytes,
+            "matches": [
+                {
+                    "file1": m.file1,
+                    "file2": m.file2,
+                    "similarity": round(m.similarity, 3),
+                    "match_type": m.match_type,
+                }
+                for m in (report.matches or [])[:20]
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# === MAINTENANCE TOOLS ===
+
+@mcp.tool()
+async def get_database_health() -> dict:
+    """
+    Get a health report for the LanceDB vector database.
+
+    Returns:
+        Health report including size, fragmentation, table stats, and recommendations
+    """
+    try:
+        from src.maintenance.db_optimizer import LanceDBOptimizer
+
+        config = get_config()
+        optimizer = LanceDBOptimizer(db_path=Path(config["db_path"]))
+        report = optimizer.get_health_report()
+
+        return {
+            "db_path": str(report.db_path),
+            "total_size_mb": round(report.total_size_mb, 2),
+            "fragmentation_estimate": round(report.fragmentation_estimate, 2),
+            "tables": [
+                {
+                    "name": t.get("name", ""),
+                    "rows": t.get("rows", 0),
+                    "size_mb": round(t.get("size_mb", 0), 2),
+                }
+                for t in (report.tables or [])
+            ],
+            "recommendations": report.recommendations or [],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def optimize_database() -> dict:
+    """
+    Run optimization on the LanceDB vector database (compact, defragment).
+
+    Returns:
+        Optimization results per table including space saved
+    """
+    try:
+        from src.maintenance.db_optimizer import LanceDBOptimizer
+
+        config = get_config()
+        optimizer = LanceDBOptimizer(db_path=Path(config["db_path"]))
+        results = optimizer.optimize_all()
+
+        return {
+            "tables_optimized": len(results),
+            "results": [
+                {
+                    "table": r.table_name,
+                    "success": r.success,
+                    "space_saved_mb": round(r.space_saved_mb, 2),
+                    "duration_seconds": round(r.duration_seconds, 2),
+                    "rows_before": r.rows_before,
+                    "rows_after": r.rows_after,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# === TAG TOOLS ===
+
+@mcp.tool()
+async def list_tags(limit: int = 50) -> dict:
+    """
+    List all known collection tags in the CoreRag system.
+
+    Args:
+        limit: Maximum number of tags to return (default: 50)
+
+    Returns:
+        Tag list with names, colors, use counts, and descriptions
+    """
+    try:
+        from src.utils.tagging import TagManager
+
+        tm = TagManager()
+        all_tags = tm.get_all_tags()
+
+        return {
+            "count": len(all_tags),
+            "tags": [
+                {
+                    "name": t.name,
+                    "color": getattr(t, "color", None),
+                    "use_count": getattr(t, "use_count", 0),
+                    "description": getattr(t, "description", ""),
+                }
+                for t in all_tags[:limit]
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def manage_tags(
+    action: str,
+    tag_name: Optional[str] = None,
+    target_tag: Optional[str] = None,
+    color: Optional[str] = None,
+    description: Optional[str] = None,
+) -> dict:
+    """
+    Create, delete, or merge collection tags.
+
+    Args:
+        action: "create", "delete", "merge", or "get_tree"
+        tag_name: Tag name (required for create, delete, merge)
+        target_tag: Target tag for merge (source tag_name is merged into target)
+        color: Optional color hex for create (e.g. "#4A90D9")
+        description: Optional description for create
+
+    Returns:
+        Action result
+    """
+    try:
+        from src.utils.tagging import TagManager
+
+        tm = TagManager()
+
+        if action == "create":
+            if not tag_name:
+                return {"error": "tag_name is required for create"}
+            tag = tm.create_tag(tag_name, color=color, description=description)
+            return {"success": True, "tag": tag.name}
+
+        elif action == "delete":
+            if not tag_name:
+                return {"error": "tag_name is required for delete"}
+            result = tm.delete_tag(tag_name)
+            return {"success": result, "deleted": tag_name}
+
+        elif action == "merge":
+            if not tag_name or not target_tag:
+                return {"error": "tag_name and target_tag required for merge"}
+            affected = tm.merge_tags(tag_name, target_tag)
+            return {"success": True, "merged": tag_name, "into": target_tag, "documents_affected": affected}
+
+        elif action == "get_tree":
+            tree = tm.get_tag_tree()
+            return {"tree": tree}
+
+        else:
+            return {"error": f"Unknown action: {action}. Use create, delete, merge, or get_tree"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # === RESOURCE ENDPOINTS ===
 
 @mcp.resource("corerag://status")

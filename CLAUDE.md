@@ -176,17 +176,18 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | Directory | Purpose | Status |
 |-----------|---------|--------|
 | `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop | **Wired** |
-| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | **Wired** (HyDE/decay not yet plumbed) |
+| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | **Wired** |
 | `src/embeddings/` | all-MiniLM-L6-v2 with caching, MPS-optimized | **Wired** |
 | `src/ingestion/` | File processing pipeline orchestrator | Unwired |
 | `src/storage/` | LanceDB vector store wrapper | Unwired (direct LanceDB used instead) |
 | `src/chunking/` | Parent-child hierarchical chunking + AST-based code chunking | **Wired** (via executor) |
-| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | Unwired |
+| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | **Wired** (MCP tools + ingestion pipeline) |
 | `src/classification/` | Keyword + embedding-based auto-tagging | **Wired** (via processor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
 | `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Wired** (via exporter) |
-| `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | Unwired |
-| `src/memory/` | Episodic memory for user context / search patterns | **Deprecated** — handed off to external AI assistant |
+| `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
+| `src/memory/` | Episodic memory for user context / search patterns | **Wired** (get_user_context, add_user_fact MCP tools) |
+| `src/maintenance/` | LanceDB optimizer, health reports, maintenance scheduler | **Wired** (MCP tools) |
 | `src/ocr/` | macOS Vision.framework text extraction | Unwired |
 | `src/audio/` | mlx-whisper transcription + topic segmentation | Unwired |
 | `src/video/` | OpenCV keyframe + scene detection | Unwired |
@@ -283,28 +284,19 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
 |-------|-------------|--------|
 | 1 | Fix MCP Server (stdio transport, FastMCP) | **Complete** |
 | — | PII Redesign (three-layer detection, custom dictionary, manual override) | **Complete** |
-| 2 | Wire Search Stack (HyDE, multi-query, decay scoring) | **In Progress** |
+| 2 | Wire Search Stack (HyDE, multi-query, decay scoring) | **Complete** |
 | 3 | Wire OCR into ingestion | Pending |
-| 4 | Wire auto-tagging | Pending |
-| 5 | Wire knowledge graph | Pending |
-| 6 | ~~Wire episodic memory~~ | **Handed off to external AI assistant** |
-| 7 | Wire quality modules | Pending |
+| 4 | Wire auto-tagging | **Complete** (processor.py calls AutoTagger) |
+| 5 | Wire knowledge graph | **Complete** (entity extraction in executor, search_by_entity MCP tool) |
+| 6 | Wire episodic memory | **Complete** (get_user_context, add_user_fact MCP tools) |
+| 7 | Wire quality modules | **Complete** (freshness, link checker, conflict detector, duplicate detector) |
 | 8 | Wire utility modules | Pending |
-| 9 | Wire analytics & queue | Pending |
+| 9 | Wire analytics & queue | **Complete** (QueryAnalytics, SemanticCache, SessionTracker initialized) |
 | 10 | Wire multimodal | Pending |
 | 11 | Config cleanup & dead code removal | Pending |
 | 12 | CLI integration | Pending |
 
-### Phase 2 Details — Search Stack Wiring
+### Remaining Wiring Work
 
-Files to modify:
-- `src/mcp_server/server.py` — instantiate HyDEExpander + DecayConfig in `_startup()`, pass to CoreRagTools
-- `src/mcp_server/tools.py` — fix HyDE to use `result.hypothetical_document` (not HyDEResult object), apply `apply_decay_to_results()` after reranking, add `use_multi_query` parameter
-- `src/search/__init__.py` — export decay_scoring module
-
-Key API signatures:
-- `create_hyde_expander(backend="ollama", model="...", embedder=callable)` → `HyDEExpander`
-- `HyDEExpander.expand(query)` → `HyDEResult` (use `.hypothetical_document` for embedding)
-- `apply_decay_to_results(results, config=DecayConfig(), date_field="modified_at")` → mutates + re-sorts
-- `MultiQuerySearcher(searcher=callable, decomposer=None)` where searcher is `(query: str, k: int) -> List[Dict]`
+Phases 3 (OCR), 8 (utility modules), 10 (multimodal), 11 (config cleanup), 12 (CLI integration) are pending.
 - `HybridSearcher.search(query, query_vector, k, filters)` is async
