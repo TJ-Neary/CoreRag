@@ -401,7 +401,7 @@ class MaintenanceScheduler:
         Returns:
             Summary of actions taken
         """
-        summary = {
+        summary: Dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "optimization_results": [],
             "health_report": None,

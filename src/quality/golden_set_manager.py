@@ -94,7 +94,7 @@ class GoldenSetManager:
                 q["added_date"] = entry.added_date
             if entry.source != "manual":
                 q["source"] = entry.source
-            data["queries"].append(q)
+            data["queries"].append(q)  # type: ignore[attr-defined]
 
         self.golden_set_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.golden_set_path, "w") as f:

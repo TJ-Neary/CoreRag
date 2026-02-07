@@ -204,7 +204,7 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = None,
+        model_name: Optional[str] = None,
         cache_enabled: bool = True,
         cache_dir: Optional[Path] = None,
         device: str = "mps",  # Apple Silicon
@@ -243,7 +243,7 @@ class EmbeddingService:
             self._model = SentenceTransformer(
                 self.model_name, device=device, trust_remote_code=trust_remote
             )
-            self._dimension = self._model.get_sentence_embedding_dimension()
+            self._dimension: int = self._model.get_sentence_embedding_dimension() or 0
         except EmbeddingError:
             raise
         except Exception as e:
@@ -442,7 +442,7 @@ _default_service: Optional[EmbeddingService] = None
 
 
 def get_embedding_service(
-    model_name: str = None,
+    model_name: Optional[str] = None,
     **kwargs,
 ) -> EmbeddingService:
     """
@@ -464,7 +464,7 @@ def get_embedding_service(
 
 
 def create_embedding_service(
-    model_name: str = None,
+    model_name: Optional[str] = None,
     **kwargs,
 ) -> EmbeddingService:
     """

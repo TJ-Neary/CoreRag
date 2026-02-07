@@ -118,7 +118,7 @@ class AdaptiveDecay:
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        self.category_decay_rates = {}  # category -> adjusted decay rate
+        self.category_decay_rates: dict[str, float] = {}
         self.default_decay_rate = 0.1
         self.db_path = db_path
 

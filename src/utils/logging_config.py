@@ -32,7 +32,7 @@ class StructuredFormatter(logging.Formatter):
         }
 
         # Add exception info if present
-        if record.exc_info:
+        if record.exc_info and record.exc_info[0] is not None:
             log_data["exception"] = {
                 "type": record.exc_info[0].__name__,
                 "message": str(record.exc_info[1]),
@@ -115,6 +115,7 @@ def setup_logging(
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.DEBUG)
 
+        console_format: logging.Formatter
         if sys.stderr.isatty():
             console_format = ColoredFormatter(
                 "%(asctime)s │ %(levelname)-8s │ %(name)s │ %(message)s", datefmt="%H:%M:%S"
@@ -256,8 +257,8 @@ class DebugTimer:
     def __init__(self, name: str, logger: Optional[logging.Logger] = None):
         self.name = name
         self.logger = logger or logging.getLogger("corerag.debug")
-        self.start_time = None
-        self.checkpoints = []
+        self.start_time: Optional[float] = None
+        self.checkpoints: list[tuple[str, float]] = []
 
     def __enter__(self):
         self.start_time = time.time()
@@ -265,11 +266,13 @@ class DebugTimer:
 
     def checkpoint(self, name: str):
         """Record a checkpoint."""
+        assert self.start_time is not None
         elapsed = time.time() - self.start_time
         self.checkpoints.append((name, elapsed))
         self.logger.debug(f"[{self.name}] {name}: {elapsed * 1000:.1f}ms")
 
     def __exit__(self, *args):
+        assert self.start_time is not None
         elapsed = time.time() - self.start_time
         self.logger.debug(f"[{self.name}] Total: {elapsed * 1000:.1f}ms")
 
@@ -314,7 +317,7 @@ class QueryLogger:
 
     def get_popular_queries(self, days: int = 7, limit: int = 20) -> Dict[str, int]:
         """Get most popular queries."""
-        query_counts = {}
+        query_counts: dict[str, int] = {}
 
         for i in range(days):
             date = datetime.now() - timedelta(days=i)

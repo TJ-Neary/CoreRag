@@ -196,6 +196,7 @@ class CrossEncoderReranker:
 
     def _score_transformers(self, pairs: List[tuple]) -> List[float]:
         """Score using sentence-transformers CrossEncoder."""
+        assert self._model is not None
         scores = self._model.predict(pairs, batch_size=self.batch_size)
         # Normalize to 0-1 range using sigmoid if needed
         return [float(s) for s in scores]
@@ -206,6 +207,7 @@ class CrossEncoderReranker:
         # This is a placeholder - real implementation depends on model architecture
         import mlx.core as mx
 
+        assert self._model is not None
         model = self._model["model"]
         tokenizer = self._model["tokenizer"]
 

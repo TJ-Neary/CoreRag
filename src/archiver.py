@@ -57,7 +57,7 @@ def archive_to_target(file_path: Path, target_relative_path: str) -> Path:
         raise e
 
 
-def _check_user_rules(file_path: Path, metadata: dict) -> str:
+def _check_user_rules(file_path: Path, metadata: dict) -> str | None:
     if not SORTING_RULES_PATH.exists():
         return None
     try:

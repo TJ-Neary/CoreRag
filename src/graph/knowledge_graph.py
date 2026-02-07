@@ -425,7 +425,7 @@ class KnowledgeGraph:
         from collections import deque
 
         visited = set()
-        queue = deque([(start.lower(), [])])
+        queue: deque[tuple[str, list[Triple]]] = deque([(start.lower(), [])])
 
         while queue:
             current, path = queue.popleft()
@@ -540,7 +540,7 @@ class GraphEnhancedRetrieval:
         k: int = 5,
         graph_expansion: int = 2,  # How many neighbor hops
         **kwargs,
-    ) -> List[Dict]:
+    ) -> Dict:
         """
         Search with graph-based expansion.
 

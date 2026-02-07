@@ -406,7 +406,7 @@ class TagManager:
             return []
 
         suggestions = []
-        co_occurrence = Counter()
+        co_occurrence: Counter[str] = Counter()
 
         # Find tags that co-occur with existing tags
         for tag in existing:
@@ -486,7 +486,7 @@ class TagManager:
         if tag_name not in self._tags:
             return []
 
-        co_occurrence = Counter()
+        co_occurrence: Counter[str] = Counter()
         docs = self._tag_docs.get(tag_name, set())
 
         for doc_id in docs:

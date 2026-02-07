@@ -217,7 +217,7 @@ class QueryAnalytics:
         )
 
         # Top queries
-        query_freq = defaultdict(int)
+        query_freq: dict[str, int] = defaultdict(int)
         for e in recent:
             query_freq[e.query] += 1
         top_queries = sorted(query_freq.items(), key=lambda x: -x[1])[:10]

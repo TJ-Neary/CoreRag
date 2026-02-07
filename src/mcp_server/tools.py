@@ -218,7 +218,7 @@ class CoreRagTools:
         # Enrich with knowledge graph context
         graph_context = self._get_graph_context(final_dicts)
 
-        response = {"results": results}
+        response: Dict[str, Any] = {"results": results}
         if graph_context:
             response["graph_context"] = graph_context
 
@@ -427,7 +427,7 @@ class CoreRagTools:
                 }
             )
 
-        response = {"results": results}
+        response: Dict[str, Any] = {"results": results}
 
         if debug:
             response["_debug"] = {
@@ -531,7 +531,7 @@ class CoreRagTools:
                             }
                         )
 
-            recent_files.sort(key=lambda x: x["modified"], reverse=True)
+            recent_files.sort(key=lambda x: str(x["modified"]), reverse=True)
             return recent_files[:limit]
 
         except CoreRagError as e:
@@ -564,7 +564,7 @@ class CoreRagTools:
             if depth > max_depth:
                 return {"_truncated": True}
 
-            result = {
+            result: Dict[str, Any] = {
                 "name": current.name or str(self.vault_root),
                 "type": "directory",
                 "children": [],
@@ -771,10 +771,11 @@ class CoreRagTools:
         """Get user profile and episodic memory context."""
         self._ensure_memory()
 
+        assert self._user_profile is not None
         profile = self._user_profile
 
         # Get correction patterns from correction log
-        correction_summary = {}
+        correction_summary: Dict[str, Any] = {}
         try:
             from src.correction_log import _load_corrections
 
@@ -847,6 +848,8 @@ class CoreRagTools:
             updated_at=now,
         )
 
+        assert self._memory_manager is not None
+        assert self._user_profile is not None
         self._memory_manager.add_fact(self._user_profile, user_fact)
         logger.info(f"Stored user fact: [{fact_category.value}] {fact}")
 

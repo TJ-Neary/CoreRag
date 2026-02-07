@@ -238,7 +238,7 @@ class PrivacyScanner:
         self,
         custom_patterns: Optional[Dict] = None,
         use_presidio: bool = True,
-        presidio_languages: List[str] = None,
+        presidio_languages: Optional[List[str]] = None,
     ):
         """
         Initialize hybrid scanner.
@@ -382,7 +382,7 @@ class PrivacyScanner:
         matches = []
 
         try:
-            # Analyze with Presidio
+            assert self._analyzer is not None
             results = self._analyzer.analyze(
                 text=content,
                 language="en",
@@ -717,7 +717,7 @@ class PrivacyAuditManager:
             tier_counts[t.value] = sum(1 for a in audits if a.privacy_tier == t)
 
         # Count by data type
-        type_counts = {}
+        type_counts: dict[str, int] = {}
         for a in audits:
             for m in a.matches:
                 type_counts[m.data_type.value] = type_counts.get(m.data_type.value, 0) + 1

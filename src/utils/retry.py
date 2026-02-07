@@ -119,7 +119,7 @@ def with_retry(
 def retry_with_backoff(
     func: Callable,
     args: tuple = (),
-    kwargs: dict = None,
+    kwargs: Optional[dict] = None,
     max_attempts: int = 3,
     initial_delay: float = 1.0,
     max_delay: float = 60.0,
@@ -193,13 +193,14 @@ def retry_with_backoff(
                 on_retry(e, attempt)
             time.sleep(delay)
 
+    assert last_exception is not None
     raise last_exception
 
 
 async def async_retry_with_backoff(
     func: Callable,
     args: tuple = (),
-    kwargs: dict = None,
+    kwargs: Optional[dict] = None,
     max_attempts: int = 3,
     initial_delay: float = 1.0,
     max_delay: float = 60.0,
@@ -275,6 +276,7 @@ async def async_retry_with_backoff(
                 on_retry(e, attempt)
             await asyncio.sleep(delay)
 
+    assert last_exception is not None
     raise last_exception
 
 

@@ -124,7 +124,7 @@ class MinHasher:
         self._b = [random.randint(0, 2**31 - 1) for _ in range(num_hashes)]
         self._prime = 2**31 - 1
 
-    def compute_signature(self, text: str) -> List[int]:
+    def compute_signature(self, text: str) -> list[float]:
         """Compute MinHash signature for text."""
         shingles = self._get_shingles(text)
 
@@ -142,7 +142,7 @@ class MinHasher:
 
         return signature
 
-    def estimate_similarity(self, sig1: List[int], sig2: List[int]) -> float:
+    def estimate_similarity(self, sig1: list[float], sig2: list[float]) -> float:
         """Estimate Jaccard similarity from signatures."""
         if len(sig1) != len(sig2):
             return 0.0
@@ -196,7 +196,7 @@ class DuplicateDetector:
 
         # Caches
         self._content_hashes: Dict[str, str] = {}  # file_path -> hash
-        self._minhash_sigs: Dict[str, List[int]] = {}  # file_path -> signature
+        self._minhash_sigs: Dict[str, list[float]] = {}  # file_path -> signature
         self._lock = threading.Lock()
 
         self._load_state()

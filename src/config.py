@@ -28,7 +28,7 @@ def get_path_var(var_name: str, required: bool = True) -> Path:
                 file=sys.stderr,
             )
             sys.exit(1)
-        return None
+        return None  # type: ignore[return-value]
 
     path = Path(value).expanduser().resolve()
     return path

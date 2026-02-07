@@ -8,6 +8,7 @@ import json
 import logging
 import shutil
 import tarfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -124,7 +125,7 @@ class BackupManager:
 
             info = BackupInfo(
                 name=name,
-                timestamp=metadata["timestamp"],
+                timestamp=str(metadata["timestamp"]),
                 size_bytes=stat.st_size,
                 path=str(backup_path),
                 backup_type=backup_type,
@@ -377,11 +378,12 @@ class BackupManager:
     @staticmethod
     def _format_size(size_bytes: int) -> str:
         """Format size in human-readable form."""
+        size: float = float(size_bytes)
         for unit in ["B", "KB", "MB", "GB"]:
-            if size_bytes < 1024:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.1f} TB"
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
 
 
 class AutoBackup:
@@ -402,12 +404,10 @@ class AutoBackup:
         self.manager = backup_manager
         self.interval_hours = interval_hours
         self._running = False
-        self._thread = None
+        self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
         """Start automatic backups."""
-        import threading
-
         if self._running:
             return
 

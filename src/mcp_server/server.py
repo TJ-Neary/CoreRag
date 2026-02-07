@@ -321,7 +321,7 @@ async def list_recent_files(
         List of recent files with metadata
     """
     if not _corerag_tools:
-        return {"error": "CoreRag tools not initialized"}
+        return [{"error": "CoreRag tools not initialized"}]
 
     return await _corerag_tools.list_recent_files(
         days=days,
@@ -522,7 +522,7 @@ async def check_links(
             "overall_health": report.overall_health,
             "broken_details": (
                 [
-                    {"url": d["url"], "status": d["status"], "file": d.get("file", "")}
+                    {"url": d[1], "status": str(d[2].status), "file": d[0]}
                     for d in report.broken_details[:20]
                 ]
                 if hasattr(report, "broken_details") and report.broken_details
@@ -805,7 +805,7 @@ async def manage_tags(
         if action == "create":
             if not tag_name:
                 return {"error": "tag_name is required for create"}
-            tag = tm.create_tag(tag_name, color=color, description=description)
+            tag = tm.create_tag(tag_name, color=color or "#808080", description=description or "")
             return {"success": True, "tag": tag.name}
 
         elif action == "delete":
@@ -842,12 +842,14 @@ async def manage_tags(
 @mcp.tool()
 async def get_document_history(document_id: str, limit: int = 10) -> dict:
     """Get version history for a document, showing changes over time."""
+    assert _corerag_tools is not None
     return await _corerag_tools.get_document_history(document_id=document_id, limit=limit)
 
 
 @mcp.tool()
 async def get_document_diff(document_id: str, from_version: int, to_version: int) -> dict:
     """Get a diff between two versions of a document."""
+    assert _corerag_tools is not None
     return await _corerag_tools.get_document_diff(
         document_id=document_id, from_version=from_version, to_version=to_version
     )
@@ -856,6 +858,7 @@ async def get_document_diff(document_id: str, from_version: int, to_version: int
 @mcp.tool()
 async def restore_document_version(document_id: str, version_number: int) -> dict:
     """Restore a previous version of a document."""
+    assert _corerag_tools is not None
     return await _corerag_tools.restore_document_version(
         document_id=document_id, version_number=version_number
     )
@@ -867,6 +870,7 @@ async def restore_document_version(document_id: str, version_number: int) -> dic
 @mcp.tool()
 async def analyze_knowledge_gaps() -> dict:
     """Analyze the knowledge base for gaps — failed searches, sparse folders, topic imbalances."""
+    assert _corerag_tools is not None
     return await _corerag_tools.analyze_knowledge_gaps()
 
 
@@ -876,18 +880,21 @@ async def analyze_knowledge_gaps() -> dict:
 @mcp.tool()
 async def get_golden_suggestions(limit: int = 10) -> dict:
     """Get analytics-based suggestions for golden set regression tests."""
+    assert _corerag_tools is not None
     return await _corerag_tools.get_golden_suggestions(limit=limit)
 
 
 @mcp.tool()
 async def approve_golden_suggestion(query: str) -> dict:
     """Approve a golden set suggestion and add it to the test suite."""
+    assert _corerag_tools is not None
     return await _corerag_tools.approve_golden_suggestion(query=query)
 
 
 @mcp.tool()
 async def list_golden_entries(limit: int = 50, source: str = "") -> dict:
     """List current golden set entries, optionally filtered by source."""
+    assert _corerag_tools is not None
     src_filter = source if source else None
     return await _corerag_tools.list_golden_entries(limit=limit, source=src_filter)
 
@@ -928,14 +935,14 @@ async def sync_integration(name: str) -> dict:
 @mcp.resource("corerag://status")
 async def get_status_resource() -> str:
     """Get CoreRag system status as a resource."""
-    status = await get_system_status()
+    status = await get_system_status()  # type: ignore[operator]
     return f"CoreRag Status: {status}"
 
 
 @mcp.resource("corerag://recent/{days}")
 async def get_recent_resource(days: int = 7) -> str:
     """Get recent files as a resource."""
-    files = await list_recent_files(days=days)
+    files = await list_recent_files(days=days)  # type: ignore[operator]
     return f"Recent files ({days} days): {len(files)} files"
 
 

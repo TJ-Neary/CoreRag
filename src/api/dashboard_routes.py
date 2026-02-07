@@ -13,6 +13,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import psutil
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # ── Commit Runner State ───────────────────────────────────────────────────────
 
-_commit_state = {
+_commit_state: dict[str, Any] = {
     "status": "idle",  # idle | running | paused | stopped | complete | error
     "total": 0,
     "committed": 0,

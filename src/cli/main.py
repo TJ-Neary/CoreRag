@@ -466,7 +466,7 @@ def cmd_tag(args: argparse.Namespace) -> int:
             print(f"\nTagged {tagged_count} of {len(results)} files")
 
             # Show distribution
-            all_tags = {}
+            all_tags: dict[str, int] = {}
             for result in results.values():
                 for tag in result.assigned_tags:
                     all_tags[tag] = all_tags.get(tag, 0) + 1

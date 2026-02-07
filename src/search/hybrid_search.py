@@ -237,7 +237,7 @@ class HybridSearcher:
             v_rank = vector_ranks.get(doc_id)
             f_rank = fts_ranks.get(doc_id)
 
-            rrf_score = 0
+            rrf_score: float = 0.0
             if v_rank is not None:
                 rrf_score += vector_weight / (self.RRF_K + v_rank)
             if f_rank is not None:
@@ -257,7 +257,7 @@ class HybridSearcher:
                     id=doc_id,
                     content=doc["content"],
                     document_id=doc["document_id"],
-                    vector_score=doc.get("_distance", 0) if v_rank else None,
+                    vector_score=doc.get("_distance", 0.0) if v_rank else 0.0,
                     fts_score=doc.get("_score", 0) if f_rank else None,
                     rrf_score=rrf_score,
                     metadata=doc.get("metadata", {}),

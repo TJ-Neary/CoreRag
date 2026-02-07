@@ -339,7 +339,7 @@ class EpisodicMemoryManager:
             lines.append(f"Name: {profile.name}")
 
         # Group by category
-        by_category = {}
+        by_category: dict[FactCategory, list[str]] = {}
         for fact in facts:
             if fact.category not in by_category:
                 by_category[fact.category] = []
@@ -475,6 +475,7 @@ class SessionTracker:
         if not self._current:
             self._start_session()
 
+        assert self._current is not None
         event = SessionEvent(
             timestamp=datetime.now().isoformat(),
             event_type=event_type,
@@ -522,7 +523,7 @@ class SessionTracker:
         """Aggregate most common search queries across sessions."""
         from collections import Counter
 
-        queries = Counter()
+        queries: Counter[str] = Counter()
 
         # Current session
         if self._current:

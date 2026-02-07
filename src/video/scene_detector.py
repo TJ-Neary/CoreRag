@@ -14,7 +14,7 @@ import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 if TYPE_CHECKING:
     from src.multimodal.vlm_captioner import VLMCaptioner
@@ -253,7 +253,7 @@ class VideoProcessor:
         self,
         scene_detector: Optional[SceneDetector] = None,
         vlm_captioner: Optional["VLMCaptioner"] = None,
-        whisper_transcriber: Optional[object] = None,
+        whisper_transcriber: Optional[Any] = None,
         output_dir: Optional[Path] = None,
     ):
         """

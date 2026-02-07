@@ -62,7 +62,7 @@ Answer:"""
 
     # Query filtering
     min_query_length: int = 10
-    skip_patterns: List[str] = None  # Queries matching these are passed through
+    skip_patterns: Optional[List[str]] = None
 
     def __post_init__(self):
         if self.skip_patterns is None:
@@ -201,7 +201,7 @@ class HyDEExpander:
 
         # Matches skip pattern
         query_lower = query.lower()
-        for pattern in self.config.skip_patterns:
+        for pattern in self.config.skip_patterns or []:
             if re.match(pattern, query_lower):
                 return True
 

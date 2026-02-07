@@ -188,6 +188,7 @@ class QueryDecomposer:
     def _llm_decompose(self, query: str) -> List[SubQuery]:
         """LLM-based query decomposition."""
         try:
+            assert self.llm_decomposer is not None
             sub_query_texts = self.llm_decomposer(query)
             return [
                 SubQuery(

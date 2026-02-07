@@ -6,7 +6,7 @@ stored in LanceDB to verify completeness and fidelity.
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from src.utils.query_sanitize import build_eq_clause
 
@@ -86,7 +86,7 @@ def verify_file(file_name: str, archive_path: str) -> dict:
     """
     from src.extractor import extract_text
 
-    result = {
+    result: dict[str, Any] = {
         "file_name": file_name,
         "status": "unknown",
         "original_chars": 0,

@@ -440,7 +440,7 @@ class LinkChecker:
             completed = await asyncio.gather(*tasks, return_exceptions=True)
 
             for item in completed:
-                if isinstance(item, Exception):
+                if isinstance(item, BaseException):
                     logger.error(f"Unexpected error: {item}")
                 else:
                     url, result = item
@@ -497,7 +497,7 @@ class LinkChecker:
         doc_reports: List[DocumentLinkReport] = []
         all_broken: List[Tuple[str, str, LinkCheckResult]] = []
 
-        for file_path, urls in file_urls.items():
+        for fpath, urls in file_urls.items():
             ok_count = 0
             broken_count = 0
             redirect_count = 0
@@ -513,11 +513,11 @@ class LinkChecker:
                         redirect_count += 1
                     elif result.is_broken:
                         broken_count += 1
-                        all_broken.append((file_path, url, result))
+                        all_broken.append((fpath, url, result))
 
             doc_reports.append(
                 DocumentLinkReport(
-                    file_path=file_path,
+                    file_path=fpath,
                     total_links=len(urls),
                     ok_links=ok_count,
                     broken_links=broken_count,

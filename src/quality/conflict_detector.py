@@ -345,8 +345,8 @@ class ConflictDetector:
                 )
 
         # Build report
-        by_type = {}
-        by_severity = {}
+        by_type: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
 
         for c in conflicts:
             by_type[c.conflict_type.value] = by_type.get(c.conflict_type.value, 0) + 1

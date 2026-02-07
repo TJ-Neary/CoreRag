@@ -182,6 +182,8 @@ Describe:
 
     def _caption_transformers(self, image, prompt: str) -> str:
         """Generate caption using transformers."""
+        assert self._processor is not None
+        assert self._model is not None
         inputs = self._processor(text=prompt, images=image, return_tensors="pt")
 
         if hasattr(self._model, "device"):

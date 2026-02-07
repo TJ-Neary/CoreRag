@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -28,7 +29,7 @@ class BatchProcessor:
         self._running = False
         self._pause_requested = False
         self._stop_requested = False
-        self._progress = {
+        self._progress: dict[str, Any] = {
             "status": "idle",
             "total": 0,
             "processed": 0,

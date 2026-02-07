@@ -12,7 +12,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from src.config import EMBEDDING_DIMENSIONS
 from src.utils.query_sanitize import build_eq_clause, build_filter_clause
@@ -142,8 +142,8 @@ class ParentChildChunker:
         # Pattern matches headers like # Title, ## Section, etc.
         header_pattern = r"^(#{1,6})\s+(.+)$"
 
-        sections = []
-        current_section = {"title": None, "content": "", "start": 0}
+        sections: list[dict[str, Any]] = []
+        current_section: dict[str, Any] = {"title": None, "content": "", "start": 0}
 
         lines = content.split("\n")
         char_pos = 0
@@ -301,7 +301,7 @@ class ParentChildChunker:
         sentences = self._split_sentences(parent.content)
 
         children = []
-        current_sentences = []
+        current_sentences: list[str] = []
         current_tokens = 0
         chunk_index = 0
 
@@ -328,7 +328,7 @@ class ParentChildChunker:
                 chunk_index += 1
 
                 # Overlap: keep sentences that fit in overlap budget
-                overlap_sentences = []
+                overlap_sentences: list[str] = []
                 overlap_tokens = 0
                 for s in reversed(current_sentences):
                     s_tokens = self.estimate_tokens(s)
@@ -425,7 +425,7 @@ class ParentChildRetriever:
         child_results = search.to_list()
 
         # Step 3: Deduplicate by parent, keep best score per parent
-        parent_scores = {}
+        parent_scores: dict[str, dict[str, Any]] = {}
         for child in child_results:
             pid = child["parent_id"]
             score = child["_distance"]

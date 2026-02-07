@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ def extract_text(file_path: Path, languages: Optional[List[str]] = None) -> str:
 
 
 # Performance comparison utility
-def benchmark_ocr_backends(image_path: Path, iterations: int = 5) -> dict:
+def benchmark_ocr_backends(image_path: Path, iterations: int = 5) -> dict[str, Any]:
     """
     Compare OCR backend performance.
 
@@ -294,7 +294,7 @@ def benchmark_ocr_backends(image_path: Path, iterations: int = 5) -> dict:
     """
     import time
 
-    results = {}
+    results: dict[str, Any] = {}
 
     # Test Vision
     try:

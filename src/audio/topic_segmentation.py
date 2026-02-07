@@ -293,6 +293,7 @@ class WhisperWithSegmentation:
         """
         self._load_whisper()
 
+        assert self._whisper is not None
         # Transcribe
         if self._backend == "mlx":
             result = self._whisper.transcribe(
@@ -348,7 +349,7 @@ def chunk_by_chapters(
         else:
             # Split large chapter into sub-chunks
             sentences = re.split(r"(?<=[.!?])\s+", chapter.content)
-            current_chunk = []
+            current_chunk: list[str] = []
             current_tokens = 0
 
             for sentence in sentences:

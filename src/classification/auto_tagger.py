@@ -388,10 +388,10 @@ class KeywordTagger:
         suggested = []
 
         for tag_name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
-            tag = self.taxonomy.get_tag(tag_name)
-            if tag and score >= tag.threshold:
+            matched_tag = self.taxonomy.get_tag(tag_name)
+            if matched_tag and score >= matched_tag.threshold:
                 assigned.append(tag_name)
-            elif tag and score >= tag.threshold * 0.7:
+            elif matched_tag and score >= matched_tag.threshold * 0.7:
                 suggested.append(tag_name)
 
         elapsed = (time.time() - start) * 1000
@@ -587,11 +587,11 @@ class AutoTagger:
         suggested = []
 
         for tag_name, score in sorted(all_scores.items(), key=lambda x: x[1], reverse=True):
-            tag = self.taxonomy.get_tag(tag_name)
-            if tag:
-                if score >= tag.threshold:
+            matched_tag = self.taxonomy.get_tag(tag_name)
+            if matched_tag:
+                if score >= matched_tag.threshold:
                     assigned.append(tag_name)
-                elif score >= tag.threshold * 0.7:
+                elif score >= matched_tag.threshold * 0.7:
                     suggested.append(tag_name)
 
         elapsed = (time.time() - start) * 1000

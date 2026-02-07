@@ -40,7 +40,7 @@ def _get_auto_tagger() -> AutoTagger:
     return _auto_tagger
 
 
-async def process_document(file_path: Path):
+async def process_document(file_path: Path, tags: list[str] | None = None):
     """
     Orchestrates the ingestion:
     1. Immediately stage with 'processing' status (visible in dashboard)
