@@ -237,7 +237,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/export/` | BacklinkGenerator — inline wikilinks + Related section from knowledge graph | **Wired** (via exporter) |
 | `src/auth/` | AccessControl scaffold — RBAC with ADMIN/EDITOR/VIEWER roles, PII filtering | Scaffold (not wired into routes) |
 | `src/integrations/` | Plugin architecture + ReadwisePlugin for external data sync | **Wired** (MCP tools) |
-| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | **Wired** |
+| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging, backup triggers | **Wired** |
 
 ### Data Models
 
@@ -277,6 +277,10 @@ CORERAG_DB_PATH=~/.corerag/lancedb               # LanceDB vector database path
 CORERAG_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
 CORERAG_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
 CORERAG_API_KEY=...                       # Optional: API key for /api/v1/* endpoints (omit for open access)
+CORERAG_BACKUP_ENABLED=true               # Enable auto-backup on startup and pre-commit (default: true)
+CORERAG_BACKUP_STARTUP_COOLDOWN=24        # Hours between startup backups (default: 24)
+CORERAG_BACKUP_COMMIT_COOLDOWN=1          # Hours between pre-commit backups (default: 1)
+CORERAG_BACKUP_MAX_COUNT=10               # Maximum backups to retain (default: 10)
 ```
 
 ### Claude Desktop MCP Setup

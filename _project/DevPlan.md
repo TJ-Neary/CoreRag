@@ -47,10 +47,11 @@
 | 17 | Feb 7 | Complete All Open Items | Fixed MCP stdout corruption (logging to stderr). Fixed embedding dimension bug (768→384). Centralized 14 magic numbers in config.py. Decomposed server.py monolith (1,276→102 lines) into v1_routes.py + dashboard_routes.py. Added return type hints to 33 functions. Added slowapi rate limiting. Added mutmut config. Fixed MCP entry point. Created CHANGELOG.md, architecture/README.md, troubleshooting guide. All audit items resolved. |
 | 18 | Feb 7 | Public Release | Created MIT LICENSE. Rewrote README.md, USER_GUIDE.md, StartHere.md, CONVENTIONS.md for public/portfolio readiness. Added project banner. Fixed all ruff E731/E722 lint errors. Black-formatted 26 files. Upgraded security scanner to v4 (9 phases, commercial marker detection). Published to GitHub as public repo. 185 tests passing. |
 | 19 | Feb 7 | All P1-P3 Roadmap Items | Implemented all 11 future roadmap items across 3 phases. P1: backlink generator with inline wikilinks, dashboard bulk ops + keyboard nav, golden set manager + MCP tools. P2: knowledge gaps analyzer, versioning enhancement (is_changed + MCP tools), learned rules from correction patterns. P3: multi-vault support (VAULT_PATHS), RBAC scaffold (AccessControl), Readwise integration plugin, conversational search (query rewriting), quick-capture REST endpoint for mobile. Fixed GitHub CI (bandit, isort, platform markers, MPS OOM). 295 tests, 29 MCP tools. |
+| 20 | Feb 7 | Mypy Cleanup + Auto-Backup | Fixed all 122 mypy type errors across 36 source files (type annotations, Optional patterns, assert guards). Added automatic backup system: server startup backup (24h cooldown), pre-commit backup (1h cooldown), LanceDB integrity check on startup (table existence + row counts). 5 backup config constants in config.py. FastAPI lifespan added to server.py. 305 tests, 29 MCP tools. |
 
-### Metrics at Session 19
+### Metrics at Session 20
 
-- **Tests**: 295 passing, 26 skipped (golden set)
+- **Tests**: 305 passing, 26 skipped (golden set)
 - **CLI commands**: 13
 - **MCP tools**: 29
 - **RAG**: 4,702 child chunks + 52 parent chunks from 43 documents
@@ -59,7 +60,9 @@
 - **Custom exceptions**: CoreRagError hierarchy wired into 15 files
 - **Async**: intelligence.py uses httpx async for all LLM calls
 - **Config**: All model names, paths, and thresholds centralized in config.py (14 named constants)
-- **Architecture**: server.py decomposed — 102-line app factory + 2 router modules
+- **Architecture**: server.py decomposed — app factory with lifespan + 2 router modules
+- **Mypy**: 0 errors across 93 source files (strict type checking)
+- **Backup**: Auto-backup on startup (24h cooldown) + pre-commit (1h cooldown) + integrity check
 - **Audit**: All medium and low priority items resolved
 
 ---
@@ -1127,4 +1130,4 @@ Previously archived files (from scaffold phase, Jan 31):
 
 ---
 
-*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-07 (Session 18).*
+*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-07 (Session 20).*

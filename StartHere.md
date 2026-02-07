@@ -62,7 +62,7 @@ CoreRag is a local-first, privacy-preserving knowledge engine optimized for Appl
 
 | Document | Path | Purpose |
 |----------|------|---------|
-| **DevPlan.md** | [_project/DevPlan.md](./_project/DevPlan.md) | **Single source of truth**: development history (13 sessions), decisions, wiring plan status, integration protocol, future roadmap (P0-P3) |
+| **DevPlan.md** | [_project/DevPlan.md](./_project/DevPlan.md) | **Single source of truth**: development history (20 sessions), decisions, wiring plan status, integration protocol, future roadmap (P0-P3) |
 
 The `_project/Archive/` folder contains 13 previously separate planning files consolidated into DevPlan.md on 2026-02-02:
 - Session tracking: progress.md, project_memory.md, task_plan.md, findings.md
@@ -240,6 +240,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `queue_manager.py` | Job queue with rate limiting | **Wired** |
 | `throttle_controller.py` | Resource throttling | **Wired** |
 | `backup.py` | Backup creation/restore | **Wired** (CLI) |
+| `backup_triggers.py` | Auto-backup cooldowns + LanceDB integrity checker | **Wired** (server startup + pre-commit) |
 | `checkpoint.py` | Checkpoint management for resumable jobs | Partially wired |
 | `versioning.py` | Document version tracking | Partially wired |
 | `ollama_llm.py` | Ollama API wrapper | **Wired** |
@@ -273,6 +274,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `test_knowledge_graph.py` | Knowledge graph operations |
 | `test_rules.py` | Classification rules |
 | `test_session_tracker.py` | Session tracking |
+| `test_backup_triggers.py` | Auto-backup cooldowns, integrity checks |
 | `test_utils.py` | Utility modules, health, logging, versioning |
 | `fixtures/sample_documents.py` | Synthetic test data (corpus, PII samples, similarity pairs) |
 | `golden_set.yaml` | Golden dataset for regression testing |
@@ -376,13 +378,14 @@ Full details in [_project/DevPlan.md](./_project/DevPlan.md#future-roadmap).
 | **P0** | Database Health MCP tools | **Complete** |
 | **P0** | PII Dictionary management | **Complete** |
 | **P0** | Security hardening (path validation, query sanitization, secure file ops) | **Complete** |
-| **P1** | Obsidian backlinks enhancement | Pending (basic backlinks exist) |
-| **P1** | Dashboard bulk operations and keyboard navigation | Pending |
-| **P1** | Golden Set auto-population from analytics | Pending |
-| **P2** | Knowledge gaps analysis | Pending |
-| **P2** | Document versioning enhancement | Pending (basic versioning in executor) |
-| **P2** | Learned sorting rules from correction patterns | Pending |
-| **P3** | Multi-vault support, collaborative features, external integrations, mobile companion | Backlog |
+| **P1** | Obsidian backlinks enhancement | **Complete** (Session 19) |
+| **P1** | Dashboard bulk operations and keyboard navigation | **Complete** (Session 19) |
+| **P1** | Golden Set auto-population from analytics | **Complete** (Session 19) |
+| **P2** | Knowledge gaps analysis | **Complete** (Session 19) |
+| **P2** | Document versioning enhancement | **Complete** (Session 19) |
+| **P2** | Learned sorting rules from correction patterns | **Complete** (Session 19) |
+| **P3** | Multi-vault, collaborative, integrations, conversational search, mobile | **Complete** (Session 19) |
+| — | Auto-backup + LanceDB integrity checking | **Complete** (Session 20) |
 
 ---
 
@@ -474,6 +477,10 @@ mypy src/                                # Type check
 | `CORERAG_DB_PATH` | `~/.corerag/lancedb` | LanceDB database path |
 | `CORERAG_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model |
 | `CORERAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reranker model |
+| `CORERAG_BACKUP_ENABLED` | `true` | Enable auto-backup on startup/pre-commit |
+| `CORERAG_BACKUP_STARTUP_COOLDOWN` | `24` | Hours between startup backups |
+| `CORERAG_BACKUP_COMMIT_COOLDOWN` | `1` | Hours between pre-commit backups |
+| `CORERAG_BACKUP_MAX_COUNT` | `10` | Maximum backups to retain |
 
 ---
 
@@ -511,4 +518,4 @@ mypy src/                                # Type check
 
 ---
 
-*Last updated: 2026-02-07 — All 12 wiring phases complete. Server decomposed. Rate limiting added. Public release ready.*
+*Last updated: 2026-02-07 — 305 tests. All P1-P3 roadmap items complete. Auto-backup + integrity checking. Mypy clean (0 errors, 93 files).*
