@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 
 from src.analytics.query_analytics import QueryAnalytics
+from src.config import SEMANTIC_CACHE_THRESHOLD
 from src.embeddings.embedding_service import EmbeddingService
 from src.mcp_server.tools import CoreRagTools
 from src.search.hybrid_search import HybridSearcher
@@ -99,7 +100,7 @@ async def _startup():
     if config["enable_cache"]:
         semantic_cache = SemanticCache(
             embedding_service=_embedding_service,
-            similarity_threshold=0.92,
+            similarity_threshold=SEMANTIC_CACHE_THRESHOLD,
             max_entries=1000,
             ttl_hours=24,
         )
@@ -851,10 +852,14 @@ def create_app():
     return mcp
 
 
-# For direct running (Claude Desktop uses stdio transport)
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for the corerag-server console script."""
     from src.utils.logging_config import setup_logging
 
     setup_logging(json_logs=True)
-
     mcp.run(transport="stdio")
+
+
+# For direct running (Claude Desktop uses stdio transport)
+if __name__ == "__main__":
+    main()

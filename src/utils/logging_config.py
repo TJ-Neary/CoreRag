@@ -112,10 +112,10 @@ def setup_logging(
 
     # Console handler with colors
     if console:
-        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.DEBUG)
 
-        if sys.stdout.isatty():
+        if sys.stderr.isatty():
             console_format = ColoredFormatter(
                 "%(asctime)s │ %(levelname)-8s │ %(name)s │ %(message)s", datefmt="%H:%M:%S"
             )

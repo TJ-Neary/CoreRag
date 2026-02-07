@@ -6,10 +6,10 @@ retrieval-generation mismatch problem in RAG systems.
 """
 
 from .parent_child import (
-    ParentChunk,
     ChildChunk,
     ParentChildChunker,
     ParentChildRetriever,
+    ParentChunk,
     create_parent_child_tables,
 )
 

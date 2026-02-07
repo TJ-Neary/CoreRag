@@ -14,7 +14,6 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
-import base64
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ImageCaption:
     """Caption generated for an image."""
+
     image_path: str
     caption: str
     model_used: str
@@ -58,11 +58,7 @@ Describe:
 4. Any labels, text, or annotations
 5. The overall purpose or concept being illustrated"""
 
-    def __init__(
-        self,
-        model_name: str = "vikhyatk/moondream2",
-        backend: str = "auto"
-    ):
+    def __init__(self, model_name: str = "vikhyatk/moondream2", backend: str = "auto"):
         """
         Args:
             model_name: VLM model to use
@@ -80,8 +76,10 @@ Describe:
             return requested
 
         try:
-            import mlx.core
             import platform
+
+            import mlx.core  # noqa: F401 — availability check
+
             if platform.processor() == "arm":
                 return "mlx"
         except ImportError:
@@ -104,7 +102,7 @@ Describe:
         try:
             # MLX-VLM loading (if available)
             # This is model-specific; Moondream2 has MLX support
-            from mlx_vlm import load, generate
+            from mlx_vlm import generate, load
 
             self._model, self._processor = load(self.model_name)
             self._generate = generate
@@ -116,22 +114,19 @@ Describe:
 
     def _load_transformers_model(self):
         """Load model using transformers."""
-        from transformers import AutoModelForVision2Seq, AutoProcessor
         import torch
+        from transformers import AutoModelForVision2Seq, AutoProcessor
 
         self._processor = AutoProcessor.from_pretrained(self.model_name)
         self._model = AutoModelForVision2Seq.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto"
+            device_map="auto",
         )
         logger.info(f"Loaded {self.model_name} with transformers")
 
     def caption_image(
-        self,
-        image_path: Path,
-        prompt: Optional[str] = None,
-        is_diagram: bool = False
+        self, image_path: Path, prompt: Optional[str] = None, is_diagram: bool = False
     ) -> ImageCaption:
         """
         Generate a caption for an image.
@@ -145,6 +140,7 @@ Describe:
             ImageCaption with generated description
         """
         import time
+
         start = time.time()
 
         self._load_model()
@@ -155,6 +151,7 @@ Describe:
 
         # Load image
         from PIL import Image
+
         image = Image.open(image_path)
 
         # Generate caption
@@ -174,50 +171,34 @@ Describe:
             metadata={
                 "image_size": image.size,
                 "is_diagram": is_diagram,
-                "prompt_type": "diagram" if is_diagram else "general"
-            }
+                "prompt_type": "diagram" if is_diagram else "general",
+            },
         )
 
     def _caption_mlx(self, image, prompt: str) -> str:
         """Generate caption using MLX."""
-        output = self._generate(
-            self._model,
-            self._processor,
-            image,
-            prompt,
-            max_tokens=500
-        )
+        output = self._generate(self._model, self._processor, image, prompt, max_tokens=500)
         return output
 
     def _caption_transformers(self, image, prompt: str) -> str:
         """Generate caption using transformers."""
-        inputs = self._processor(
-            text=prompt,
-            images=image,
-            return_tensors="pt"
-        )
+        inputs = self._processor(text=prompt, images=image, return_tensors="pt")
 
         if hasattr(self._model, "device"):
             inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
-        outputs = self._model.generate(
-            **inputs,
-            max_new_tokens=500,
-            do_sample=False
-        )
+        outputs = self._model.generate(**inputs, max_new_tokens=500, do_sample=False)
 
         caption = self._processor.decode(outputs[0], skip_special_tokens=True)
 
         # Remove the prompt from output if echoed
         if caption.startswith(prompt):
-            caption = caption[len(prompt):].strip()
+            caption = caption[len(prompt) :].strip()
 
         return caption
 
     def caption_pdf_images(
-        self,
-        pdf_path: Path,
-        extract_diagrams: bool = True
+        self, pdf_path: Path, extract_diagrams: bool = True
     ) -> List[ImageCaption]:
         """
         Extract and caption images from a PDF.
@@ -251,10 +232,7 @@ Describe:
                 image_ext = base_image["ext"]
 
                 # Save to temp file
-                with tempfile.NamedTemporaryFile(
-                    suffix=f".{image_ext}",
-                    delete=False
-                ) as tmp:
+                with tempfile.NamedTemporaryFile(suffix=f".{image_ext}", delete=False) as tmp:
                     tmp.write(image_bytes)
                     tmp_path = Path(tmp.name)
 
@@ -262,10 +240,7 @@ Describe:
                     # Determine if likely a diagram
                     is_diagram = self._is_likely_diagram(tmp_path)
 
-                    caption = self.caption_image(
-                        tmp_path,
-                        is_diagram=is_diagram
-                    )
+                    caption = self.caption_image(tmp_path, is_diagram=is_diagram)
                     caption.metadata["pdf_page"] = page_num + 1
                     caption.metadata["image_index"] = img_index
                     captions.append(caption)
@@ -279,8 +254,8 @@ Describe:
 
     def _is_likely_diagram(self, image_path: Path) -> bool:
         """Heuristic to detect if image is likely a diagram."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img = Image.open(image_path).convert("RGB")
         arr = np.array(img)
@@ -302,11 +277,7 @@ Describe:
         return unique_colors < 1000 and white_ratio > 0.3
 
 
-def create_shadow_document(
-    image_path: Path,
-    caption: ImageCaption,
-    output_dir: Path
-) -> Path:
+def create_shadow_document(image_path: Path, caption: ImageCaption, output_dir: Path) -> Path:
     """
     Create a "shadow document" for an image.
 

@@ -13,13 +13,14 @@ Usage:
     pytest tests/test_golden_set.py -v -k "architecture"  # Run tagged subset
 """
 
-import pytest
-import yaml
-from pathlib import Path
-from dataclasses import dataclass
-from typing import List, Optional
 import json
 import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
+
+import pytest
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GoldenTestCase:
     """A single golden test case."""
+
     query: str
     expected_file: str
     expected_in_top: int
@@ -36,6 +38,7 @@ class GoldenTestCase:
 @dataclass
 class TestResult:
     """Result of a single test case."""
+
     test_case: GoldenTestCase
     passed: bool
     found_rank: Optional[int]
@@ -56,12 +59,14 @@ def load_golden_set(path: Optional[Path] = None) -> tuple:
     test_cases = []
 
     for q in data.get("queries", []):
-        test_cases.append(GoldenTestCase(
-            query=q["query"],
-            expected_file=q["expected_file"],
-            expected_in_top=q.get("expected_in_top", config.get("required_rank", 3)),
-            tags=q.get("tags", [])
-        ))
+        test_cases.append(
+            GoldenTestCase(
+                query=q["query"],
+                expected_file=q["expected_file"],
+                expected_in_top=q.get("expected_in_top", config.get("required_rank", 3)),
+                tags=q.get("tags", []),
+            )
+        )
 
     return config, test_cases
 
@@ -90,7 +95,7 @@ class GoldenSetRunner:
             results = await self.retriever.search(
                 query=test_case.query,
                 query_vector=query_vector,
-                k=test_case.expected_in_top * 2  # Get extra for debugging
+                k=test_case.expected_in_top * 2,  # Get extra for debugging
             )
 
             # Extract file paths from results
@@ -129,7 +134,7 @@ class GoldenSetRunner:
                 passed=passed,
                 found_rank=found_rank,
                 found_score=found_score,
-                actual_results=result_files[:test_case.expected_in_top]
+                actual_results=result_files[: test_case.expected_in_top],
             )
 
         except Exception as e:
@@ -139,7 +144,7 @@ class GoldenSetRunner:
                 found_rank=None,
                 found_score=None,
                 actual_results=[],
-                error=str(e)
+                error=str(e),
             )
 
     async def run_all(self, test_cases: List[GoldenTestCase]) -> List[TestResult]:
@@ -170,7 +175,7 @@ class GoldenSetRunner:
             f"Total: {len(results)} | Passed: {passed} | Failed: {failed}",
             f"Pass Rate: {passed/len(results)*100:.1f}%",
             "=" * 60,
-            ""
+            "",
         ]
 
         if failed > 0:
@@ -179,7 +184,9 @@ class GoldenSetRunner:
             for r in results:
                 if not r.passed:
                     lines.append(f"Query: {r.test_case.query}")
-                    lines.append(f"  Expected: {r.test_case.expected_file} (in top {r.test_case.expected_in_top})")
+                    lines.append(
+                        f"  Expected: {r.test_case.expected_file} (in top {r.test_case.expected_in_top})"
+                    )
                     if r.found_rank:
                         lines.append(f"  Found at rank: {r.found_rank}")
                     else:
@@ -199,7 +206,7 @@ class GoldenSetRunner:
 # Load test cases for parameterization
 try:
     _config, _test_cases = load_golden_set()
-except:
+except Exception:
     _config, _test_cases = {}, []
 
 
@@ -236,6 +243,7 @@ async def test_golden_query(test_case: GoldenTestCase, retriever, embedder):
 # Standalone Runner
 # ============================================
 
+
 async def main():
     """Run golden set tests standalone."""
     import argparse
@@ -264,4 +272,5 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

@@ -22,7 +22,6 @@ Key points:
 - It uses indentation for blocks
 - Very readable syntax
 """,
-
     "medium": """# Project Planning Document
 
 ## Overview
@@ -67,7 +66,6 @@ Code quality is maintained through:
 
 Following this methodology ensures consistent, high-quality project delivery.
 """,
-
     "technical": """# Machine Learning Pipeline Architecture
 
 ## Data Ingestion Layer
@@ -132,25 +130,25 @@ SEARCH_TEST_CASES = [
         "query": "How do I plan a software project?",
         "expected_doc": "medium",
         "expected_sections": ["Phase 1: Discovery", "Phase 2: Design"],
-        "min_score": 0.7
+        "min_score": 0.7,
     },
     {
         "query": "Python programming syntax",
         "expected_doc": "short",
         "expected_sections": ["Quick Note"],
-        "min_score": 0.6
+        "min_score": 0.6,
     },
     {
         "query": "machine learning data pipeline architecture",
         "expected_doc": "technical",
         "expected_sections": ["Data Ingestion Layer", "Feature Engineering"],
-        "min_score": 0.75
+        "min_score": 0.75,
     },
     {
         "query": "code review and testing practices",
         "expected_doc": "medium",
         "expected_sections": ["Phase 3: Implementation"],
-        "min_score": 0.65
+        "min_score": 0.65,
     },
 ]
 
@@ -161,13 +159,13 @@ SIMILARITY_PAIRS = [
         "text_a": "Machine learning models require training data to learn patterns.",
         "text_b": "ML algorithms need labeled datasets to identify relationships.",
         "expected_similarity": "high",
-        "min_score": 0.8
+        "min_score": 0.8,
     },
     {
         "text_a": "The Python programming language uses indentation for code blocks.",
         "text_b": "In Python, whitespace indentation defines scope instead of braces.",
         "expected_similarity": "high",
-        "min_score": 0.8
+        "min_score": 0.8,
     },
     # Medium similarity (should score 0.5-0.8)
     {
@@ -175,14 +173,14 @@ SIMILARITY_PAIRS = [
         "text_b": "SQL queries can be optimized using proper indexing strategies.",
         "expected_similarity": "medium",
         "min_score": 0.5,
-        "max_score": 0.85
+        "max_score": 0.85,
     },
     # Low similarity (should score < 0.5)
     {
         "text_a": "The weather today is sunny and warm.",
         "text_b": "Distributed systems require careful handling of network partitions.",
         "expected_similarity": "low",
-        "max_score": 0.4
+        "max_score": 0.4,
     },
 ]
 
@@ -197,19 +195,16 @@ Next steps:
 - Schedule stakeholder meeting
 - Update project tracker
 """,
-
     "has_email": """
 # Contact Information
 
 For questions, reach out to john.doe@example.com or jane.smith@company.org.
 """,
-
     "has_phone": """
 # Emergency Contacts
 
 Call support at (555) 123-4567 or the backup line 555-987-6543.
 """,
-
     "has_ssn": """
 # Employee Record (SENSITIVE)
 
@@ -217,14 +212,12 @@ Employee ID: EMP-12345
 SSN: 123-45-6789
 Start Date: 2024-01-15
 """,
-
     "has_api_key": """
 # Configuration
 
 api_key = "sk-abc123def456ghi789jkl012mno345pqr678stu901vwx"
 database_url = "postgresql://localhost:5432/mydb"
 """,
-
     "has_password": """
 # Server Setup
 
@@ -234,7 +227,6 @@ database_url = "postgresql://localhost:5432/mydb"
    password: SuperSecret123!
 3. Run deployment script
 """,
-
     "has_credit_card": """
 # Payment Information
 
@@ -260,9 +252,8 @@ Content for section two goes here.
 """,
         "expected_chunks": 2,
         "validation": lambda chunks: all(
-            chunk.strip().startswith("##") or chunk.strip().startswith("#")
-            for chunk in chunks
-        )
+            chunk.strip().startswith("##") or chunk.strip().startswith("#") for chunk in chunks
+        ),
     },
     {
         "name": "code_blocks_intact",
@@ -279,9 +270,8 @@ def hello_world():
 And here's the explanation.
 """,
         "validation": lambda chunks: any(
-            "def hello_world():" in chunk and "return True" in chunk
-            for chunk in chunks
-        )
+            "def hello_world():" in chunk and "return True" in chunk for chunk in chunks
+        ),
     },
 ]
 
@@ -289,6 +279,7 @@ And here's the explanation.
 @dataclass
 class TestDocument:
     """A test document with metadata."""
+
     id: str
     content: str
     expected_chunks: int
@@ -303,38 +294,35 @@ TEST_DOCUMENTS: List[TestDocument] = [
         content=SAMPLE_MARKDOWN["short"],
         expected_chunks=1,
         expected_tier="public",
-        tags=["programming", "python", "notes"]
+        tags=["programming", "python", "notes"],
     ),
     TestDocument(
         id="doc_002",
         content=SAMPLE_MARKDOWN["medium"],
         expected_chunks=4,
         expected_tier="public",
-        tags=["planning", "methodology", "agile"]
+        tags=["planning", "methodology", "agile"],
     ),
     TestDocument(
         id="doc_003",
         content=SAMPLE_MARKDOWN["technical"],
         expected_chunks=4,
         expected_tier="public",
-        tags=["ml", "architecture", "python"]
+        tags=["ml", "architecture", "python"],
     ),
     TestDocument(
         id="doc_004",
         content=PRIVACY_TEST_SAMPLES["has_ssn"],
         expected_chunks=1,
         expected_tier="restricted",
-        tags=["employee", "hr", "sensitive"]
+        tags=["employee", "hr", "sensitive"],
     ),
 ]
 
 
 def get_sample_corpus() -> Dict[str, str]:
     """Get the full sample corpus for testing."""
-    return {
-        **SAMPLE_MARKDOWN,
-        **{f"privacy_{k}": v for k, v in PRIVACY_TEST_SAMPLES.items()}
-    }
+    return {**SAMPLE_MARKDOWN, **{f"privacy_{k}": v for k, v in PRIVACY_TEST_SAMPLES.items()}}
 
 
 def get_search_test_cases() -> List[Dict]:

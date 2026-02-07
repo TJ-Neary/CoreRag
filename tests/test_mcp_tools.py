@@ -1,13 +1,11 @@
 """Tests for MCP CoreRagTools class."""
 
 import os
-import sys
 import tempfile
-import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # Setup dummy env vars BEFORE importing src modules
 os.environ.setdefault("INBOX_PATH", "/dummy/inbox")
@@ -21,18 +19,20 @@ from src.mcp_server.tools import CoreRagTools
 @pytest.fixture
 def mock_retriever():
     retriever = AsyncMock()
-    retriever.search = AsyncMock(return_value=[
-        {
-            "content": "Test chunk content about Python programming.",
-            "document_id": "doc_abc123",
-            "score": 0.85,
-            "rrf_score": 0.85,
-            "metadata": {
-                "source_path": "test_doc.md",
-                "section_title": "Getting Started",
+    retriever.search = AsyncMock(
+        return_value=[
+            {
+                "content": "Test chunk content about Python programming.",
+                "document_id": "doc_abc123",
+                "score": 0.85,
+                "rrf_score": 0.85,
+                "metadata": {
+                    "source_path": "test_doc.md",
+                    "section_title": "Getting Started",
+                },
             },
-        },
-    ])
+        ]
+    )
     return retriever
 
 
@@ -40,6 +40,7 @@ def mock_retriever():
 def mock_embedder():
     async def embed(text):
         return [0.1] * 768
+
     return embed
 
 
@@ -198,11 +199,17 @@ class TestSearchByEntity:
     async def test_with_graph(self, tools):
         mock_graph = MagicMock()
         mock_graph.get_neighbors.return_value = [
-            {"entity": "Django", "relationship": "uses", "direction": "outgoing",
-             "document_id": "doc1", "confidence": 0.9},
+            {
+                "entity": "Django",
+                "relationship": "uses",
+                "direction": "outgoing",
+                "document_id": "doc1",
+                "confidence": 0.9,
+            },
         ]
         mock_graph.get_stats.return_value = {
-            "total_entities": 100, "total_relationships": 50,
+            "total_entities": 100,
+            "total_relationships": 50,
         }
         tools._knowledge_graph = mock_graph
 

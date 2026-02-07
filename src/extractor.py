@@ -1,7 +1,8 @@
 import logging
-import pypdf
-import docx
 from pathlib import Path
+
+import docx
+import pypdf
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +98,7 @@ def _extract_image_ocr(image_path: Path) -> str:
 
         captioner = VLMCaptioner()
         is_diagram = any(
-            kw in ocr_text.lower()
-            for kw in ["flowchart", "diagram", "->", "-->", "graph", "chart"]
+            kw in ocr_text.lower() for kw in ["flowchart", "diagram", "->", "-->", "graph", "chart"]
         )
         caption = captioner.caption_image(image_path, is_diagram=is_diagram)
         caption_text = caption.caption
@@ -132,9 +132,7 @@ def _extract_pdf_ocr(pdf_path: Path) -> str:
 
         if pages_text:
             total_chars = sum(len(t) for t in pages_text)
-            avg_confidence = (
-                sum(r.confidence for r in results if r.text.strip()) / len(pages_text)
-            )
+            avg_confidence = sum(r.confidence for r in results if r.text.strip()) / len(pages_text)
             logger.info(
                 f"OCR extracted {total_chars} chars from {len(pages_text)}/{len(results)} pages "
                 f"of {pdf_path.name} (avg confidence: {avg_confidence:.2f})"
@@ -152,6 +150,7 @@ def _extract_audio(audio_path: Path) -> str:
     """Extract text from audio via Whisper transcription + topic segmentation."""
     try:
         import asyncio
+
         from src.audio.topic_segmentation import WhisperWithSegmentation
 
         transcriber = WhisperWithSegmentation()
@@ -159,9 +158,7 @@ def _extract_audio(audio_path: Path) -> str:
         # Run async transcription in sync context
         loop = asyncio.new_event_loop()
         try:
-            segmented = loop.run_until_complete(
-                transcriber.transcribe_and_segment(audio_path)
-            )
+            segmented = loop.run_until_complete(transcriber.transcribe_and_segment(audio_path))
         finally:
             loop.close()
 
@@ -179,11 +176,15 @@ def _extract_audio(audio_path: Path) -> str:
             return text
 
         # Fallback: return raw transcript
-        logger.info(f"Audio transcribed (no chapters): {audio_path.name} — {len(segmented.raw_transcript)} chars")
+        logger.info(
+            f"Audio transcribed (no chapters): {audio_path.name} — {len(segmented.raw_transcript)} chars"
+        )
         return segmented.raw_transcript
 
     except ImportError:
-        logger.warning(f"Audio transcription unavailable (mlx-whisper not installed): {audio_path.name}")
+        logger.warning(
+            f"Audio transcription unavailable (mlx-whisper not installed): {audio_path.name}"
+        )
         return ""
     except Exception as e:
         logger.error(f"Audio extraction failed for {audio_path.name}: {e}")
@@ -210,7 +211,9 @@ def _extract_video(video_path: Path) -> str:
         return text
 
     except ImportError:
-        logger.warning(f"Video processing unavailable (opencv-python not installed): {video_path.name}")
+        logger.warning(
+            f"Video processing unavailable (opencv-python not installed): {video_path.name}"
+        )
         return ""
     except Exception as e:
         logger.error(f"Video extraction failed for {video_path.name}: {e}")

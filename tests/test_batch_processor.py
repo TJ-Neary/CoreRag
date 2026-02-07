@@ -174,11 +174,11 @@ class TestBatchProcessor:
 
     def test_memory_pause_threshold(self, processor):
         """Test that high memory triggers pause."""
-        from src.batch_processor import MEMORY_PAUSE_THRESHOLD
+        from src.config import BATCH_MEMORY_PAUSE_PCT
 
         with patch("src.batch_processor.psutil.virtual_memory") as mock_mem:
             mock_result = MagicMock()
-            mock_result.percent = MEMORY_PAUSE_THRESHOLD + 5
+            mock_result.percent = BATCH_MEMORY_PAUSE_PCT + 5
 
             # After a few checks, return low memory
             call_count = [0]
@@ -301,11 +301,11 @@ class TestMemoryConstants:
 
     def test_memory_thresholds_reasonable(self):
         """Test that memory thresholds are reasonable values."""
-        from src.batch_processor import MEMORY_PAUSE_THRESHOLD, MEMORY_RESUME_THRESHOLD
+        from src.config import BATCH_MEMORY_PAUSE_PCT, BATCH_MEMORY_RESUME_PCT
 
         # Pause should be higher than resume (hysteresis)
-        assert MEMORY_PAUSE_THRESHOLD > MEMORY_RESUME_THRESHOLD
+        assert BATCH_MEMORY_PAUSE_PCT > BATCH_MEMORY_RESUME_PCT
 
         # Both should be reasonable percentages
-        assert 70 <= MEMORY_PAUSE_THRESHOLD <= 98
-        assert 60 <= MEMORY_RESUME_THRESHOLD <= 95
+        assert 70 <= BATCH_MEMORY_PAUSE_PCT <= 98
+        assert 60 <= BATCH_MEMORY_RESUME_PCT <= 95

@@ -1,14 +1,15 @@
 """Tests for time-decay scoring."""
 
-import pytest
 from datetime import datetime
 
+import pytest
+
 from src.search.decay_scoring import (
-    DecayConfig,
-    calculate_decay_multiplier,
-    apply_decay_to_results,
     AdaptiveDecay,
+    DecayConfig,
     SeasonalBoost,
+    apply_decay_to_results,
+    calculate_decay_multiplier,
 )
 
 

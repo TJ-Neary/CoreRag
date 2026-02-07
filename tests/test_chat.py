@@ -6,7 +6,7 @@ Run with: pytest tests/test_chat.py -v
 
 import os
 import sys
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,6 +23,7 @@ sys.path.append(os.getcwd())
 @pytest.fixture
 def client():
     from src.server import app
+
     return TestClient(app)
 
 
@@ -46,11 +47,14 @@ class TestChatEndpoint:
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
-            resp = client.post("/api/chat", json={
-                "message": "Hello",
-                "use_rag": False,
-                "history": [],
-            })
+            resp = client.post(
+                "/api/chat",
+                json={
+                    "message": "Hello",
+                    "use_rag": False,
+                    "history": [],
+                },
+            )
 
         data = resp.json()
         assert "response" in data
@@ -62,20 +66,21 @@ class TestChatEndpoint:
         """Chat includes conversation history."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "message": {"content": "You asked about Python."}
-        }
+        mock_response.json.return_value = {"message": {"content": "You asked about Python."}}
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
-            resp = client.post("/api/chat", json={
-                "message": "What did I ask about?",
-                "use_rag": False,
-                "history": [
-                    {"role": "user", "content": "Tell me about Python"},
-                    {"role": "assistant", "content": "Python is a programming language."},
-                ],
-            })
+            resp = client.post(
+                "/api/chat",
+                json={
+                    "message": "What did I ask about?",
+                    "use_rag": False,
+                    "history": [
+                        {"role": "user", "content": "Tell me about Python"},
+                        {"role": "assistant", "content": "Python is a programming language."},
+                    ],
+                },
+            )
 
         data = resp.json()
         assert "response" in data
@@ -87,10 +92,13 @@ class TestChatEndpoint:
             new_callable=AsyncMock,
             side_effect=Exception("Connection refused"),
         ):
-            resp = client.post("/api/chat", json={
-                "message": "test query",
-                "use_rag": False,
-            })
+            resp = client.post(
+                "/api/chat",
+                json={
+                    "message": "test query",
+                    "use_rag": False,
+                },
+            )
 
         data = resp.json()
         assert "error" in data
@@ -105,12 +113,17 @@ class TestChatEndpoint:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("lancedb.connect", side_effect=Exception("DB not found")), \
-             patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
-            resp = client.post("/api/chat", json={
-                "message": "What is Python?",
-                "use_rag": True,
-            })
+        with (
+            patch("lancedb.connect", side_effect=Exception("DB not found")),
+            patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response),
+        ):
+            resp = client.post(
+                "/api/chat",
+                json={
+                    "message": "What is Python?",
+                    "use_rag": True,
+                },
+            )
 
         data = resp.json()
         assert "response" in data

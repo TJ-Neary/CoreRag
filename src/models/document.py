@@ -1,11 +1,11 @@
 """Document and Chunk models for CoreRag."""
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
-import uuid
 
 
 class PrivacyTier(Enum):
@@ -164,7 +164,9 @@ class Chunk:
 
     # Content
     text: str = ""
-    embedding: List[float] = field(default_factory=list)  # 768-dimensional vector
+    embedding: List[float] = field(
+        default_factory=list
+    )  # 384-dimensional vector (all-MiniLM-L6-v2)
 
     # Position in document
     chunk_index: int = 0  # 0, 1, 2, ... within document

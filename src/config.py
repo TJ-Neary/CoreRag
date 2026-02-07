@@ -23,7 +23,10 @@ def get_path_var(var_name: str, required: bool = True) -> Path:
             return Path.home() / "Documents"
 
         if required:
-            print(f"Error: Missing required environment variable '{var_name}' in .env file.")
+            print(
+                f"Error: Missing required environment variable '{var_name}' in .env file.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         return None
 
@@ -53,7 +56,26 @@ LOG_DIR = STATE_DIR / "logs"
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
 EMBEDDING_MODEL = os.getenv("CORERAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_DIMENSIONS = 384  # Matches all-MiniLM-L6-v2 output
+EMBEDDING_BATCH_SIZE = 32  # Tuned for M4 Max 48GB
 RERANKER_MODEL = os.getenv("CORERAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANKER_BATCH_SIZE = 32
+
+# ── Processing Thresholds ────────────────────────────────────────────────────
+
+PII_MIN_CONFIDENCE = 0.70  # Minimum confidence for PII detection match
+PII_SAMPLE_MAX_CHARS = 20000  # Max chars to scan for PII (performance)
+PII_CONTEXT_TRUNCATE = 80  # Truncate PII context snippets for display
+SEMANTIC_CACHE_THRESHOLD = 0.92  # Similarity threshold for search cache hits
+
+# ── Memory Safety ────────────────────────────────────────────────────────────
+
+BATCH_MEMORY_PAUSE_PCT = 92  # Pause batch/commit at this RAM %
+BATCH_MEMORY_RESUME_PCT = 88  # Resume when RAM drops below this %
+SAFE_MEMORY_PAUSE_PCT = 75  # SafeProcessor pause threshold (background indexing)
+SAFE_MEMORY_RESUME_PCT = 65  # SafeProcessor resume threshold
+MEMORY_CHECK_INTERVAL_SEC = 2  # Seconds between memory checks when paused
+COMMIT_BATCH_SIZE = 5  # Files between memory checks during commit
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
 
@@ -101,4 +123,7 @@ def validate_config():
         ) from e
 
     if not GOOGLE_API_KEY:
-        print("Warning: GOOGLE_API_KEY is missing. Intelligence features will be limited.")
+        print(
+            "Warning: GOOGLE_API_KEY is missing. Intelligence features will be limited.",
+            file=sys.stderr,
+        )

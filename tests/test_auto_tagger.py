@@ -4,7 +4,6 @@ Tests for the auto-tagger classification module.
 Run with: pytest tests/test_auto_tagger.py -v
 """
 
-import pytest
 from src.classification.auto_tagger import AutoTagger, Taxonomy
 
 
@@ -63,7 +62,9 @@ class TestEmbeddingTagger:
     """Tests for embedding-based tagging mode."""
 
     def test_embedding_tagger_initializes_with_embedder(self):
-        mock_embedder = lambda text: [0.1] * 384
+        def mock_embedder(text):
+            return [0.1] * 384
+
         tagger = AutoTagger(embedder=mock_embedder)
         # Should have both keyword and embedding taggers
         assert tagger.keyword_tagger is not None
@@ -74,7 +75,9 @@ class TestEmbeddingTagger:
         assert tagger.embedding_tagger is None
 
     def test_hybrid_tagging_with_embedder(self):
-        mock_embedder = lambda text: [0.1] * 384
+        def mock_embedder(text):
+            return [0.1] * 384
+
         tagger = AutoTagger(embedder=mock_embedder)
         result = tagger.tag("Machine learning with neural networks and deep learning")
         assert isinstance(result.assigned_tags, list)

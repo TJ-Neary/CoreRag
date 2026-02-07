@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
+from src.config import RERANKER_BATCH_SIZE
 from src.exceptions import SearchError
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class CrossEncoderReranker:
         self,
         model_name: str = "mixedbread-ai/mxbai-rerank-base-v1",
         backend: str = "auto",
-        batch_size: int = 32,
+        batch_size: int = RERANKER_BATCH_SIZE,
         max_length: int = 512,
     ):
         """
@@ -328,4 +329,6 @@ def create_reranker(model: str = "auto", backend: str = "auto") -> CrossEncoderR
         # Default to fast English model
         model = "mixedbread-ai/mxbai-rerank-base-v1"
 
-    return CrossEncoderReranker(model_name=model, backend=backend, batch_size=32, max_length=512)
+    return CrossEncoderReranker(
+        model_name=model, backend=backend, batch_size=RERANKER_BATCH_SIZE, max_length=512
+    )

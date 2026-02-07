@@ -1,1 +1,0 @@
-"""Obsidian integration module."""

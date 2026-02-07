@@ -4,14 +4,11 @@ Tests for the Obsidian vault exporter.
 Run with: pytest tests/test_exporter.py -v
 """
 
-import os
 import shutil
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 
 TEMP_ROOT = Path("temp_test_exporter")
 
@@ -35,6 +32,7 @@ class TestExporter:
         vault.mkdir()
         with patch("src.exporter.VAULT_PATH", vault):
             from src.exporter import export_to_vault
+
             export_to_vault(
                 "Test content for the document body.",
                 {"year": "2025", "type": "Report", "category": "Finance", "summary": "A test doc."},
@@ -50,6 +48,7 @@ class TestExporter:
         vault.mkdir()
         with patch("src.exporter.VAULT_PATH", vault):
             from src.exporter import export_to_vault
+
             export_to_vault(
                 "Body text here.",
                 {"year": "2024", "type": "Doc", "category": "HR", "summary": "Summary."},
@@ -66,6 +65,7 @@ class TestExporter:
         vault.mkdir()
         with patch("src.exporter.VAULT_PATH", vault):
             from src.exporter import export_to_vault
+
             export_to_vault(
                 "Unique searchable text XYZ123.",
                 {"year": "2023", "type": "Note", "category": "Tech", "summary": "Test."},
@@ -79,6 +79,7 @@ class TestExporter:
         nonexistent = TEMP_ROOT / "nonexistent_vault"
         with patch("src.exporter.VAULT_PATH", nonexistent):
             from src.exporter import export_to_vault
+
             # Should not raise, just log error
             export_to_vault(
                 "Content.",
@@ -94,12 +95,15 @@ class TestSanitizeFilename:
 
     def test_strips_special_chars(self):
         from src.exporter import _sanitize_filename
+
         assert _sanitize_filename('file<>:"/\\|?*name') == "filename"
 
     def test_preserves_normal_chars(self):
         from src.exporter import _sanitize_filename
+
         assert _sanitize_filename("2025 - Report - Budget") == "2025 - Report - Budget"
 
     def test_strips_leading_trailing_spaces(self):
         from src.exporter import _sanitize_filename
+
         assert _sanitize_filename("  test  ") == "test"

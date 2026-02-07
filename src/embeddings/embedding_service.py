@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.config import EMBEDDING_BATCH_SIZE
 from src.exceptions import EmbeddingError
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ class EmbeddingService:
         cache_enabled: bool = True,
         cache_dir: Optional[Path] = None,
         device: str = "mps",  # Apple Silicon
-        batch_size: int = 32,
+        batch_size: int = EMBEDDING_BATCH_SIZE,
     ):
         """
         Initialize embedding service.

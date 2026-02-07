@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+from src.config import EMBEDDING_DIMENSIONS
 from src.utils.query_sanitize import build_eq_clause, build_filter_clause
 
 
@@ -496,7 +497,7 @@ def create_parent_child_tables(db) -> Tuple:
             pa.field("parent_id", pa.string()),
             pa.field("document_id", pa.string()),
             pa.field("content", pa.string()),
-            pa.field("vector", pa.list_(pa.float32(), 768)),
+            pa.field("vector", pa.list_(pa.float32(), EMBEDDING_DIMENSIONS)),
             pa.field("start_char", pa.int64()),
             pa.field("end_char", pa.int64()),
             pa.field("chunk_index", pa.int32()),

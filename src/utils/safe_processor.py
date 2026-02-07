@@ -18,7 +18,8 @@ from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
 
 import psutil
 
-from src.utils.hardware_monitor import HardwareMonitor, SafetyLevel, SystemStatus
+from src.config import SAFE_MEMORY_PAUSE_PCT, SAFE_MEMORY_RESUME_PCT
+from src.utils.hardware_monitor import HardwareMonitor, SystemStatus
 from src.utils.throttle_controller import ThrottleController, ThrottleSettings
 
 logger = logging.getLogger(__name__)
@@ -29,16 +30,17 @@ R = TypeVar("R")
 
 class JobPriority(Enum):
     """Job priority levels for resource allocation."""
-    USER_QUERY = 1      # Highest - user is waiting
-    INTERACTIVE = 2     # User-initiated but not blocking
-    BACKGROUND = 3      # Background indexing, sync
-    MAINTENANCE = 4     # Cleanup, optimization
+
+    USER_QUERY = 1  # Highest - user is waiting
+    INTERACTIVE = 2  # User-initiated but not blocking
+    BACKGROUND = 3  # Background indexing, sync
+    MAINTENANCE = 4  # Cleanup, optimization
 
 
 # Memory thresholds as percentages
-MEMORY_PAUSE_THRESHOLD = 75    # Pause ingestion above this
+MEMORY_PAUSE_THRESHOLD = SAFE_MEMORY_PAUSE_PCT
 MEMORY_WARNING_THRESHOLD = 70  # Start reducing batch sizes
-MEMORY_RESUME_THRESHOLD = 65   # Resume after dropping below this
+MEMORY_RESUME_THRESHOLD = SAFE_MEMORY_RESUME_PCT
 
 
 class IngestionController:
@@ -84,7 +86,9 @@ class IngestionController:
             # Always pause for user queries
             if self._active_user_queries > 0:
                 if not self._paused:
-                    logger.info(f"Pausing ingestion: {self._active_user_queries} user queries active")
+                    logger.info(
+                        f"Pausing ingestion: {self._active_user_queries} user queries active"
+                    )
                     self._paused = True
                     self._pause_event.clear()
                 return True
@@ -92,14 +96,18 @@ class IngestionController:
             # Pause for memory pressure
             if should_pause:
                 if not self._paused:
-                    logger.warning(f"Pausing ingestion: Memory at {mem_pct:.1f}% (>{MEMORY_PAUSE_THRESHOLD}%)")
+                    logger.warning(
+                        f"Pausing ingestion: Memory at {mem_pct:.1f}% (>{MEMORY_PAUSE_THRESHOLD}%)"
+                    )
                     self._paused = True
                     self._pause_event.clear()
                 return True
 
             # Resume if below threshold
             if self._paused and mem_pct < MEMORY_RESUME_THRESHOLD:
-                logger.info(f"Resuming ingestion: Memory at {mem_pct:.1f}% (<{MEMORY_RESUME_THRESHOLD}%)")
+                logger.info(
+                    f"Resuming ingestion: Memory at {mem_pct:.1f}% (<{MEMORY_RESUME_THRESHOLD}%)"
+                )
                 self._paused = False
                 self._pause_event.set()
 
@@ -316,8 +324,8 @@ class SafeProcessor:
 
     def wait_for_ingestion_safe(self, timeout_seconds: float = 60) -> bool:
         """Wait until it's safe to resume background ingestion."""
-        start = __import__('time').time()
-        while __import__('time').time() - start < timeout_seconds:
+        start = __import__("time").time()
+        while __import__("time").time() - start < timeout_seconds:
             if self.is_safe_for_ingestion():
                 return True
             self.ingestion.wait_for_resume(timeout=5.0)
@@ -429,8 +437,7 @@ class SafeProcessor:
     def _on_warning(self, status: SystemStatus) -> None:
         """Handle warning level."""
         logger.warning(
-            f"System warning: Memory at {status.memory_used_gb:.1f}GB. "
-            "Reducing batch sizes."
+            f"System warning: Memory at {status.memory_used_gb:.1f}GB. " "Reducing batch sizes."
         )
         self._send_notification(
             "CoreRag Warning",
@@ -440,8 +447,7 @@ class SafeProcessor:
     def _on_critical(self, status: SystemStatus) -> None:
         """Handle critical level."""
         logger.error(
-            f"System critical: Memory at {status.memory_used_gb:.1f}GB. "
-            "Pausing new work."
+            f"System critical: Memory at {status.memory_used_gb:.1f}GB. " "Pausing new work."
         )
         self._send_notification(
             "CoreRag Critical",
@@ -493,7 +499,10 @@ def check_memory_before_job() -> tuple[bool, str]:
     mem_pct = mem.percent
 
     if mem_pct > MEMORY_PAUSE_THRESHOLD:
-        return False, f"Memory at {mem_pct:.1f}% - above {MEMORY_PAUSE_THRESHOLD}% threshold. Wait for resources."
+        return (
+            False,
+            f"Memory at {mem_pct:.1f}% - above {MEMORY_PAUSE_THRESHOLD}% threshold. Wait for resources.",
+        )
     elif mem_pct > MEMORY_WARNING_THRESHOLD:
         return True, f"Memory at {mem_pct:.1f}% - approaching threshold. Consider smaller batches."
     else:
@@ -505,7 +514,9 @@ def print_status() -> None:
     status = check_system()
     mem = psutil.virtual_memory()
 
-    print(f"Memory: {status.memory_used_gb:.1f} / {status.memory_total_gb:.1f} GB ({mem.percent:.1f}%)")
+    print(
+        f"Memory: {status.memory_used_gb:.1f} / {status.memory_total_gb:.1f} GB ({mem.percent:.1f}%)"
+    )
     print(f"  Pause Threshold: {MEMORY_PAUSE_THRESHOLD}%")
     print(f"  Resume Threshold: {MEMORY_RESUME_THRESHOLD}%")
     print(f"CPU: {status.cpu_percent}%")
@@ -517,7 +528,7 @@ def print_status() -> None:
     ingestion = get_ingestion_controller()
     ing_status = ingestion.get_status()
     print(f"Ingestion: {'PAUSED' if ing_status['paused'] else 'RUNNING'}")
-    if ing_status['active_user_queries'] > 0:
+    if ing_status["active_user_queries"] > 0:
         print(f"  Active User Queries: {ing_status['active_user_queries']}")
 
     if status.warnings:

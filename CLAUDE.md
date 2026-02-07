@@ -19,6 +19,14 @@ This is a **PUBLIC repository**. Content restrictions apply.
 
 **Rule:** Never output personal context to any file in this repo.
 
+## Commercial IP (mark with `# COMMERCIAL:`)
+
+CoreRag is a public project. All current patterns are standard RAG architecture with no proprietary business logic. **No code in this project should need COMMERCIAL markers.**
+
+If this changes (e.g., novel scoring algorithms, proprietary search techniques), add the categories here and Claude Code will mark them automatically.
+
+**Security rules:** If adding prompt injection detection or custom security patterns, use `# SECURITY-CONFIG:` markers and externalize the actual detection rules to `~/.corerag/security_rules.yaml` (gitignored). Publish the engine, not the rules.
+
 ---
 
 ## Project Overview
@@ -217,7 +225,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | **Wired** (MCP tools + ingestion pipeline) |
 | `src/classification/` | Keyword + embedding-based auto-tagging | **Wired** (via processor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
-| `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Wired** (via exporter) |
+| `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Deleted** (orphaned — `exporter.py` handles export directly) |
 | `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
 | `src/memory/` | Episodic memory for user context / search patterns | **Wired** (get_user_context, add_user_fact MCP tools) |
 | `src/maintenance/` | LanceDB optimizer, health reports, maintenance scheduler | **Wired** (MCP tools) |
@@ -335,3 +343,15 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline. F
 All 12 phases are **complete**. No remaining wiring work.
 - `HybridSearcher.search(query, query_vector, k, filters)` is async
 - `intelligence.py` methods (`analyze_document`, `suggest_folder_structure`) are async (httpx)
+
+## Troubleshooting
+
+**Ollama not running**: Most analysis/classification requires Ollama. Start it with `ollama serve` or verify it's accessible at `OLLAMA_HOST` (default `http://localhost:11434`). If the model isn't pulled yet: `ollama pull qwen2.5:32b`.
+
+**MCP connection failure / JSON parse error**: The MCP server uses stdio transport — any non-JSON output on stdout corrupts the stream. All logging goes to stderr. If you see "Unexpected number in JSON" in Claude Desktop, check that no module writes to `sys.stdout`. The fix (applied in Session 16): `logging_config.py` console handler uses `sys.stderr`, and `config.py` print statements use `file=sys.stderr`.
+
+**LanceDB FTS index corruption**: If full-text search returns errors, delete the FTS index and let it rebuild: `rm -rf ~/.corerag/lancedb/*.lance/_indices/`. The `HybridSearcher.__init__` creates FTS indexes on first use.
+
+**High memory usage**: The batch processor pauses at 92% RAM and resumes at 88%. SafeProcessor pauses background work at 75%. If the system is consistently hitting these thresholds, reduce `EMBEDDING_BATCH_SIZE` in `src/config.py` (default 32) or process fewer files per batch.
+
+**Embedding model mismatch**: If you change `CORERAG_EMBEDDING_MODEL`, you must re-index all documents — existing vectors will have incompatible dimensions. The default model (`all-MiniLM-L6-v2`) produces 384-dimensional vectors. Check `EMBEDDING_DIMENSIONS` in `src/config.py` matches your model.

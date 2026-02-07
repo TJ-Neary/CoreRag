@@ -6,7 +6,6 @@ Tests the staging -> review -> approve -> execute workflow via FastAPI endpoints
 Run with: pytest tests/test_hitl.py -v
 """
 
-import json
 import os
 import shutil
 import sys
@@ -48,6 +47,7 @@ def test_env():
 def client():
     """Create a FastAPI test client."""
     from src.server import app
+
     return TestClient(app)
 
 
@@ -97,14 +97,17 @@ class TestStagingAPI:
                 suggested_filename="Original_Name",
             )
 
-            response = client.post(f"/api/update/{item_id}", json={
-                "proposed": {
-                    "filename": "Corrected_Name",
-                    "category": "Financial",
-                    "year": "2025",
-                    "target_folder": "Financial/2025",
-                }
-            })
+            response = client.post(
+                f"/api/update/{item_id}",
+                json={
+                    "proposed": {
+                        "filename": "Corrected_Name",
+                        "category": "Financial",
+                        "year": "2025",
+                        "target_folder": "Financial/2025",
+                    }
+                },
+            )
 
             assert response.status_code == 200
 
@@ -119,16 +122,18 @@ class TestExecutionFlow:
 
     def test_approve_archives_and_exports(self, client):
         """Approving an item should archive the file and export to vault."""
-        import src.staging
         import src.archiver
         import src.exporter
+        import src.staging
 
         test_file = INBOX / "approved_doc.txt"
         test_file.write_text("Document content for approval test.")
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-             patch("src.exporter.VAULT_PATH", VAULT):
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
+            patch("src.exporter.VAULT_PATH", VAULT),
+        ):
 
             item_id = src.staging.add_to_staging(
                 original_path=test_file,
@@ -150,15 +155,13 @@ class TestExecutionFlow:
             # Verify file was archived
             archived_files = list(ARCHIVE.rglob("approved_doc.txt"))
             assert len(archived_files) >= 1, (
-                f"File should be archived. Archive contents: "
-                f"{list(ARCHIVE.rglob('*'))}"
+                f"File should be archived. Archive contents: " f"{list(ARCHIVE.rglob('*'))}"
             )
 
             # Verify vault note was created
             vault_files = list((VAULT / "Ingested").glob("*.md"))
             assert len(vault_files) >= 1, (
-                f"Vault note should be created. Vault contents: "
-                f"{list(VAULT.rglob('*'))}"
+                f"Vault note should be created. Vault contents: " f"{list(VAULT.rglob('*'))}"
             )
 
     def test_sensitive_file_gets_redacted_export(self, client):
@@ -168,9 +171,11 @@ class TestExecutionFlow:
         test_file = INBOX / "sensitive_doc.txt"
         test_file.write_text("Patient: John Smith, SSN: 078-05-1120")
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-             patch("src.exporter.VAULT_PATH", VAULT):
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
+            patch("src.exporter.VAULT_PATH", VAULT),
+        ):
 
             item_id = src.staging.add_to_staging(
                 original_path=test_file,

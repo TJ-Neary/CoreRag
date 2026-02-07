@@ -123,7 +123,7 @@ def get_recent_examples() -> str:
         parts = []
         for field, vals in c["corrections"].items():
             if field == "pii_override":
-                parts.append(f"PII: AI marked sensitive but human confirmed no PII")
+                parts.append("PII: AI marked sensitive but human confirmed no PII")
             else:
                 parts.append(f"{field}: '{vals['ai']}' -> '{vals['human']}'")
         correction_str = "; ".join(parts)

@@ -2,10 +2,11 @@
 
 import json
 import tempfile
-import pytest
 from pathlib import Path
 
-from src.memory.episodic_memory import SessionTracker, SessionEvent, Session
+import pytest
+
+from src.memory.episodic_memory import SessionTracker
 
 
 class TestSessionTracker:

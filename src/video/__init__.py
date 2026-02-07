@@ -1,10 +1,10 @@
 """Video processing module for CoreRag."""
 
 from src.video.scene_detector import (
-    SceneDetector,
-    VideoProcessor,
-    VideoAnalysis,
     Keyframe,
+    SceneDetector,
+    VideoAnalysis,
+    VideoProcessor,
     extract_video_keyframes,
 )
 

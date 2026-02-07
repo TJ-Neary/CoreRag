@@ -83,39 +83,56 @@ CoreRag/
 ├── src/
 │   ├── __init__.py
 │   │
-│   ├── mcp_server/              # MCP interface for Claude
+│   │   # ── Root-level pipeline modules ──
+│   ├── config.py                # Centralized config (env vars, constants, thresholds)
+│   ├── exceptions.py            # CoreRagError hierarchy (6 subtypes)
+│   ├── server.py                # FastAPI app factory (mounts routers, auth)
+│   ├── processor.py             # Document processing (PII detection, AI classification)
+│   ├── executor.py              # Commit pipeline (archive, redact, export, RAG index)
+│   ├── extractor.py             # Text extraction (PDF, DOCX, images, audio, video)
+│   ├── intelligence.py          # LLM provider (Ollama/Gemini) for classification
+│   ├── staging.py               # Staging manifest management
+│   ├── exporter.py              # Obsidian markdown export with backlinks
+│   ├── batch_processor.py       # Inbox batch processing with memory safety
+│   ├── watchdog.py              # File watcher for inbox folder
+│   ├── folder_manager.py        # Archive folder structure management
+│   ├── correction_log.py        # User correction tracking for learning
+│   ├── rag_verify.py            # RAG quality verification
+│   │
+│   │   # ── Subsystem packages ──
+│   ├── api/                     # REST API layer
 │   │   ├── __init__.py
-│   │   ├── server.py            # FastMCP server
-│   │   └── tools.py             # Tool implementations
+│   │   ├── models.py            # Pydantic request/response schemas
+│   │   ├── v1_routes.py         # API v1 (manifest, stats, search, ingest, delete)
+│   │   └── dashboard_routes.py  # Dashboard UI + batch/commit/tag/RAG routes
+│   │
+│   ├── mcp_server/              # MCP interface for Claude Desktop
+│   │   ├── __init__.py
+│   │   ├── server.py            # FastMCP server (stdio transport)
+│   │   └── tools.py             # Tool implementations (19 tools)
 │   │
 │   ├── embeddings/              # Embedding generation
 │   │   ├── __init__.py
 │   │   └── embedding_service.py # all-MiniLM-L6-v2 (384d) with caching
 │   │
-│   ├── ingestion/               # File ingestion pipeline
-│   │   ├── __init__.py
-│   │   ├── pipeline.py          # Main orchestrator
-│   │   └── queue_manager.py     # Priority queue
-│   │
 │   ├── search/                  # Search functionality
 │   │   ├── __init__.py
 │   │   ├── hybrid_search.py     # Vector + BM25 fusion
-│   │   ├── hyde_search.py       # HyDE query expansion
+│   │   ├── hyde.py              # HyDE query expansion
 │   │   ├── reranker.py          # Cross-encoder reranking
 │   │   ├── decay_scoring.py     # Time-weighted relevance
 │   │   └── multi_query.py       # Query decomposition + RRF
 │   │
 │   ├── chunking/                # Text chunking strategies
 │   │   ├── __init__.py
-│   │   ├── parent_child.py      # Hierarchical chunking
-│   │   └── code_ast.py          # AST-aware code chunking
+│   │   └── parent_child.py      # Hierarchical chunking (512/2048 tokens)
 │   │
 │   ├── quality/                 # Quality assurance
 │   │   ├── __init__.py
-│   │   ├── duplicate_detector.py    # Hash + MinHash + semantic
-│   │   ├── freshness_tracker.py     # Stale content detection
-│   │   ├── link_checker.py          # Async URL validation
-│   │   └── conflict_detector.py     # Contradiction finder
+│   │   ├── duplicate_detector.py
+│   │   ├── freshness.py
+│   │   ├── link_checker.py
+│   │   └── conflict_detector.py
 │   │
 │   ├── classification/          # Document classification
 │   │   ├── __init__.py
@@ -123,8 +140,7 @@ CoreRag/
 │   │
 │   ├── analytics/               # Usage analytics
 │   │   ├── __init__.py
-│   │   ├── query_analytics.py   # Query tracking
-│   │   └── semantic_cache.py    # Similarity-based caching
+│   │   └── query_analytics.py   # Query tracking + semantic cache
 │   │
 │   ├── ocr/                     # Optical character recognition
 │   │   ├── __init__.py
@@ -132,11 +148,11 @@ CoreRag/
 │   │
 │   ├── multimodal/              # Multi-modal processing
 │   │   ├── __init__.py
-│   │   └── vlm_captioner.py     # VLM image captioning
+│   │   └── vlm_captioner.py     # VLM image captioning (LLaVA)
 │   │
 │   ├── audio/                   # Audio processing
 │   │   ├── __init__.py
-│   │   └── topic_segmenter.py   # Topic-based chunking
+│   │   └── topic_segmentation.py # mlx-whisper + topic chunking
 │   │
 │   ├── video/                   # Video processing
 │   │   ├── __init__.py
@@ -144,54 +160,62 @@ CoreRag/
 │   │
 │   ├── graph/                   # Knowledge graph
 │   │   ├── __init__.py
-│   │   └── knowledge_graph.py   # GraphRAG implementation
+│   │   └── knowledge_graph.py   # Entity extraction + SQLite graph
 │   │
-│   ├── memory/                  # Episodic memory (deprecated — handed off)
+│   ├── memory/                  # Episodic memory
 │   │   ├── __init__.py
-│   │   └── episodic_memory.py   # Session memory (deprecated)
-│   │
-│   ├── sync/                    # Synchronization
-│   │   ├── __init__.py
-│   │   └── zombie_reconciler.py # Orphan cleanup
+│   │   └── episodic_memory.py   # User facts + correction patterns
 │   │
 │   ├── maintenance/             # Database maintenance
 │   │   ├── __init__.py
-│   │   └── db_optimizer.py      # Index optimization
-│   │
-│   ├── processors/              # File processors
-│   │   ├── __init__.py
-│   │   └── spreadsheet_processor.py  # Excel/CSV
+│   │   └── db_optimizer.py      # LanceDB index optimization
 │   │
 │   ├── cli/                     # Command-line interface
 │   │   ├── __init__.py
-│   │   └── main.py              # CLI commands
+│   │   └── main.py              # 13 CLI commands
 │   │
-│   ├── dashboard/               # Monitoring dashboard
+│   ├── menubar/                 # macOS menu bar app
 │   │   ├── __init__.py
-│   │   └── health_dashboard.py  # Web UI
+│   │   └── app.py               # rumps-based status app
+│   │
+│   ├── ui/                      # Dashboard templates
+│   │   └── templates/
+│   │       └── dashboard.html
 │   │
 │   └── utils/                   # Shared utilities
 │       ├── __init__.py
-│       ├── safe_processor.py    # Memory-aware processing
-│       ├── hardware_monitor.py  # CPU/GPU monitoring
-│       ├── privacy_audit.py     # PII detection
-│       ├── checkpoint_manager.py # Job persistence
-│       └── backup_manager.py    # Automated backups
+│       ├── safe_processor.py    # Memory-aware processing + ingestion control
+│       ├── hardware_monitor.py  # CPU/GPU/temp monitoring
+│       ├── throttle_controller.py # Adaptive batch sizing
+│       ├── privacy_audit.py     # PII detection (Presidio + custom dictionary)
+│       ├── checkpoint.py        # Job persistence
+│       ├── backup.py            # Automated backups
+│       ├── health.py            # System health checks
+│       ├── logging_config.py    # Centralized logging (stderr, rotating file, JSON)
+│       ├── retry.py             # Retry strategies + circuit breaker
+│       ├── tagging.py           # Tag registry management
+│       ├── versioning.py        # Schema version tracking
+│       ├── queue_manager.py     # Priority job queue
+│       ├── path_validation.py   # Path canonicalization + traversal protection
+│       ├── query_sanitize.py    # LanceDB query parameterization
+│       └── secure_file.py       # Secure file/dir creation (0o700/0o600)
 │
 ├── tests/
-│   ├── conftest.py              # Shared fixtures
-│   ├── golden_set/              # Search quality tests
-│   │   └── test_queries.json
-│   └── test_*.py                # Unit tests
+│   ├── conftest.py              # 25+ shared fixtures
+│   └── test_*.py                # Unit + integration tests (185 passing)
 │
-├── architecture/                # Design documents
-│   ├── data_schema.md
-│   ├── HARDWARE_SAFETY.md
-│   ├── PERFORMANCE_GUIDE.md
-│   └── CoreRag_Design_*.md
+├── architecture/                # Design documents (16 docs, indexed in README.md)
+│   ├── README.md                # Table of contents by topic
+│   └── *.md
 │
-└── docs/
-    └── USER_GUIDE.md            # End-user documentation
+├── scripts/
+│   ├── run_system.sh            # Start server + watchdog + dashboard
+│   ├── security_scan.sh         # PII/secret scanner (pre-commit hook)
+│   ├── install_menubar.sh       # Menu bar app installer
+│   └── backfill_knowledge_graph.py
+│
+└── _project/
+    └── DevPlan.md               # Development history + audit + roadmap
 ```
 
 ---
@@ -501,4 +525,4 @@ if __name__ == "__main__":
 ---
 
 *Follow these conventions consistently. Update this file if new patterns emerge.*
-*Last Updated: 2026-02-03*
+*Last Updated: 2026-02-07*

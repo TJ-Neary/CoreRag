@@ -7,9 +7,6 @@ trigger ingestion, and monitor processing status.
 The icon circle fills with neon green (#39FF14) during active ingestion.
 """
 
-import os
-import subprocess
-import sys
 import webbrowser
 from pathlib import Path
 
@@ -63,8 +60,9 @@ class CoreRagApp(rumps.App):
         """Trigger batch ingestion via the dashboard API."""
         try:
             import urllib.request
+
             req = urllib.request.Request(START_BATCH_URL, method="POST")
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5):
                 pass
             rumps.notification(
                 title="CoreRag",

@@ -50,7 +50,7 @@ def _redact_pii(text: str, file_name: str) -> str:
         filtered = []
         last_start = len(text) + 1
         for match in sorted_matches:
-            if match.confidence < 0.70:
+            if match.confidence < config.PII_MIN_CONFIDENCE:
                 continue
             # Skip if this match overlaps with a previously kept match
             if match.end_pos > last_start:

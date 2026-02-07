@@ -8,7 +8,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor, Entity, Relationship
+
+from src.graph.knowledge_graph import Entity, EntityExtractor, KnowledgeGraph, Relationship
 
 
 class TestEntityExtractor:
@@ -67,8 +68,11 @@ class TestKnowledgeGraph:
         graph.add_entity(e2)
 
         rel = Relationship(
-            subject="Python", predicate="uses", object="NumPy",
-            document_id="d1", confidence=0.8,
+            subject="Python",
+            predicate="uses",
+            object="NumPy",
+            document_id="d1",
+            confidence=0.8,
         )
         graph.add_relationship(rel)
         stats = graph.get_stats()
@@ -81,8 +85,11 @@ class TestKnowledgeGraph:
         graph.add_entity(e2)
 
         rel = Relationship(
-            subject="Python", predicate="has_framework", object="Django",
-            document_id="d1", confidence=0.9,
+            subject="Python",
+            predicate="has_framework",
+            object="Django",
+            document_id="d1",
+            confidence=0.9,
         )
         graph.add_relationship(rel)
 
@@ -97,8 +104,11 @@ class TestKnowledgeGraph:
         ]
         rels = [
             Relationship(
-                subject="React", predicate="written_in", object="JavaScript",
-                document_id="d2", confidence=0.95,
+                subject="React",
+                predicate="written_in",
+                object="JavaScript",
+                document_id="d2",
+                confidence=0.95,
             ),
         ]
         graph.add_from_extraction(entities, rels)

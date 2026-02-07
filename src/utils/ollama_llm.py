@@ -6,7 +6,6 @@ LLM parameter with the signature: await llm.generate(prompt, max_tokens=...) -> 
 """
 
 import logging
-import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -21,7 +20,8 @@ class OllamaLLM:
         host: Optional[str] = None,
         timeout: float = 60.0,
     ):
-        from src.config import OLLAMA_MODEL, OLLAMA_HOST
+        from src.config import OLLAMA_HOST, OLLAMA_MODEL
+
         self.model = model or OLLAMA_MODEL
         self.host = host or OLLAMA_HOST
         self.timeout = timeout

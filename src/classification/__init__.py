@@ -2,11 +2,11 @@
 
 from src.classification.auto_tagger import (
     AutoTagger,
-    Taxonomy,
+    EmbeddingTagger,
+    KeywordTagger,
     Tag,
     TaggingResult,
-    KeywordTagger,
-    EmbeddingTagger,
+    Taxonomy,
     auto_tag,
 )
 

@@ -14,8 +14,8 @@ Workflow:
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Chapter:
     """A semantic chapter in audio/transcript."""
+
     title: str
     start_time: float  # seconds
     end_time: float
@@ -34,6 +35,7 @@ class Chapter:
 @dataclass
 class SegmentedTranscript:
     """Transcript with semantic chapters."""
+
     source_file: str
     total_duration: float
     chapters: List[Chapter]
@@ -83,7 +85,7 @@ JSON:"""
         transcript: str,
         timestamps: Optional[List[Tuple[float, str]]] = None,
         source_file: Optional[str] = None,
-        total_duration: Optional[float] = None
+        total_duration: Optional[float] = None,
     ) -> SegmentedTranscript:
         """
         Segment transcript into chapters.
@@ -112,26 +114,23 @@ JSON:"""
             source_file=source_file or "unknown",
             total_duration=total_duration or 0,
             chapters=chapters,
-            raw_transcript=transcript
+            raw_transcript=transcript,
         )
 
     async def _segment_with_llm(
-        self,
-        transcript: str,
-        timestamps: Optional[List[Tuple[float, str]]]
+        self, transcript: str, timestamps: Optional[List[Tuple[float, str]]]
     ) -> List[Chapter]:
         """Segment using LLM."""
         try:
             # Truncate for LLM context
-            prompt = self.SEGMENTATION_PROMPT.format(
-                transcript=transcript[:8000]
-            )
+            prompt = self.SEGMENTATION_PROMPT.format(transcript=transcript[:8000])
 
             response = await self.llm.generate(prompt, max_tokens=1000)
 
             # Parse JSON
             import json
-            json_match = re.search(r'\[[\s\S]*\]', response)
+
+            json_match = re.search(r"\[[\s\S]*\]", response)
             if not json_match:
                 logger.warning("LLM didn't return valid JSON, using heuristics")
                 return self._segment_with_heuristics(transcript, timestamps)
@@ -143,14 +142,16 @@ JSON:"""
                 time_str = marker.get("time", "00:00")
                 time_seconds = self._parse_time(time_str)
 
-                chapters.append(Chapter(
-                    title=marker.get("title", f"Chapter {i+1}"),
-                    start_time=time_seconds,
-                    end_time=0,  # Set later
-                    content="",  # Filled later
-                    chapter_number=i + 1,
-                    summary=marker.get("summary")
-                ))
+                chapters.append(
+                    Chapter(
+                        title=marker.get("title", f"Chapter {i+1}"),
+                        start_time=time_seconds,
+                        end_time=0,  # Set later
+                        content="",  # Filled later
+                        chapter_number=i + 1,
+                        summary=marker.get("summary"),
+                    )
+                )
 
             # Set end times
             for i in range(len(chapters) - 1):
@@ -163,22 +164,20 @@ JSON:"""
             return self._segment_with_heuristics(transcript, timestamps)
 
     def _segment_with_heuristics(
-        self,
-        transcript: str,
-        timestamps: Optional[List[Tuple[float, str]]]
+        self, transcript: str, timestamps: Optional[List[Tuple[float, str]]]
     ) -> List[Chapter]:
         """Segment using heuristics (fallback)."""
         chapters = []
 
         # Split on common topic transition markers
         transition_patterns = [
-            r'\b(now|next|moving on|let\'s talk about|turning to)\b',
-            r'\b(another thing|speaking of|on the topic of)\b',
-            r'\b(so|okay|alright)[\s,]+(let\'s|we\'ll|I\'ll)\b',
-            r'(\?\s*$)',  # Questions often indicate topic shifts
+            r"\b(now|next|moving on|let\'s talk about|turning to)\b",
+            r"\b(another thing|speaking of|on the topic of)\b",
+            r"\b(so|okay|alright)[\s,]+(let\'s|we\'ll|I\'ll)\b",
+            r"(\?\s*$)",  # Questions often indicate topic shifts
         ]
 
-        combined_pattern = '|'.join(f'({p})' for p in transition_patterns)
+        combined_pattern = "|".join(f"({p})" for p in transition_patterns)
 
         # Find potential breaks
         breaks = [0]
@@ -194,45 +193,47 @@ JSON:"""
             content = transcript[start_pos:end_pos].strip()
 
             # Generate title from first sentence
-            first_sentence = content.split('.')[0][:100]
+            first_sentence = content.split(".")[0][:100]
             title = f"Chapter {i + 1}: {first_sentence}..."
 
-            chapters.append(Chapter(
-                title=title,
-                start_time=0,  # Can't determine without timestamps
-                end_time=0,
-                content=content,
-                chapter_number=i + 1
-            ))
-
-        return chapters if chapters else [
-            Chapter(
-                title="Full Recording",
-                start_time=0,
-                end_time=0,
-                content=transcript,
-                chapter_number=1
+            chapters.append(
+                Chapter(
+                    title=title,
+                    start_time=0,  # Can't determine without timestamps
+                    end_time=0,
+                    content=content,
+                    chapter_number=i + 1,
+                )
             )
-        ]
+
+        return (
+            chapters
+            if chapters
+            else [
+                Chapter(
+                    title="Full Recording",
+                    start_time=0,
+                    end_time=0,
+                    content=transcript,
+                    chapter_number=1,
+                )
+            ]
+        )
 
     def _assign_content_by_time(
-        self,
-        chapters: List[Chapter],
-        timestamps: List[Tuple[float, str]]
+        self, chapters: List[Chapter], timestamps: List[Tuple[float, str]]
     ) -> List[Chapter]:
         """Assign transcript content based on timestamps."""
         for chapter in chapters:
             content_parts = []
             for time_sec, text in timestamps:
-                if chapter.start_time <= time_sec < (chapter.end_time or float('inf')):
+                if chapter.start_time <= time_sec < (chapter.end_time or float("inf")):
                     content_parts.append(text)
             chapter.content = " ".join(content_parts)
         return chapters
 
     def _assign_content_by_position(
-        self,
-        chapters: List[Chapter],
-        transcript: str
+        self, chapters: List[Chapter], transcript: str
     ) -> List[Chapter]:
         """Assign content based on position (when no timestamps)."""
         # Already assigned during heuristic segmentation
@@ -271,17 +272,16 @@ class WhisperWithSegmentation:
 
         try:
             import mlx_whisper
+
             self._whisper = mlx_whisper
             self._backend = "mlx"
         except ImportError:
             import whisper
+
             self._whisper = whisper.load_model(self.whisper_model)
             self._backend = "openai"
 
-    async def transcribe_and_segment(
-        self,
-        audio_path: Path
-    ) -> SegmentedTranscript:
+    async def transcribe_and_segment(self, audio_path: Path) -> SegmentedTranscript:
         """
         Transcribe audio and segment into chapters.
 
@@ -296,8 +296,7 @@ class WhisperWithSegmentation:
         # Transcribe
         if self._backend == "mlx":
             result = self._whisper.transcribe(
-                str(audio_path),
-                path_or_hf_repo=f"mlx-community/whisper-{self.whisper_model}"
+                str(audio_path), path_or_hf_repo=f"mlx-community/whisper-{self.whisper_model}"
             )
         else:
             result = self._whisper.transcribe(str(audio_path))
@@ -306,10 +305,7 @@ class WhisperWithSegmentation:
         transcript = result["text"]
         segments = result.get("segments", [])
 
-        timestamps = [
-            (seg["start"], seg["text"])
-            for seg in segments
-        ]
+        timestamps = [(seg["start"], seg["text"]) for seg in segments]
 
         total_duration = segments[-1]["end"] if segments else 0
 
@@ -318,15 +314,14 @@ class WhisperWithSegmentation:
             transcript=transcript,
             timestamps=timestamps,
             source_file=str(audio_path),
-            total_duration=total_duration
+            total_duration=total_duration,
         )
 
         return segmented
 
 
 def chunk_by_chapters(
-    segmented: SegmentedTranscript,
-    max_tokens_per_chunk: int = 500
+    segmented: SegmentedTranscript, max_tokens_per_chunk: int = 500
 ) -> List[dict]:
     """
     Chunk transcript by chapters, respecting semantic boundaries.
@@ -340,17 +335,19 @@ def chunk_by_chapters(
         tokens_estimate = len(chapter.content) // 4
 
         if tokens_estimate <= max_tokens_per_chunk:
-            chunks.append({
-                "content": chapter.content,
-                "chapter_title": chapter.title,
-                "chapter_number": chapter.chapter_number,
-                "start_time": chapter.start_time,
-                "end_time": chapter.end_time,
-                "source_file": segmented.source_file
-            })
+            chunks.append(
+                {
+                    "content": chapter.content,
+                    "chapter_title": chapter.title,
+                    "chapter_number": chapter.chapter_number,
+                    "start_time": chapter.start_time,
+                    "end_time": chapter.end_time,
+                    "source_file": segmented.source_file,
+                }
+            )
         else:
             # Split large chapter into sub-chunks
-            sentences = re.split(r'(?<=[.!?])\s+', chapter.content)
+            sentences = re.split(r"(?<=[.!?])\s+", chapter.content)
             current_chunk = []
             current_tokens = 0
 
@@ -358,13 +355,15 @@ def chunk_by_chapters(
                 sent_tokens = len(sentence) // 4
 
                 if current_tokens + sent_tokens > max_tokens_per_chunk and current_chunk:
-                    chunks.append({
-                        "content": " ".join(current_chunk),
-                        "chapter_title": chapter.title,
-                        "chapter_number": chapter.chapter_number,
-                        "start_time": chapter.start_time,
-                        "source_file": segmented.source_file
-                    })
+                    chunks.append(
+                        {
+                            "content": " ".join(current_chunk),
+                            "chapter_title": chapter.title,
+                            "chapter_number": chapter.chapter_number,
+                            "start_time": chapter.start_time,
+                            "source_file": segmented.source_file,
+                        }
+                    )
                     current_chunk = []
                     current_tokens = 0
 
@@ -372,12 +371,14 @@ def chunk_by_chapters(
                 current_tokens += sent_tokens
 
             if current_chunk:
-                chunks.append({
-                    "content": " ".join(current_chunk),
-                    "chapter_title": chapter.title,
-                    "chapter_number": chapter.chapter_number,
-                    "start_time": chapter.start_time,
-                    "source_file": segmented.source_file
-                })
+                chunks.append(
+                    {
+                        "content": " ".join(current_chunk),
+                        "chapter_title": chapter.title,
+                        "chapter_number": chapter.chapter_number,
+                        "start_time": chapter.start_time,
+                        "source_file": segmented.source_file,
+                    }
+                )
 
     return chunks

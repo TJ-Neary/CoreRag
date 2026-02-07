@@ -4,7 +4,6 @@ Tests for the conflict detector module.
 Run with: pytest tests/test_conflict_detector.py -v
 """
 
-import pytest
 from src.quality.conflict_detector import ConflictDetector, NumericExtractor
 
 
@@ -45,7 +44,9 @@ class TestConflictDetector:
         assert detector is not None
 
     def test_init_with_embedder(self):
-        mock_embedder = lambda text: [0.1] * 384
+        def mock_embedder(text):
+            return [0.1] * 384
+
         detector = ConflictDetector(embedder=mock_embedder)
         assert detector is not None
 
@@ -63,8 +64,14 @@ class TestConflictDetector:
     def test_scan_conflicting_numeric_facts(self):
         detector = ConflictDetector()
         docs = [
-            {"text": "The project has 500 active users as of March.", "source_path": "report_q1.md"},
-            {"text": "The project has 5000 active users this quarter.", "source_path": "report_q2.md"},
+            {
+                "text": "The project has 500 active users as of March.",
+                "source_path": "report_q1.md",
+            },
+            {
+                "text": "The project has 5000 active users this quarter.",
+                "source_path": "report_q2.md",
+            },
         ]
         report = detector.scan_documents(docs)
         assert report.documents_analyzed == 2

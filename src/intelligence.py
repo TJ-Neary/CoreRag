@@ -92,7 +92,7 @@ JSON format:
 {{"category": "Work", "year": "2024", "type": "Guide", "suggested_name": "descriptive_filename", "summary": "A concise summary of the document content.", "pii_observations": ""}}"""
 
 
-async def analyze_document(text: str):
+async def analyze_document(text: str) -> tuple[dict, str]:
     """Analyzes text to extract metadata.
 
     Uses Gemini API if GOOGLE_API_KEY is set, otherwise falls back to Ollama.

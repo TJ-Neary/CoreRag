@@ -1,10 +1,9 @@
 """Tests for HyDE (Hypothetical Document Embedding) query expansion."""
 
 import tempfile
-import pytest
 from pathlib import Path
 
-from src.search.hyde import HyDEExpander, HyDEConfig, HyDEResult
+from src.search.hyde import HyDEConfig, HyDEExpander, HyDEResult
 
 
 def mock_llm(prompt: str) -> str:

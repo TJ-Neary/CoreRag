@@ -67,8 +67,10 @@ class TestSortingRules:
         file1 = INBOX / "special_doc.txt"
         file1.write_text("Special document content.")
 
-        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-             patch("src.archiver.SORTING_RULES_PATH", RULES_FILE):
+        with (
+            patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
+            patch("src.archiver.SORTING_RULES_PATH", RULES_FILE),
+        ):
 
             metadata = {"category": "General", "year": "2024"}
             src.archiver.archive_original(file1, metadata)
@@ -86,8 +88,10 @@ class TestSortingRules:
         file2 = INBOX / "normal.txt"
         file2.write_text("Normal document content.")
 
-        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-             patch("src.archiver.SORTING_RULES_PATH", RULES_FILE):
+        with (
+            patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
+            patch("src.archiver.SORTING_RULES_PATH", RULES_FILE),
+        ):
 
             metadata = {"category": "General", "year": "2024"}
             src.archiver.archive_original(file2, metadata)
@@ -107,8 +111,10 @@ class TestSortingRules:
 
         nonexistent_rules = TEMP_ROOT / "nonexistent_rules.yaml"
 
-        with patch("src.archiver.ARCHIVE_PATH", ARCHIVE), \
-             patch("src.archiver.SORTING_RULES_PATH", nonexistent_rules):
+        with (
+            patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
+            patch("src.archiver.SORTING_RULES_PATH", nonexistent_rules),
+        ):
 
             metadata = {"category": "Work", "year": "2025"}
             src.archiver.archive_original(file3, metadata)

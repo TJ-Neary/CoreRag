@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # Scanner version — bump when checks change. Used by /commit to detect outdated scanners.
-SCANNER_VERSION="2"
+SCANNER_VERSION="4"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -112,7 +112,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # 1. API Keys & Secrets
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[1/7] Scanning for API keys and secrets...${NC}"
+echo -e "${BOLD}[1/9] Scanning for API keys and secrets...${NC}"
 
 # Common secret patterns (applied to file contents)
 SECRET_PATTERNS=(
@@ -162,7 +162,7 @@ done < <(get_files)
 # ---------------------------------------------------------------------------
 # 2. Hardcoded User Paths
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[2/7] Scanning for hardcoded user paths...${NC}"
+echo -e "${BOLD}[2/9] Scanning for hardcoded user paths...${NC}"
 
 while IFS= read -r file; do
     [[ "$file" =~ \.(png|jpg|jpeg|gif|ico|woff|ttf|eot|svg|pyc|so|db|sqlite)$ ]] && continue
@@ -183,7 +183,7 @@ done < <(get_files)
 # ---------------------------------------------------------------------------
 # 3. PII Patterns (names, emails, SSNs, phone numbers)
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[3/7] Scanning for PII patterns...${NC}"
+echo -e "${BOLD}[3/9] Scanning for PII patterns...${NC}"
 
 while IFS= read -r file; do
     [[ "$file" =~ \.(png|jpg|jpeg|gif|ico|woff|ttf|eot|svg|pyc|so|db|sqlite)$ ]] && continue
@@ -242,7 +242,7 @@ done < <(get_files)
 # ---------------------------------------------------------------------------
 # 4. Internal Project References (names of private projects, employers, etc.)
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[4/7] Scanning for internal/private references...${NC}"
+echo -e "${BOLD}[4/9] Scanning for internal/private references...${NC}"
 
 # Check for references to private project names that shouldn't be public.
 # Add project-specific terms here as needed.
@@ -277,7 +277,7 @@ fi
 # ---------------------------------------------------------------------------
 # 5. .env / Config Files That Should Be Gitignored
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[5/7] Checking for sensitive files that should be gitignored...${NC}"
+echo -e "${BOLD}[5/9] Checking for sensitive files that should be gitignored...${NC}"
 
 SENSITIVE_FILES=(
     ".env"
@@ -306,7 +306,7 @@ done < <(get_files)
 # ---------------------------------------------------------------------------
 # 6. Database / Binary Files That Shouldn't Be Committed
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[6/7] Checking for database and binary files...${NC}"
+echo -e "${BOLD}[6/9] Checking for database and binary files...${NC}"
 
 while IFS= read -r file; do
     case "$file" in
@@ -331,7 +331,7 @@ done < <(get_files)
 # ---------------------------------------------------------------------------
 # 7. Dangerous Code Patterns
 # ---------------------------------------------------------------------------
-echo -e "${BOLD}[7/7] Scanning for dangerous code patterns...${NC}"
+echo -e "${BOLD}[7/9] Scanning for dangerous code patterns...${NC}"
 
 while IFS= read -r file; do
     [[ "$file" =~ \.(py)$ ]] || continue
@@ -375,6 +375,73 @@ while IFS= read -r file; do
 done < <(get_files)
 
 # ---------------------------------------------------------------------------
+# 8. Private Asset Visibility Check
+# ---------------------------------------------------------------------------
+echo -e "${BOLD}[8/9] Checking private asset visibility...${NC}"
+
+# Check if .hq-private/ exists but is NOT gitignored
+if [ -d "$PROJECT_ROOT/.hq-private" ]; then
+    if ! grep -qE '^\s*\.hq-private/?$' "$PROJECT_ROOT/.gitignore" 2>/dev/null; then
+        finding "CRITICAL" "Private Assets Exposed" ".hq-private/" \
+            ".hq-private/ directory exists but is NOT in .gitignore" \
+            "Add '.hq-private/' to .gitignore immediately"
+    fi
+fi
+
+# Check for files with HQ-VISIBILITY: private marker that are git-tracked
+while IFS= read -r file; do
+    [[ "$file" =~ \.(png|jpg|jpeg|gif|ico|woff|ttf|eot|svg|pyc|so|db|sqlite)$ ]] && continue
+    [ ! -f "$file" ] && continue
+
+    matches=$(grep -nE '# HQ-VISIBILITY:\s*private' "$file" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+        finding "HIGH" "Private HQ Asset Tracked" "$file" \
+            "File contains HQ-VISIBILITY: private marker but is git-tracked" \
+            "Move to .hq-private/ (gitignored) or remove the file from version control"
+    fi
+done < <(get_files)
+
+# ---------------------------------------------------------------------------
+# 9. Commercial & Sensitivity Markers
+# ---------------------------------------------------------------------------
+echo -e "${BOLD}[9/9] Checking for commercial/sensitivity markers...${NC}"
+
+# Scan for COMMERCIAL:, SECURITY-CONFIG:, and PRIVATE-DATA: markers
+# These indicate code that should not be in a public repository.
+while IFS= read -r file; do
+    [[ "$file" =~ \.(png|jpg|jpeg|gif|ico|woff|ttf|eot|svg|pyc|so|db|sqlite)$ ]] && continue
+    [ ! -f "$file" ] && continue
+    [[ "$file" =~ security_scan\.sh$ ]] && continue
+    [[ "$file" =~ CLAUDE\.md$ ]] && continue
+    [[ "$file" =~ SECURITY\.md$ ]] && continue
+    [[ "$file" =~ CONVENTIONS\.md$ ]] && continue
+
+    # COMMERCIAL marker
+    matches=$(grep -nE '#\s*COMMERCIAL:' "$file" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+        finding "HIGH" "Commercial IP Marker" "$file" \
+            "$(echo "$matches" | head -1)" \
+            "This file contains proprietary business logic. Keep in private repo or remove the marked code."
+    fi
+
+    # SECURITY-CONFIG marker
+    matches=$(grep -nE '#\s*SECURITY-CONFIG:' "$file" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+        finding "MEDIUM" "Security Config to Externalize" "$file" \
+            "$(echo "$matches" | head -1)" \
+            "Move hardcoded detection rules to a gitignored config file and load at runtime."
+    fi
+
+    # PRIVATE-DATA marker
+    matches=$(grep -nE '#\s*PRIVATE-DATA:' "$file" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+        finding "HIGH" "Private Data Reference" "$file" \
+            "$(echo "$matches" | head -1)" \
+            "Ensure private data is loaded from gitignored config, not committed to repo."
+    fi
+done < <(get_files)
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo -e "${BOLD}========================================${NC}"
@@ -388,7 +455,7 @@ else
     echo -e "${BOLD}========================================${NC}"
     echo ""
     echo -e "Run with ${CYAN}--fix${NC} flag to see suggested remediation."
-    echo -e "See ${CYAN}SECURITY.md${NC} for full security guidelines."
+    echo -e "See ${CYAN}Security/SECURITY.md${NC} for full security guidelines."
     echo ""
     exit 1
 fi

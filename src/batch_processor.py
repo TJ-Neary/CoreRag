@@ -7,15 +7,17 @@ from pathlib import Path
 
 import psutil
 
-from src.config import INBOX_PATH, STATE_DIR
+from src.config import (
+    BATCH_MEMORY_PAUSE_PCT,
+    BATCH_MEMORY_RESUME_PCT,
+    INBOX_PATH,
+    MEMORY_CHECK_INTERVAL_SEC,
+    STATE_DIR,
+)
 from src.processor import process_document
 from src.utils.queue_manager import Priority, QueueManager
 
 logger = logging.getLogger(__name__)
-
-MEMORY_PAUSE_THRESHOLD = 92  # Pause at this % RAM
-MEMORY_RESUME_THRESHOLD = 88  # Resume when below this %
-MEMORY_CHECK_INTERVAL = 2  # Seconds between checks while paused
 
 
 class BatchProcessor:
@@ -149,7 +151,7 @@ class BatchProcessor:
             with self._lock:
                 self._progress["memory_pct"] = mem
 
-            if mem > MEMORY_PAUSE_THRESHOLD:
+            if mem > BATCH_MEMORY_PAUSE_PCT:
                 self._wait_for_safe_memory()
 
             with self._lock:
@@ -182,19 +184,19 @@ class BatchProcessor:
 
     def _wait_for_safe_memory(self) -> None:
         """Block until memory drops below resume threshold or stop is requested."""
-        while psutil.virtual_memory().percent > MEMORY_RESUME_THRESHOLD:
+        while psutil.virtual_memory().percent > BATCH_MEMORY_RESUME_PCT:
             with self._lock:
                 if self._stop_requested:
                     return
                 mem = psutil.virtual_memory().percent
                 self._progress["status"] = "paused"
                 self._progress["paused_reason"] = (
-                    f"Memory at {mem:.0f}%, waiting for <{MEMORY_RESUME_THRESHOLD}%"
+                    f"Memory at {mem:.0f}%, waiting for <{BATCH_MEMORY_RESUME_PCT}%"
                 )
                 self._progress["memory_pct"] = mem
             logger.warning(f"Analysis paused: memory at {mem:.0f}%")
             gc.collect()
-            time.sleep(MEMORY_CHECK_INTERVAL)
+            time.sleep(MEMORY_CHECK_INTERVAL_SEC)
 
         with self._lock:
             self._progress["status"] = "processing"
@@ -208,7 +210,7 @@ class BatchProcessor:
 
         # Memory safety check
         mem = psutil.virtual_memory().percent
-        if mem > MEMORY_PAUSE_THRESHOLD:
+        if mem > BATCH_MEMORY_PAUSE_PCT:
             self._wait_for_safe_memory()
 
         asyncio.run(process_document(file_path))

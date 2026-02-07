@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 from src.classification.auto_tagger import AutoTagger
+from src.config import PII_CONTEXT_TRUNCATE, PII_MIN_CONFIDENCE, PII_SAMPLE_MAX_CHARS
 from src.exceptions import ProcessingError
 from src.extractor import extract_text
 from src.intelligence import analyze_document
@@ -96,13 +97,13 @@ async def process_document(file_path: Path):
         metadata, full_text = await analyze_document(text)
 
         # 4. PII Detection (Presidio + custom dictionary — replaces LLM is_sensitive)
-        pii_sample = text[:20000]  # Scan first 20K chars for speed
+        pii_sample = text[:PII_SAMPLE_MAX_CHARS]  # Scan first N chars for speed
         scan_result = _pii_scanner.scan(pii_sample, file_path=str(file_path))
         custom_matches = scan_custom_terms(pii_sample, _custom_pii_terms)
 
         # Merge and filter by confidence
         all_pii_matches = scan_result.matches + custom_matches
-        high_confidence = [m for m in all_pii_matches if m.confidence >= 0.70]
+        high_confidence = [m for m in all_pii_matches if m.confidence >= PII_MIN_CONFIDENCE]
 
         is_sensitive = len(high_confidence) > 0
 
@@ -113,7 +114,7 @@ async def process_document(file_path: Path):
                 {
                     "type": m.data_type.value,
                     "confidence": round(m.confidence, 2),
-                    "context": m.context[:80],  # Truncated, already redacted by scanner
+                    "context": m.context[:PII_CONTEXT_TRUNCATE],  # Truncated, already redacted
                 }
             )
 

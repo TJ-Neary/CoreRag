@@ -14,12 +14,12 @@ Fallback:
 """
 
 import logging
+import platform
 import subprocess
 import tempfile
-from pathlib import Path
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
-import platform
+from pathlib import Path
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OCRResult:
     """Result from OCR processing."""
+
     text: str
     confidence: float
     bounding_boxes: List[dict]  # [{"x": 0, "y": 0, "width": 100, "height": 20, "text": "..."}]
@@ -62,18 +63,15 @@ class VisionOCR:
 
         # Try pyobjc Vision.framework
         try:
-            import Vision
+            import Vision  # noqa: F401 — availability check
+
             return "vision_pyobjc"
         except ImportError:
             pass
 
         # Try ocrmac CLI wrapper
         try:
-            result = subprocess.run(
-                ["ocrmac", "--version"],
-                capture_output=True,
-                timeout=5
-            )
+            result = subprocess.run(["ocrmac", "--version"], capture_output=True, timeout=5)
             if result.returncode == 0:
                 return "ocrmac"
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -94,6 +92,7 @@ class VisionOCR:
             OCRResult with extracted text and metadata
         """
         import time
+
         start = time.time()
 
         if self._backend == "vision_pyobjc":
@@ -136,15 +135,12 @@ class VisionOCR:
 
     def _process_with_vision_pyobjc(self, image_path: Path) -> OCRResult:
         """Use Vision.framework via PyObjC bindings."""
-        import Vision
         import Quartz
+        import Vision
 
         # Load image
         image_url = Quartz.CFURLCreateWithFileSystemPath(
-            None,
-            str(image_path),
-            Quartz.kCFURLPOSIXPathStyle,
-            False
+            None, str(image_path), Quartz.kCFURLPOSIXPathStyle, False
         )
 
         # Create image source
@@ -163,9 +159,7 @@ class VisionOCR:
             request.setRecognitionLanguages_(self.languages)
 
         # Create handler and perform request
-        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(
-            cg_image, None
-        )
+        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
         success = handler.performRequests_error_([request], None)
 
         if not success:
@@ -184,18 +178,20 @@ class VisionOCR:
 
             texts.append(text)
             confidences.append(confidence)
-            bboxes.append({
-                "x": bbox.origin.x,
-                "y": bbox.origin.y,
-                "width": bbox.size.width,
-                "height": bbox.size.height,
-                "text": text
-            })
+            bboxes.append(
+                {
+                    "x": bbox.origin.x,
+                    "y": bbox.origin.y,
+                    "width": bbox.size.width,
+                    "height": bbox.size.height,
+                    "text": text,
+                }
+            )
 
         return OCRResult(
             text="\n".join(texts),
             confidence=sum(confidences) / len(confidences) if confidences else 0,
-            bounding_boxes=bboxes
+            bounding_boxes=bboxes,
         )
 
     def _process_with_ocrmac(self, image_path: Path) -> OCRResult:
@@ -205,7 +201,7 @@ class VisionOCR:
                 ["ocrmac", str(image_path), "--recognition-level", "accurate"],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
             )
 
             if result.returncode != 0:
@@ -214,7 +210,7 @@ class VisionOCR:
             return OCRResult(
                 text=result.stdout.strip(),
                 confidence=0.9,  # ocrmac doesn't report confidence
-                bounding_boxes=[]
+                bounding_boxes=[],
             )
         except subprocess.TimeoutExpired:
             raise RuntimeError("OCR timed out after 60 seconds")
@@ -233,11 +229,7 @@ class VisionOCR:
             confidences = [int(c) for c in data["conf"] if c != -1]
             avg_conf = sum(confidences) / len(confidences) if confidences else 0
 
-            return OCRResult(
-                text=text,
-                confidence=avg_conf / 100,
-                bounding_boxes=[]
-            )
+            return OCRResult(text=text, confidence=avg_conf / 100, bounding_boxes=[])
         except ImportError:
             logger.error("pytesseract not installed")
             return OCRResult(text="", confidence=0, bounding_boxes=[])

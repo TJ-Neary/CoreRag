@@ -117,9 +117,7 @@ class HardwareMonitor:
         """Get current system status (performs a fresh check)."""
         return self._check_system()
 
-    def is_safe_to_proceed(
-        self, require_level: SafetyLevel = SafetyLevel.WARNING
-    ) -> bool:
+    def is_safe_to_proceed(self, require_level: SafetyLevel = SafetyLevel.WARNING) -> bool:
         """
         Check if it's safe to start new heavy work.
 
@@ -161,9 +159,7 @@ class HardwareMonitor:
             logger.info("Waiting for system resources to free up...")
         return False
 
-    def register_throttle_callback(
-        self, callback: Callable[[SafetyLevel], None]
-    ) -> None:
+    def register_throttle_callback(self, callback: Callable[[SafetyLevel], None]) -> None:
         """Register callback for automatic throttling on level changes."""
         self._throttle_callbacks.append(callback)
 
@@ -292,9 +288,7 @@ class HardwareMonitor:
         # For now, return None - can be enhanced later
         return None
 
-    def _handle_level_change(
-        self, old_level: SafetyLevel, status: SystemStatus
-    ) -> None:
+    def _handle_level_change(self, old_level: SafetyLevel, status: SystemStatus) -> None:
         """Handle safety level changes."""
         new_level = status.safety_level
 

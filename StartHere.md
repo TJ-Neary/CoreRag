@@ -211,7 +211,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `graph/` | Entity-based knowledge graph (SQLite) | `knowledge_graph.py` | **Wired** (executor + MCP) |
 | `memory/` | User facts/preferences for MCP context | `episodic_memory.py` | **Wired** (MCP tools) |
 | `analytics/` | Query tracking + semantic cache | `query_analytics.py` | **Wired** (MCP server init) |
-| `obsidian/` | Markdown export with frontmatter + backlinks | `obsidian_export.py` | **Wired** (via exporter) |
+| ~~`obsidian/`~~ | ~~Markdown export~~ | — | **Deleted** (logic consolidated in `exporter.py`) |
 | `ocr/` | macOS Vision.framework text extraction | `vision_ocr.py` | **Wired** (via extractor) |
 | `multimodal/` | LLaVA VLM image captioning | `vlm_captioner.py` | **Wired** (via extractor) |
 | `audio/` | mlx-whisper transcription + topic segmentation | `topic_segmentation.py` | **Wired** (via extractor) |
@@ -219,7 +219,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `maintenance/` | LanceDB optimizer, health reports | `db_optimizer.py` | **Wired** (MCP + CLI) |
 | `menubar/` | macOS menu bar app (rumps) | `app.py` | **Wired** (standalone) |
 | `cli/` | 13 CLI commands | `main.py` | **Wired** |
-| `api/` | REST API v1 Pydantic models | `models.py` | **Wired** (via server.py) |
+| `api/` | REST API v1 routes + dashboard routes | `v1_routes.py`, `dashboard_routes.py`, `models.py` | **Wired** (via server.py) |
 | `models/` | Dataclasses: Document, Chunk, SearchResult, PersonalContext | `document.py`, `search.py`, `context.py` | **Wired** |
 | `ui/` | Dashboard templates and static assets | `templates/`, `static/` | **Wired** (via server.py) |
 | ~~`ingestion/`~~ | ~~Pipeline orchestrator scaffold~~ | — | **Deleted** (empty package) |
@@ -486,8 +486,8 @@ mypy src/                                # Type check
 | Images | `.png`, `.jpg`, `.webp`, `.heic` | Vision.framework OCR + VLM captioning |
 | Audio | `.mp3`, `.wav`, `.m4a` | mlx-whisper transcription + topic segmentation |
 | Video | `.mp4`, `.mov` | Keyframe + scene detection + audio extraction |
-| Planned | `.xlsx`, `.xls` | Spreadsheet processor deleted — needs reimplementation |
-| Planned | `.py`, `.js`, `.ts`, `.go`, `.rs` | AST code chunker exists (`chunking/code_chunker.py`) but not wired |
+| Planned | `.xlsx`, `.xls` | Spreadsheet processor — needs reimplementation |
+| Planned | `.py`, `.js`, `.ts`, `.go`, `.rs` | AST code chunker — needs implementation |
 
 ---
 
@@ -511,32 +511,4 @@ mypy src/                                # Type check
 
 ---
 
-## Project Templates Integration
-
-CoreRag is registered in the [_HQ](~/Tech_Projects/_HQ/) sync system.
-
-### Status
-- **Registered**: 2026-02-02
-- **Uses**: All standards, guides, and templates
-- **Sync Status**: Up to date (CoreRag contributed many of these standards)
-
-### Available Commands
-- `/sync` — Pull updates from templates, contribute new patterns, update portfolio
-- `/new-project` — Scaffold a new project using the templates
-
-### Relevant Guides
-Based on CoreRag's technology stack, these guides from `_Project_Templates/guides/universal/` are particularly relevant:
-
-| Guide | Purpose |
-|-------|---------|
-| [MCP_INTEGRATION.md](~/Documents/_Project_Templates/guides/universal/MCP_INTEGRATION.md) | MCP server patterns (stdio transport, tool definitions) |
-| [PII_DETECTION.md](~/Documents/_Project_Templates/guides/universal/PII_DETECTION.md) | Three-layer PII detection (Presidio + custom dictionary + LLM advisory) |
-| [RAG_HITL_PIPELINE.md](~/Documents/_Project_Templates/guides/universal/RAG_HITL_PIPELINE.md) | RAG + human-in-the-loop pipeline patterns |
-| [APPLE_SILICON.md](~/Documents/_Project_Templates/guides/universal/APPLE_SILICON.md) | Apple Silicon M4 Max optimization |
-| [LOGGING.md](~/Documents/_Project_Templates/guides/universal/LOGGING.md) | Structured logging patterns |
-| [ERROR_HANDLING.md](~/Documents/_Project_Templates/guides/universal/ERROR_HANDLING.md) | Exception hierarchies, retry, circuit breaker |
-| [TESTING.md](~/Documents/_Project_Templates/guides/universal/TESTING.md) | Testing strategy and fixtures |
-
----
-
-*Last updated: 2026-02-06 — All 12 wiring phases complete. Exceptions, logging, retry wired. Async migration done. Config consolidated. Dead code removed.*
+*Last updated: 2026-02-07 — All 12 wiring phases complete. Server decomposed. Rate limiting added. Public release ready.*
