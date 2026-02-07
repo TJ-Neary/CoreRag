@@ -1,7 +1,10 @@
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
+
+from src.exceptions import ConfigurationError
 
 # Load environment variables
 load_dotenv()
@@ -12,9 +15,12 @@ def get_path_var(var_name: str, required: bool = True) -> Path:
     value = os.getenv(var_name)
     if not value:
         # Defaults if not set (fallback)
-        if var_name == "INBOX_PATH": return Path.home() / "Desktop" / "Inbox"
-        if var_name == "VAULT_PATH": return Path.home() / "Documents" / "ObsidianVault"
-        if var_name == "ARCHIVE_PATH": return Path.home() / "Documents"
+        if var_name == "INBOX_PATH":
+            return Path.home() / "Desktop" / "Inbox"
+        if var_name == "VAULT_PATH":
+            return Path.home() / "Documents" / "ObsidianVault"
+        if var_name == "ARCHIVE_PATH":
+            return Path.home() / "Documents"
 
         if required:
             print(f"Error: Missing required environment variable '{var_name}' in .env file.")
@@ -35,6 +41,12 @@ ARCHIVE_PATH = get_path_var("ARCHIVE_PATH")
 
 STATE_DIR = Path(os.getenv("CORERAG_STATE_DIR", str(Path.home() / ".corerag")))
 DB_PATH = Path(os.getenv("CORERAG_DB_PATH", str(STATE_DIR / "lancedb")))
+QUEUE_DIR = STATE_DIR / "queue"
+CHECKPOINT_DIR = STATE_DIR / "checkpoints"
+HEALTH_DIR = STATE_DIR / "health"
+FEEDBACK_DIR = STATE_DIR / "feedback"
+EXPORT_DIR = STATE_DIR / "exports"
+LOG_DIR = STATE_DIR / "logs"
 
 # ── LLM / Model Configuration ────────────────────────────────────────────────
 
@@ -50,31 +62,43 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 def validate_config():
     """Validates that critical paths actually exist or can be created."""
+    from src.utils.secure_file import secure_state_directory
+
     if not INBOX_PATH.exists():
         try:
             INBOX_PATH.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            print(f"Warning: Inbox path does not exist: {INBOX_PATH} ({e})")
+            raise ConfigurationError(
+                f"Inbox path does not exist and cannot be created: {INBOX_PATH}",
+                config_key="INBOX_PATH",
+            ) from e
 
     if not VAULT_PATH.exists():
         try:
             VAULT_PATH.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            print(f"Warning: Vault path does not exist: {VAULT_PATH} ({e})")
+            raise ConfigurationError(
+                f"Vault path does not exist and cannot be created: {VAULT_PATH}",
+                config_key="VAULT_PATH",
+            ) from e
 
     if not ARCHIVE_PATH.exists():
         try:
             ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
-            print(f"Created Archive path: {ARCHIVE_PATH}")
         except Exception as e:
-            print(f"Error: Could not create Archive path {ARCHIVE_PATH}: {e}")
+            raise ConfigurationError(
+                f"Could not create Archive path: {ARCHIVE_PATH}",
+                config_key="ARCHIVE_PATH",
+            ) from e
 
-    # Ensure state directory exists
-    if not STATE_DIR.exists():
-        try:
-            STATE_DIR.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"Warning: Could not create state dir: {STATE_DIR} ({e})")
+    # Ensure state directory exists with secure permissions (contains PII terms, etc.)
+    try:
+        secure_state_directory(STATE_DIR)
+    except Exception as e:
+        raise ConfigurationError(
+            f"Could not secure state directory: {STATE_DIR}",
+            config_key="CORERAG_STATE_DIR",
+        ) from e
 
     if not GOOGLE_API_KEY:
         print("Warning: GOOGLE_API_KEY is missing. Intelligence features will be limited.")

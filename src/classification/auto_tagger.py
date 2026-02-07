@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple, Any
+from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Tag:
     """A classification tag."""
+
     name: str
     category: Optional[str] = None  # Hierarchical parent
     description: Optional[str] = None
@@ -38,6 +39,7 @@ class Tag:
 @dataclass
 class TaggingResult:
     """Result of auto-tagging a document."""
+
     file_path: str
     assigned_tags: List[str]
     tag_scores: Dict[str, float]  # tag -> confidence score
@@ -49,6 +51,7 @@ class TaggingResult:
 @dataclass
 class TaxonomyCategory:
     """A category in the taxonomy."""
+
     name: str
     description: Optional[str] = None
     tags: List[Tag] = field(default_factory=list)
@@ -132,7 +135,13 @@ class Taxonomy:
             Tag(
                 name="technical-doc",
                 category="document-type",
-                keywords=["api", "documentation", "specification", "implementation", "architecture"],
+                keywords=[
+                    "api",
+                    "documentation",
+                    "specification",
+                    "implementation",
+                    "architecture",
+                ],
                 threshold=0.4,
             ),
             Tag(
@@ -153,7 +162,6 @@ class Taxonomy:
                 keywords=["journal", "diary", "reflection", "thoughts", "personal"],
                 threshold=0.6,
             ),
-
             # Topics
             Tag(
                 name="python",
@@ -170,13 +178,28 @@ class Taxonomy:
             Tag(
                 name="machine-learning",
                 category="technology",
-                keywords=["machine learning", "ml", "deep learning", "neural network", "model", "training"],
+                keywords=[
+                    "machine learning",
+                    "ml",
+                    "deep learning",
+                    "neural network",
+                    "model",
+                    "training",
+                ],
                 threshold=0.4,
             ),
             Tag(
                 name="devops",
                 category="technology",
-                keywords=["docker", "kubernetes", "ci/cd", "deployment", "infrastructure", "aws", "cloud"],
+                keywords=[
+                    "docker",
+                    "kubernetes",
+                    "ci/cd",
+                    "deployment",
+                    "infrastructure",
+                    "aws",
+                    "cloud",
+                ],
                 threshold=0.4,
             ),
             Tag(
@@ -185,7 +208,6 @@ class Taxonomy:
                 keywords=["database", "sql", "postgresql", "mongodb", "redis", "query"],
                 threshold=0.4,
             ),
-
             # Priority/Status
             Tag(
                 name="todo",
@@ -205,7 +227,6 @@ class Taxonomy:
                 keywords=["archived", "deprecated", "old", "legacy", "outdated"],
                 threshold=0.4,
             ),
-
             # Content type
             Tag(
                 name="code-snippet",
@@ -219,30 +240,65 @@ class Taxonomy:
                 keywords=["reference", "cheatsheet", "quick reference", "lookup"],
                 threshold=0.4,
             ),
-
             # Domain-specific
             Tag(
                 name="human-resources",
                 category="domain",
-                keywords=["hr", "human resources", "phr", "sphr", "shrm", "employee",
-                          "hiring", "onboarding", "performance review", "compensation",
-                          "benefits", "talent", "workforce", "labor"],
+                keywords=[
+                    "hr",
+                    "human resources",
+                    "phr",
+                    "sphr",
+                    "shrm",
+                    "employee",
+                    "hiring",
+                    "onboarding",
+                    "performance review",
+                    "compensation",
+                    "benefits",
+                    "talent",
+                    "workforce",
+                    "labor",
+                ],
                 threshold=0.3,
             ),
             Tag(
                 name="compliance",
                 category="domain",
-                keywords=["compliance", "regulation", "policy", "osha", "eeoc",
-                          "ada", "fmla", "flsa", "hipaa", "gdpr", "audit",
-                          "labor law", "employment law"],
+                keywords=[
+                    "compliance",
+                    "regulation",
+                    "policy",
+                    "osha",
+                    "eeoc",
+                    "ada",
+                    "fmla",
+                    "flsa",
+                    "hipaa",
+                    "gdpr",
+                    "audit",
+                    "labor law",
+                    "employment law",
+                ],
                 threshold=0.3,
             ),
             Tag(
                 name="finance",
                 category="domain",
-                keywords=["finance", "budget", "revenue", "expense", "roi",
-                          "accounting", "financial", "tax", "payroll", "invoice",
-                          "profit", "cost"],
+                keywords=[
+                    "finance",
+                    "budget",
+                    "revenue",
+                    "expense",
+                    "roi",
+                    "accounting",
+                    "financial",
+                    "tax",
+                    "payroll",
+                    "invoice",
+                    "profit",
+                    "cost",
+                ],
                 threshold=0.3,
             ),
         ]
@@ -297,6 +353,7 @@ class KeywordTagger:
             TaggingResult
         """
         import time
+
         start = time.time()
 
         content_lower = content.lower()
@@ -382,6 +439,7 @@ class EmbeddingTagger:
     def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
         """Compute cosine similarity."""
         import math
+
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = math.sqrt(sum(x * x for x in a))
         norm_b = math.sqrt(sum(x * x for x in b))
@@ -401,6 +459,7 @@ class EmbeddingTagger:
             TaggingResult
         """
         import time
+
         start = time.time()
 
         # Truncate content for embedding
@@ -422,7 +481,6 @@ class EmbeddingTagger:
         suggested = []
 
         for tag_name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
-            tag = self.taxonomy.get_tag(tag_name)
             if score >= self.similarity_threshold:
                 assigned.append(tag_name)
             elif score >= self.similarity_threshold * 0.8:
@@ -467,14 +525,14 @@ class AutoTagger:
         """
         self.taxonomy = taxonomy or Taxonomy()
         self.embedder = embedder
-        self.state_dir = state_dir or Path.home() / ".corerag" / "tagging"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "tagging"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize taggers
         self.keyword_tagger = KeywordTagger(self.taxonomy)
-        self.embedding_tagger = (
-            EmbeddingTagger(self.taxonomy, embedder) if embedder else None
-        )
+        self.embedding_tagger = EmbeddingTagger(self.taxonomy, embedder) if embedder else None
 
         # Tag history for learning
         self._tag_history: List[Dict] = []
@@ -500,6 +558,7 @@ class AutoTagger:
             TaggingResult
         """
         import time
+
         start = time.time()
 
         all_scores: Dict[str, float] = {}
@@ -518,7 +577,7 @@ class AutoTagger:
             for tag, score in embedding_result.tag_scores.items():
                 # Combine scores (weighted average)
                 if tag in all_scores:
-                    all_scores[tag] = (all_scores[tag] * 0.4 + score * 0.6)
+                    all_scores[tag] = all_scores[tag] * 0.4 + score * 0.6
                 else:
                     all_scores[tag] = score
             methods_used.append("embedding")

@@ -12,7 +12,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -43,7 +43,7 @@ def test_env():
 class TestProcessDocument:
     """Tests for the process_document pipeline."""
 
-    def test_stages_file_with_ai_metadata(self):
+    async def test_stages_file_with_ai_metadata(self):
         """process_document should stage the file with AI-generated metadata."""
         test_file = INBOX / "invoice_2024.txt"
         test_file.write_text("Bill to: John Smith. Amount: $500.")
@@ -57,16 +57,19 @@ class TestProcessDocument:
             "is_sensitive": True,
         }
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.processor.analyze_document") as mock_ai, \
-             patch("src.processor._dedup") as mock_dedup:
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.processor.analyze_document", new_callable=AsyncMock) as mock_ai,
+            patch("src.processor._dedup") as mock_dedup,
+        ):
 
             # analyze_document now returns (metadata, original_full_text)
             mock_ai.return_value = (mock_metadata, "Bill to: John Smith. Amount: $500.")
             mock_dedup.check_file.return_value = []
 
             import src.processor
-            src.processor.process_document(test_file)
+
+            await src.processor.process_document(test_file)
 
         # Verify staging manifest was created with correct data
         assert MANIFEST.exists(), "Staging manifest should be created"
@@ -92,7 +95,7 @@ class TestProcessDocument:
         assert "John Smith" in item["redacted_text"]
         assert "$500" in item["redacted_text"]
 
-    def test_sensitive_file_gets_cui_prefix(self):
+    async def test_sensitive_file_gets_cui_prefix(self):
         """Files flagged as sensitive should get CUI_ prefix on suggested filename."""
         test_file = INBOX / "tax_return.txt"
         test_file.write_text("SSN: 078-05-1120. Income: $75,000.")
@@ -106,21 +109,24 @@ class TestProcessDocument:
             "is_sensitive": True,
         }
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.processor.analyze_document") as mock_ai, \
-             patch("src.processor._dedup") as mock_dedup:
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.processor.analyze_document", new_callable=AsyncMock) as mock_ai,
+            patch("src.processor._dedup") as mock_dedup,
+        ):
 
             mock_ai.return_value = (mock_metadata, "SSN: 078-05-1120. Income: $75,000.")
             mock_dedup.check_file.return_value = []
 
             import src.processor
-            src.processor.process_document(test_file)
+
+            await src.processor.process_document(test_file)
 
         manifest = json.loads(MANIFEST.read_text())
         item = list(manifest.values())[0]
         assert item["proposed"]["filename"].startswith("CUI_")
 
-    def test_non_sensitive_file_no_cui_prefix(self):
+    async def test_non_sensitive_file_no_cui_prefix(self):
         """Non-sensitive files should NOT get CUI_ prefix."""
         test_file = INBOX / "meeting_notes.txt"
         test_file.write_text("Discussed Q4 roadmap priorities.")
@@ -134,39 +140,45 @@ class TestProcessDocument:
             "is_sensitive": False,
         }
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.processor.analyze_document") as mock_ai, \
-             patch("src.processor._dedup") as mock_dedup:
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.processor.analyze_document", new_callable=AsyncMock) as mock_ai,
+            patch("src.processor._dedup") as mock_dedup,
+        ):
 
             mock_ai.return_value = (mock_metadata, "Discussed Q4 roadmap priorities.")
             mock_dedup.check_file.return_value = []
 
             import src.processor
-            src.processor.process_document(test_file)
+
+            await src.processor.process_document(test_file)
 
         manifest = json.loads(MANIFEST.read_text())
         item = list(manifest.values())[0]
         assert not item["proposed"]["filename"].startswith("CUI_")
 
-    def test_empty_text_extraction_sets_error(self):
+    async def test_empty_text_extraction_sets_error(self):
         """If text extraction returns empty, item should be marked as error."""
         test_file = INBOX / "empty.txt"
         test_file.write_text("")
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.processor.extract_text", return_value=""), \
-             patch("src.processor._dedup") as mock_dedup:
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.processor.extract_text", return_value=""),
+            patch("src.processor._dedup") as mock_dedup,
+        ):
 
             mock_dedup.check_file.return_value = []
 
             import src.processor
-            src.processor.process_document(test_file)
+
+            await src.processor.process_document(test_file)
 
         manifest = json.loads(MANIFEST.read_text())
         item = list(manifest.values())[0]
         assert item["status"] == "error"
 
-    def test_duplicate_detected(self):
+    async def test_duplicate_detected(self):
         """Duplicate files should be flagged in staging metadata."""
         test_file = INBOX / "duplicate_doc.txt"
         test_file.write_text("Some content that already exists.")
@@ -185,15 +197,18 @@ class TestProcessDocument:
         mock_match.similarity = 1.0
         mock_match.file1 = "original_doc.txt"
 
-        with patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST), \
-             patch("src.processor.analyze_document") as mock_ai, \
-             patch("src.processor._dedup") as mock_dedup:
+        with (
+            patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
+            patch("src.processor.analyze_document", new_callable=AsyncMock) as mock_ai,
+            patch("src.processor._dedup") as mock_dedup,
+        ):
 
             mock_ai.return_value = (mock_metadata, "Some content that already exists.")
             mock_dedup.check_file.return_value = [mock_match]
 
             import src.processor
-            src.processor.process_document(test_file)
+
+            await src.processor.process_document(test_file)
 
         manifest = json.loads(MANIFEST.read_text())
         item = list(manifest.values())[0]

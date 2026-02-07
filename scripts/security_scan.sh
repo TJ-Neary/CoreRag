@@ -17,6 +17,9 @@
 
 set -euo pipefail
 
+# Scanner version — bump when checks change. Used by /commit to detect outdated scanners.
+SCANNER_VERSION="2"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -39,6 +42,7 @@ for arg in "$@"; do
     case $arg in
         --staged) MODE="staged" ;;
         --fix)    SHOW_FIX=true ;;
+        --version) echo "security_scan.sh v${SCANNER_VERSION}"; exit 0 ;;
         --help|-h)
             echo "Usage: $0 [--staged] [--fix]"
             echo "  --staged  Scan only staged changes (for pre-commit hook)"

@@ -12,23 +12,22 @@ A comprehensive CLI for manual CoreRag operations:
 
 import argparse
 import asyncio
-import json
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("corerag-cli")
+from src.exceptions import CoreRagError
+from src.utils.logging_config import setup_logging
+from src.utils.path_validation import PathValidationError, validate_path
+
+# Configure logging (centralized: colored console, rotating file, JSON, error-only)
+logger = setup_logging()
 
 
 class Colors:
     """ANSI color codes for terminal output."""
+
     HEADER = "\033[95m"
     BLUE = "\033[94m"
     CYAN = "\033[96m"
@@ -73,11 +72,11 @@ def print_info(text: str) -> None:
 
 # === Search Command ===
 
+
 def cmd_search(args: argparse.Namespace) -> int:
     """Execute search query."""
     try:
         from src.embeddings.embedding_service import create_embedding_service
-        from src.search.hyde import create_hyde_expander
 
         print_header(f"Searching: {args.query}")
 
@@ -89,7 +88,9 @@ def cmd_search(args: argparse.Namespace) -> int:
 
         # Connect to LanceDB
         import lancedb
+
         from src.config import DB_PATH
+
         db_path = args.db_path or DB_PATH
         db = lancedb.connect(str(db_path))
 
@@ -118,6 +119,10 @@ def cmd_search(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Search failed: {e}")
+        logger.error(f"Search error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Search failed: {e}")
         logger.exception("Search error")
@@ -126,68 +131,69 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 # === Ingest Command ===
 
-def cmd_ingest(args: argparse.Namespace) -> int:
-    """Ingest files or directories."""
-    try:
-        from src.ingestion.pipeline import IngestionPipeline, FileTypeDetector
 
-        target = Path(args.path)
-        if not target.exists():
-            print_error(f"Path not found: {target}")
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """Ingest files or directories into CoreRag via the processing pipeline."""
+    try:
+        from src.processor import process_document
+
+        # Validate and canonicalize the path
+        try:
+            target = validate_path(args.path, must_exist=True, allow_outside_configured=True)
+        except PathValidationError as e:
+            print_error(f"Invalid path: {e}")
             return 1
 
         print_header(f"Ingesting: {target}")
         if args.tags:
             print_info(f"Tags: {', '.join(args.tags)}")
 
-        pipeline = IngestionPipeline(
-            enable_watch=False,
-            max_workers=args.workers,
-        )
-
+        # Collect files to process
+        files: list[Path] = []
         if target.is_file():
-            job = pipeline.add_file(target, force=args.force)
-            if job:
-                print_success(f"Queued: {target.name} ({job.file_type.value})")
-            else:
-                print_warning(f"Skipped: {target.name}")
+            files = [target]
         else:
-            count = pipeline.add_directory(target, recursive=args.recursive)
-            print_success(f"Queued {count} files")
+            pattern = "**/*" if args.recursive else "*"
+            files = sorted(
+                f for f in target.glob(pattern) if f.is_file() and not f.name.startswith(".")
+            )
 
-        # Store tags for the batch processor to pick up
-        if args.tags:
-            pipeline.set_metadata({"tags": args.tags})
+        if not files:
+            print_warning("No files found to ingest.")
+            return 0
 
-        # Start processing
-        print_info("Processing...")
-        pipeline.start()
+        print_info(f"Found {len(files)} file(s) to process")
 
-        # Wait for completion (simple approach)
-        import time
-        max_wait = 300  # 5 minutes
-        start = time.time()
-
-        while time.time() - start < max_wait:
-            status = pipeline.get_queue_status()
-            if status["queued"] == 0 and status["processing"] == 0:
-                break
-            time.sleep(1)
-
-        pipeline.stop()
-
-        # Show results
-        results = pipeline.get_recent_results(limit=50)
-        success_count = sum(1 for r in results if r.success)
-        fail_count = len(results) - success_count
+        # Process each file through the pipeline
+        success_count = 0
+        fail_count = 0
+        for i, file_path in enumerate(files, 1):
+            print_info(f"[{i}/{len(files)}] Processing: {file_path.name}")
+            try:
+                tags = args.tags if args.tags else None
+                result = process_document(file_path, tags=tags)
+                if result:
+                    print_success(f"  Staged: {file_path.name}")
+                    success_count += 1
+                else:
+                    print_warning(f"  Skipped: {file_path.name}")
+                    fail_count += 1
+            except Exception as e:
+                print_error(f"  Failed: {file_path.name} — {e}")
+                fail_count += 1
 
         print()
-        print_success(f"Completed: {success_count} files")
+        print_success(f"Completed: {success_count} file(s) staged for review")
         if fail_count > 0:
-            print_warning(f"Failed: {fail_count} files")
+            print_warning(f"Failed/Skipped: {fail_count} file(s)")
+        print_info("Use the dashboard to review and approve staged files.")
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Ingestion failed: {e}")
         logger.exception("Ingestion error")
@@ -195,6 +201,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
 
 # === Status Command ===
+
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Show system status."""
@@ -206,20 +213,28 @@ def cmd_status(args: argparse.Namespace) -> int:
         # Memory
         memory = psutil.virtual_memory()
         mem_percent = memory.percent
-        mem_color = Colors.GREEN if mem_percent < 60 else Colors.YELLOW if mem_percent < 80 else Colors.RED
-        print(f"\nMemory: {color(f'{mem_percent:.1f}%', mem_color)} used "
-              f"({memory.used / (1024**3):.1f}GB / {memory.total / (1024**3):.1f}GB)")
+        mem_color = (
+            Colors.GREEN if mem_percent < 60 else Colors.YELLOW if mem_percent < 80 else Colors.RED
+        )
+        print(
+            f"\nMemory: {color(f'{mem_percent:.1f}%', mem_color)} used "
+            f"({memory.used / (1024**3):.1f}GB / {memory.total / (1024**3):.1f}GB)"
+        )
 
         # CPU
         cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_color = Colors.GREEN if cpu_percent < 50 else Colors.YELLOW if cpu_percent < 80 else Colors.RED
+        cpu_color = (
+            Colors.GREEN if cpu_percent < 50 else Colors.YELLOW if cpu_percent < 80 else Colors.RED
+        )
         print(f"CPU: {color(f'{cpu_percent:.1f}%', cpu_color)} used")
 
         # Database
-        from src.config import DB_PATH, STATE_DIR as _state_dir
+        from src.config import DB_PATH, STATE_DIR
+
         db_path = DB_PATH
         if db_path.exists():
             import lancedb
+
             db = lancedb.connect(str(db_path))
             tables = db.table_names()
             print(f"\nDatabase: {color('Connected', Colors.GREEN)}")
@@ -233,13 +248,16 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(f"\nDatabase: {color('Not initialized', Colors.YELLOW)}")
 
         # State directory
-        state_dir = _state_dir
+        state_dir = STATE_DIR
         if state_dir.exists():
             total_size = sum(f.stat().st_size for f in state_dir.rglob("*") if f.is_file())
             print(f"\nState directory: {total_size / (1024**2):.1f} MB")
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Status check failed: {e}")
+        return 1
     except Exception as e:
         print_error(f"Status check failed: {e}")
         return 1
@@ -247,14 +265,17 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 # === Check Links Command ===
 
+
 def cmd_check_links(args: argparse.Namespace) -> int:
     """Check for broken links."""
     try:
         from src.quality.link_checker import LinkChecker, format_report
 
-        target = Path(args.path)
-        if not target.exists():
-            print_error(f"Path not found: {target}")
+        # Validate and canonicalize the path
+        try:
+            target = validate_path(args.path, must_exist=True, allow_outside_configured=True)
+        except PathValidationError as e:
+            print_error(f"Invalid path: {e}")
             return 1
 
         print_header(f"Checking links in: {target}")
@@ -262,16 +283,22 @@ def cmd_check_links(args: argparse.Namespace) -> int:
         checker = LinkChecker()
 
         # Run async check
-        report = asyncio.run(checker.scan_directory(
-            target,
-            recursive=args.recursive,
-        ))
+        report = asyncio.run(
+            checker.scan_directory(
+                target,
+                recursive=args.recursive,
+            )
+        )
 
         # Print summary
         print(f"\nScanned {report.documents_scanned} documents")
         print(f"Found {report.total_links} total links ({report.unique_links} unique)")
 
-        health_color = Colors.GREEN if report.overall_health > 90 else Colors.YELLOW if report.overall_health > 70 else Colors.RED
+        health_color = (
+            Colors.GREEN
+            if report.overall_health > 90
+            else Colors.YELLOW if report.overall_health > 70 else Colors.RED
+        )
         print(f"Health: {color(f'{report.overall_health:.1f}%', health_color)}")
 
         if report.broken_links > 0:
@@ -292,6 +319,10 @@ def cmd_check_links(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Link check failed: {e}")
+        logger.error(f"Link check error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Link check failed: {e}")
         logger.exception("Link check error")
@@ -300,14 +331,17 @@ def cmd_check_links(args: argparse.Namespace) -> int:
 
 # === Find Duplicates Command ===
 
+
 def cmd_duplicates(args: argparse.Namespace) -> int:
     """Find duplicate content."""
     try:
         from src.quality.duplicate_detector import DuplicateDetector
 
-        target = Path(args.path)
-        if not target.exists():
-            print_error(f"Path not found: {target}")
+        # Validate and canonicalize the path
+        try:
+            target = validate_path(args.path, must_exist=True, allow_outside_configured=True)
+        except PathValidationError as e:
+            print_error(f"Invalid path: {e}")
             return 1
 
         print_header(f"Finding duplicates in: {target}")
@@ -320,9 +354,11 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
 
         total_dupes = report.exact_duplicates + report.near_duplicates + report.semantic_duplicates
         print(f"\nScanned {report.total_files} files")
-        print(f"Found {total_dupes} duplicates "
-              f"(exact: {report.exact_duplicates}, near: {report.near_duplicates}, "
-              f"semantic: {report.semantic_duplicates})")
+        print(
+            f"Found {total_dupes} duplicates "
+            f"(exact: {report.exact_duplicates}, near: {report.near_duplicates}, "
+            f"semantic: {report.semantic_duplicates})"
+        )
         print(f"Potential savings: {report.space_reclaimable_bytes / (1024 * 1024):.1f} MB")
 
         if report.matches:
@@ -335,6 +371,10 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Duplicate check failed: {e}")
+        logger.error(f"Duplicate check error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Duplicate check failed: {e}")
         logger.exception("Duplicate check error")
@@ -343,14 +383,17 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
 
 # === Find Stale Command ===
 
+
 def cmd_stale(args: argparse.Namespace) -> int:
     """Find stale content."""
     try:
         from src.quality.freshness import FreshnessIndicator
 
-        target = Path(args.path)
-        if not target.exists():
-            print_error(f"Path not found: {target}")
+        # Validate and canonicalize the path
+        try:
+            target = validate_path(args.path, must_exist=True, allow_outside_configured=True)
+        except PathValidationError as e:
+            print_error(f"Invalid path: {e}")
             return 1
 
         print_header(f"Finding stale content in: {target}")
@@ -375,13 +418,17 @@ def cmd_stale(args: argparse.Namespace) -> int:
 
         # Summary
         summary = indicator.get_freshness_summary(target)
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Total files: {summary['total_files']}")
         print(f"  Average age: {summary['avg_age_days']:.0f} days")
         print(f"  Fresh (<7 days): {summary['fresh_percentage']:.1f}%")
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Stale check failed: {e}")
+        logger.error(f"Stale check error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Stale check failed: {e}")
         logger.exception("Stale check error")
@@ -390,14 +437,17 @@ def cmd_stale(args: argparse.Namespace) -> int:
 
 # === Tag Command ===
 
+
 def cmd_tag(args: argparse.Namespace) -> int:
     """Auto-tag files."""
     try:
         from src.classification.auto_tagger import AutoTagger
 
-        target = Path(args.path)
-        if not target.exists():
-            print_error(f"Path not found: {target}")
+        # Validate and canonicalize the path
+        try:
+            target = validate_path(args.path, must_exist=True, allow_outside_configured=True)
+        except PathValidationError as e:
+            print_error(f"Invalid path: {e}")
             return 1
 
         print_header(f"Auto-tagging: {target}")
@@ -428,6 +478,10 @@ def cmd_tag(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Tagging failed: {e}")
+        logger.error(f"Tagging error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Tagging failed: {e}")
         logger.exception("Tagging error")
@@ -436,11 +490,14 @@ def cmd_tag(args: argparse.Namespace) -> int:
 
 # === PII Dictionary Command ===
 
+
 def cmd_pii(args: argparse.Namespace) -> int:
     """Manage custom PII dictionary."""
     import yaml
 
     from src.config import STATE_DIR
+    from src.utils.secure_file import secure_write
+
     pii_path = STATE_DIR / "pii_terms.yaml"
 
     if not args.pii_action:
@@ -470,8 +527,6 @@ def cmd_pii(args: argparse.Namespace) -> int:
         return 0
 
     elif args.pii_action == "add":
-        pii_path.parent.mkdir(parents=True, exist_ok=True)
-
         data = {"terms": []}
         if pii_path.exists():
             with open(pii_path) as f:
@@ -486,11 +541,13 @@ def cmd_pii(args: argparse.Namespace) -> int:
             return 1
 
         data["terms"].append({"value": args.term, "type": args.type.upper()})
-        with open(pii_path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False)
+
+        # Write with secure permissions (owner-only access to PII data)
+        content = yaml.dump(data, default_flow_style=False)
+        secure_write(pii_path, content)
 
         print_success(f"Added PII term: [{args.type.upper()}] {args.term}")
-        print_info(f"Saved to {pii_path}")
+        print_info(f"Saved to {pii_path} (permissions: 0600)")
         return 0
 
     elif args.pii_action == "remove":
@@ -503,16 +560,16 @@ def cmd_pii(args: argparse.Namespace) -> int:
 
         original_count = len(data.get("terms", []))
         data["terms"] = [
-            t for t in data.get("terms", [])
-            if t.get("value", "").lower() != args.term.lower()
+            t for t in data.get("terms", []) if t.get("value", "").lower() != args.term.lower()
         ]
 
         if len(data["terms"]) == original_count:
             print_warning(f"Term not found: {args.term}")
             return 1
 
-        with open(pii_path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False)
+        # Write with secure permissions
+        content = yaml.dump(data, default_flow_style=False)
+        secure_write(pii_path, content)
 
         print_success(f"Removed PII term: {args.term}")
         return 0
@@ -523,6 +580,7 @@ def cmd_pii(args: argparse.Namespace) -> int:
 
 
 # === Health Command ===
+
 
 def cmd_health(args: argparse.Namespace) -> int:
     """Run system health checks."""
@@ -557,6 +615,10 @@ def cmd_health(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Health check failed: {e}")
+        logger.error(f"Health check error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Health check failed: {e}")
         logger.exception("Health check error")
@@ -564,6 +626,7 @@ def cmd_health(args: argparse.Namespace) -> int:
 
 
 # === Optimize Database Command ===
+
 
 def cmd_optimize_db(args: argparse.Namespace) -> int:
     """Optimize LanceDB database."""
@@ -581,13 +644,15 @@ def cmd_optimize_db(args: argparse.Namespace) -> int:
             print(f"Fragmentation: {report.fragmentation_estimate:.0%}")
 
             if report.tables:
-                print(f"\nTables:")
+                print("\nTables:")
                 for t in report.tables:
-                    print(f"  {color(t['name'], Colors.BOLD)}: "
-                          f"{t['rows']} rows, {t['size_mb']:.1f} MB")
+                    print(
+                        f"  {color(t['name'], Colors.BOLD)}: "
+                        f"{t['rows']} rows, {t['size_mb']:.1f} MB"
+                    )
 
             if report.recommendations:
-                print(f"\nRecommendations:")
+                print("\nRecommendations:")
                 for rec in report.recommendations:
                     print(f"  - {rec}")
             return 0
@@ -611,6 +676,10 @@ def cmd_optimize_db(args: argparse.Namespace) -> int:
 
         return 0
 
+    except CoreRagError as e:
+        print_error(f"Optimization failed: {e}")
+        logger.error(f"Optimization error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Optimization failed: {e}")
         logger.exception("Optimization error")
@@ -618,6 +687,7 @@ def cmd_optimize_db(args: argparse.Namespace) -> int:
 
 
 # === Backup Command ===
+
 
 def cmd_backup(args: argparse.Namespace) -> int:
     """Manage backups."""
@@ -676,6 +746,10 @@ def cmd_backup(args: argparse.Namespace) -> int:
             print_error("Usage: corerag backup {create|list|restore|cleanup}")
             return 1
 
+    except CoreRagError as e:
+        print_error(f"Backup operation failed: {e}")
+        logger.error(f"Backup error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Backup operation failed: {e}")
         logger.exception("Backup error")
@@ -683,6 +757,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
 
 
 # === Knowledge Graph Command ===
+
 
 def cmd_graph(args: argparse.Namespace) -> int:
     """Query the knowledge graph."""
@@ -704,14 +779,14 @@ def cmd_graph(args: argparse.Namespace) -> int:
             print(f"  Relationships: {stats['total_relationships']}")
 
             if stats.get("entity_types"):
-                print(f"\n  Entity types:")
+                print("\n  Entity types:")
                 for etype, count in sorted(
                     stats["entity_types"].items(), key=lambda x: x[1], reverse=True
                 ):
                     print(f"    {etype}: {count}")
 
             if stats.get("relationship_types"):
-                print(f"\n  Relationship types:")
+                print("\n  Relationship types:")
                 for rtype, count in sorted(
                     stats["relationship_types"].items(), key=lambda x: x[1], reverse=True
                 )[:15]:
@@ -749,8 +824,10 @@ def cmd_graph(args: argparse.Namespace) -> int:
 
             path = graph.find_path(args.entity, args.target, max_hops=args.hops)
             if path is None:
-                print_warning(f"No path found between '{args.entity}' and '{args.target}' "
-                              f"(max {args.hops} hops).")
+                print_warning(
+                    f"No path found between '{args.entity}' and '{args.target}' "
+                    f"(max {args.hops} hops)."
+                )
                 return 0
 
             print_header(f"Path: {args.entity} -> {args.target}")
@@ -762,6 +839,10 @@ def cmd_graph(args: argparse.Namespace) -> int:
             print_error("Usage: corerag graph {stats|query|path}")
             return 1
 
+    except CoreRagError as e:
+        print_error(f"Graph query failed: {e}")
+        logger.error(f"Graph error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Graph query failed: {e}")
         logger.exception("Graph error")
@@ -769,6 +850,7 @@ def cmd_graph(args: argparse.Namespace) -> int:
 
 
 # === Memory Command ===
+
 
 def cmd_memory(args: argparse.Namespace) -> int:
     """Manage episodic memory (user facts)."""
@@ -798,10 +880,10 @@ def cmd_memory(args: argparse.Namespace) -> int:
 
         elif args.memory_action == "add":
             if not args.fact:
-                print_error("Fact content required: corerag memory add \"fact text\"")
+                print_error('Fact content required: corerag memory add "fact text"')
                 return 1
 
-            from src.memory.episodic_memory import UserFact, FactCategory
+            from src.memory.episodic_memory import FactCategory, UserFact
 
             profile = manager.load_or_create(user_id)
 
@@ -847,6 +929,10 @@ def cmd_memory(args: argparse.Namespace) -> int:
             print_error("Usage: corerag memory {list|add|context|export}")
             return 1
 
+    except CoreRagError as e:
+        print_error(f"Memory operation failed: {e}")
+        logger.error(f"Memory error: {e}")
+        return 1
     except Exception as e:
         print_error(f"Memory operation failed: {e}")
         logger.exception("Memory error")
@@ -854,6 +940,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
 
 
 # === Main ===
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
@@ -864,7 +951,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable verbose output",
     )
@@ -886,7 +974,11 @@ def create_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("-f", "--force", action="store_true", help="Force re-ingestion")
     ingest_parser.add_argument("-w", "--workers", type=int, default=4, help="Worker threads")
     ingest_parser.add_argument(
-        "-t", "--tag", action="append", default=[], dest="tags",
+        "-t",
+        "--tag",
+        action="append",
+        default=[],
+        dest="tags",
         help="Collection tag to apply (repeatable, e.g. -t sphr-study -t cert-prep)",
     )
     ingest_parser.set_defaults(func=cmd_ingest)
@@ -998,7 +1090,8 @@ def create_parser() -> argparse.ArgumentParser:
     mem_add = mem_sub.add_parser("add", help="Add a fact")
     mem_add.add_argument("fact", help="Fact content")
     mem_add.add_argument(
-        "--category", default="personal",
+        "--category",
+        default="personal",
         help="Fact category (personal, preference, life_event, project, work, health, financial)",
     )
     mem_add.set_defaults(func=cmd_memory)
@@ -1019,6 +1112,7 @@ def main() -> int:
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("corerag").setLevel(logging.DEBUG)
 
     if not args.command:
         parser.print_help()

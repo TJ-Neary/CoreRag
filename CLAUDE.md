@@ -2,11 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔒 HQ Access Level: PUBLIC
+
+This is a **PUBLIC repository**. Content restrictions apply.
+
+**Allowed HQ reads:**
+- `~/Tech_Projects/_HQ/me/persona_public.md` ✅
+- `~/Tech_Projects/_HQ/standards/*` ✅
+- `~/Tech_Projects/_HQ/guides/*` ✅
+- `~/Tech_Projects/_HQ/templates/*` ✅
+
+**Blocked:**
+- `~/Tech_Projects/_HQ/me/persona.md` (CONTEXT-ONLY sections) ❌
+- `~/Tech_Projects/_HQ/me/_private/*` ❌
+- `~/Tech_Projects/_HQ/sessions/*` ❌
+
+**Rule:** Never output personal context to any file in this repo.
+
+---
+
 ## Project Overview
 
 CoreRag is a local-first, privacy-preserving knowledge engine running on Apple Silicon (M4 Max, 48GB RAM). It ingests documents from an inbox folder, processes them through an AI pipeline (text extraction, three-layer PII detection, LLM-based classification), stages them for human review via a web dashboard, then archives originals and exports redacted markdown to an Obsidian vault. Search is exposed via MCP (stdio) and REST API v1.
 
 **CoreRag is the knowledge engine; a separate AI assistant project handles the user-facing layer.** That external project owns chat, voice, personality, user memory, skills, and intent routing. CoreRag owns document ingestion, RAG indexing, PII detection, chunking, knowledge graph, quality checks, the HITL dashboard, and Obsidian export. External consumers connect via MCP client (stdio) and REST API (`localhost:8000/api/v1/*`), using the manifest endpoint for capability discovery.
+
+**Development Planning**: See [`_project/DevPlan.md`](./_project/DevPlan.md) for the full development history, architectural decisions, wiring plan status, external integration protocol, future roadmap (P0-P3), and project audit findings.
 
 ## Development Commands
 
@@ -52,25 +73,30 @@ python -m src.cli.main memory list           # List user facts (also: add, conte
 ```
 
 ### Core Memory API (v1) — For External AI Systems
+
+**Authentication**: Set `CORERAG_API_KEY` in `.env` to enable API key auth. Include `X-API-Key` header in requests. The `/api/v1/manifest` endpoint is always public for capability discovery.
+
 ```bash
-# Capability manifest (handshake protocol)
+# Capability manifest (handshake protocol — no auth required)
 curl http://localhost:8000/api/v1/manifest
 
 # Semantic search (optionally filter by collection tags)
 curl -X POST http://localhost:8000/api/v1/search \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key" \
   -d '{"query": "authentication setup", "k": 5, "tags": ["sphr-study"]}'
 
 # Ingest content
 curl -X POST http://localhost:8000/api/v1/ingest \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key" \
   -d '{"content": "...", "source": "my-app", "metadata": {"category": "notes"}}'
 
 # Database stats
-curl http://localhost:8000/api/v1/stats
+curl -H "X-API-Key: your_api_key" http://localhost:8000/api/v1/stats
 
 # Delete document
-curl -X DELETE http://localhost:8000/api/v1/documents/{document_id}
+curl -X DELETE -H "X-API-Key: your_api_key" http://localhost:8000/api/v1/documents/{document_id}
 ```
 
 ### Knowledge Graph Backfill
@@ -125,7 +151,7 @@ mypy src/
 - FastMCP server exposes tools to Claude Desktop via stdio transport
 - Hybrid search: Vector (all-MiniLM-L6-v2, 384d) + BM25 full-text via LanceDB with RRF fusion
 - Cross-encoder reranking (cross-encoder/ms-marco-MiniLM-L-6-v2)
-- HyDE query expansion, multi-query fusion, time-decay scoring (Phase 2 — wiring in progress)
+- HyDE query expansion, multi-query fusion, time-decay scoring
 
 **2. Ingestion + HITL Dashboard** (root-level modules in `src/`)
 - `watchdog.py` monitors `INBOX_PATH` for new files
@@ -137,7 +163,7 @@ mypy src/
 
 ### Intelligence Provider
 
-`src/intelligence.py` auto-selects provider:
+`src/intelligence.py` auto-selects provider (all methods are async, using httpx):
 - **Ollama** (default): uses `qwen2.5:32b` locally at `localhost:11434`. Set `OLLAMA_MODEL` env var to change.
 - **Gemini**: used if `GOOGLE_API_KEY` is set. Faster but sends document text to Google (PII concern).
 
@@ -185,9 +211,9 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop | **Wired** |
 | `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | **Wired** |
 | `src/embeddings/` | all-MiniLM-L6-v2 with caching, MPS-optimized | **Wired** |
-| `src/ingestion/` | File processing pipeline orchestrator | Unwired |
-| `src/storage/` | LanceDB vector store wrapper | Unwired (direct LanceDB used instead) |
-| `src/chunking/` | Parent-child hierarchical chunking + AST-based code chunking | **Wired** (via executor) |
+| `src/ingestion/` | ~~File processing pipeline orchestrator~~ | **Deleted** (orphaned scaffold) |
+| `src/storage/` | ~~LanceDB vector store wrapper~~ | **Deleted** (orphaned scaffold) |
+| `src/chunking/` | Parent-child hierarchical chunking | **Wired** (via executor) |
 | `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | **Wired** (MCP tools + ingestion pipeline) |
 | `src/classification/` | Keyword + embedding-based auto-tagging | **Wired** (via processor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
@@ -200,7 +226,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/video/` | OpenCV keyframe + scene detection | **Wired** (via extractor) |
 | `src/multimodal/` | VLM image captioning (LLaVA) | **Wired** (via extractor) |
 | `src/menubar/` | macOS menu bar app (rumps) — CR icon, dashboard launcher, status polling | **Wired** |
-| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | Partially wired |
+| `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | **Wired** |
 
 ### Data Models
 
@@ -239,6 +265,7 @@ OLLAMA_MODEL=qwen2.5:32b                 # Ollama model for analysis (default)
 CORERAG_DB_PATH=~/.corerag/lancedb               # LanceDB vector database path
 CORERAG_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
 CORERAG_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
+CORERAG_API_KEY=...                       # Optional: API key for /api/v1/* endpoints (omit for open access)
 ```
 
 ### Claude Desktop MCP Setup
@@ -260,7 +287,7 @@ The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB conn
 
 ## Conventions
 
-- Python 3.11+ (per pyproject.toml), type hints on all function signatures
+- Python 3.12+ (per pyproject.toml), type hints on all function signatures
 - PEP 8 + `black` at 100 char line length, `ruff` for linting
 - Imports: stdlib -> third-party -> local (`from src.models import ...`)
 - Dataclasses or Pydantic for data structures
@@ -281,11 +308,11 @@ The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB conn
 ## File Type Support
 
 **Currently working**: PDF (with OCR fallback for scanned docs), DOCX, TXT, Markdown, JSON, YAML, CSV, log files, PNG/JPG/WebP/HEIC (Vision.framework OCR + VLM captioning), MP3/WAV/M4A (mlx-whisper transcription), MP4/MOV (keyframe + scene detection + audio extraction).
-**Planned (not yet wired)**: XLSX/XLS, Python/JS/TS/Go/Rust (AST chunking).
+**Not yet supported**: XLSX/XLS (spreadsheet processor deleted — needs reimplementation), Python/JS/TS/Go/Rust (code chunker deleted — needs reimplementation).
 
 ## Wiring Plan
 
-A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
+A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline. Full details in [`_project/DevPlan.md`](./_project/DevPlan.md#wiring-plan-status).
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -297,13 +324,14 @@ A 12-phase plan exists to wire all ~46 unwired modules into the main pipeline.
 | 5 | Wire knowledge graph | **Complete** (entity extraction in executor, search_by_entity MCP tool) |
 | 6 | Wire episodic memory | **Complete** (get_user_context, add_user_fact MCP tools) |
 | 7 | Wire quality modules | **Complete** (freshness, link checker, conflict detector, duplicate detector) |
-| 8 | Wire utility modules | **In Progress** (SafeProcessor, QueueManager wired; checkpoint, incremental, health, feedback pending) |
+| 8 | Wire utility modules | **Complete** (logging, retry, exceptions, SafeProcessor, QueueManager all wired) |
 | 9 | Wire analytics & queue | **Complete** (QueryAnalytics, SemanticCache, SessionTracker initialized) |
 | 10 | Wire multimodal | **Complete** (OCR, VLM, Whisper, video all wired in extractor.py) |
-| 11 | Config cleanup & dead code removal | **In Progress** (centralized constants done, ~30 files with hardcoded paths remain) |
+| 11 | Config cleanup & dead code removal | **Complete** (all constants centralized, dead code removed) |
 | 12 | CLI integration | **Complete** (13 commands: search, ingest, status, check-links, duplicates, stale, tag, pii, health, optimize-db, backup, graph, memory) |
 
 ### Remaining Wiring Work
 
-Phases 8 (utility modules) and 11 (config cleanup) have remaining work.
+All 12 phases are **complete**. No remaining wiring work.
 - `HybridSearcher.search(query, query_vector, k, filters)` is async
+- `intelligence.py` methods (`analyze_document`, `suggest_folder_structure`) are async (httpx)

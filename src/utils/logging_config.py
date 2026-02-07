@@ -4,17 +4,16 @@ Logging and debugging configuration for CoreRag.
 Provides structured logging with multiple outputs and debug tools.
 """
 
+import functools
 import json
 import logging
 import logging.handlers
-import os
 import sys
-import traceback
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, Optional
-import functools
 import time
+import traceback
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, Optional
 
 
 class StructuredFormatter(logging.Formatter):
@@ -37,7 +36,7 @@ class StructuredFormatter(logging.Formatter):
             log_data["exception"] = {
                 "type": record.exc_info[0].__name__,
                 "message": str(record.exc_info[1]),
-                "traceback": traceback.format_exception(*record.exc_info)
+                "traceback": traceback.format_exception(*record.exc_info),
             }
 
         # Add any extra fields
@@ -51,11 +50,11 @@ class ColoredFormatter(logging.Formatter):
     """Colored console formatter for human readability."""
 
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
 
@@ -72,7 +71,7 @@ def setup_logging(
     console: bool = True,
     json_logs: bool = True,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
-    backup_count: int = 5
+    backup_count: int = 5,
 ) -> logging.Logger:
     """
     Set up logging configuration.
@@ -88,7 +87,9 @@ def setup_logging(
     Returns:
         Root logger
     """
-    log_dir = log_dir or Path.home() / ".corerag" / "logs"
+    from src.config import LOG_DIR
+
+    log_dir = log_dir or LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)
 
     root_logger = logging.getLogger("corerag")
@@ -97,6 +98,18 @@ def setup_logging(
     # Clear existing handlers
     root_logger.handlers.clear()
 
+    # Also configure the Python root logger so that all loggers (including
+    # those created with logging.getLogger(__name__)) inherit the same
+    # handlers and level.  This replaces any prior logging.basicConfig() call.
+    _root = logging.getLogger()
+    _root.setLevel(getattr(logging, level.upper()))
+    _root.handlers.clear()
+
+    # Build handlers list — added to both the "corerag" logger and the
+    # Python root logger so that loggers created with getLogger(__name__)
+    # (e.g. "src.server") also emit through the same handlers.
+    handlers: list[logging.Handler] = []
+
     # Console handler with colors
     if console:
         console_handler = logging.StreamHandler(sys.stdout)
@@ -104,55 +117,63 @@ def setup_logging(
 
         if sys.stdout.isatty():
             console_format = ColoredFormatter(
-                "%(asctime)s │ %(levelname)-8s │ %(name)s │ %(message)s",
-                datefmt="%H:%M:%S"
+                "%(asctime)s │ %(levelname)-8s │ %(name)s │ %(message)s", datefmt="%H:%M:%S"
             )
         else:
             console_format = logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-                datefmt="%H:%M:%S"
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s", datefmt="%H:%M:%S"
             )
 
         console_handler.setFormatter(console_format)
-        root_logger.addHandler(console_handler)
+        handlers.append(console_handler)
 
     # File handler for human-readable logs
     file_handler = logging.handlers.RotatingFileHandler(
-        log_dir / "corerag.log",
-        maxBytes=max_bytes,
-        backupCount=backup_count
+        log_dir / "corerag.log", maxBytes=max_bytes, backupCount=backup_count
     )
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(module)s:%(lineno)d | %(message)s"
-    ))
-    root_logger.addHandler(file_handler)
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(module)s:%(lineno)d | %(message)s"
+        )
+    )
+    handlers.append(file_handler)
 
     # JSON structured logs for machine parsing
     if json_logs:
         json_handler = logging.handlers.RotatingFileHandler(
-            log_dir / "corerag.json.log",
-            maxBytes=max_bytes,
-            backupCount=backup_count
+            log_dir / "corerag.json.log", maxBytes=max_bytes, backupCount=backup_count
         )
         json_handler.setLevel(logging.DEBUG)
         json_handler.setFormatter(StructuredFormatter())
-        root_logger.addHandler(json_handler)
+        handlers.append(json_handler)
 
     # Error-only log for quick problem identification
     error_handler = logging.handlers.RotatingFileHandler(
-        log_dir / "corerag.error.log",
-        maxBytes=max_bytes,
-        backupCount=backup_count
+        log_dir / "corerag.error.log", maxBytes=max_bytes, backupCount=backup_count
     )
     error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(module)s:%(lineno)d\n"
-        "%(message)s\n"
-        "%(exc_info)s\n"
-        "---"
-    ))
-    root_logger.addHandler(error_handler)
+    error_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(name)s | %(module)s:%(lineno)d\n"
+            "%(message)s\n"
+            "%(exc_info)s\n"
+            "---"
+        )
+    )
+    handlers.append(error_handler)
+
+    # Attach handlers to the "corerag" logger
+    for h in handlers:
+        root_logger.addHandler(h)
+
+    # Prevent double-logging: "corerag" logger won't propagate to root
+    root_logger.propagate = False
+
+    # Attach the same handlers to the Python root logger so that loggers
+    # outside the "corerag" namespace (e.g. "src.server") also benefit.
+    for h in handlers:
+        _root.addHandler(h)
 
     return root_logger
 
@@ -198,6 +219,7 @@ def log_performance(logger: Optional[logging.Logger] = None):
         def slow_function():
             ...
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -208,21 +230,17 @@ def log_performance(logger: Optional[logging.Logger] = None):
                 result = func(*args, **kwargs)
                 elapsed = (time.time() - start) * 1000
 
-                log.debug(
-                    f"{func.__name__} completed in {elapsed:.1f}ms"
-                )
+                log.debug(f"{func.__name__} completed in {elapsed:.1f}ms")
 
                 return result
 
             except Exception as e:
                 elapsed = (time.time() - start) * 1000
-                log.error(
-                    f"{func.__name__} failed after {elapsed:.1f}ms: {e}",
-                    exc_info=True
-                )
+                log.error(f"{func.__name__} failed after {elapsed:.1f}ms: {e}", exc_info=True)
                 raise
 
         return wrapper
+
     return decorator
 
 
@@ -264,7 +282,9 @@ class QueryLogger:
     """
 
     def __init__(self, log_dir: Optional[Path] = None):
-        self.log_dir = log_dir or Path.home() / ".corerag" / "logs" / "queries"
+        from src.config import LOG_DIR
+
+        self.log_dir = log_dir or LOG_DIR / "queries"
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def log_query(
@@ -273,7 +293,7 @@ class QueryLogger:
         results_count: int,
         latency_ms: float,
         filters: Optional[Dict] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
     ) -> None:
         """Log a search query."""
         entry = {
@@ -282,7 +302,7 @@ class QueryLogger:
             "results_count": results_count,
             "latency_ms": latency_ms,
             "filters": filters or {},
-            "user_id": user_id
+            "user_id": user_id,
         }
 
         # Daily query log file
@@ -308,21 +328,14 @@ class QueryLogger:
                             entry = json.loads(line)
                             query = entry["query"].lower().strip()
                             query_counts[query] = query_counts.get(query, 0) + 1
-                        except:
+                        except (json.JSONDecodeError, KeyError, TypeError):
+                            # Skip malformed or incomplete log entries
                             pass
 
         # Sort by count
-        sorted_queries = sorted(
-            query_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_queries = sorted(query_counts.items(), key=lambda x: x[1], reverse=True)
 
         return dict(sorted_queries[:limit])
-
-
-# Import timedelta for QueryLogger
-from datetime import timedelta
 
 
 # Convenience function

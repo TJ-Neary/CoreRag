@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Tag:
     """A tag definition."""
+
     name: str
     color: str = "#808080"
     description: str = ""
@@ -31,6 +32,7 @@ class Tag:
 @dataclass
 class TagSuggestion:
     """A suggested tag for a document."""
+
     tag: str
     confidence: float  # 0.0 to 1.0
     source: str  # "content", "title", "similar_docs", "user_history"
@@ -56,7 +58,9 @@ class TagManager:
         Args:
             state_dir: Directory for tag storage
         """
-        self.state_dir = state_dir or Path.home() / ".corerag" / "tags"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "tags"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._tags: Dict[str, Tag] = {}
@@ -73,7 +77,7 @@ class TagManager:
         color: str = "#808080",
         description: str = "",
         parent: Optional[str] = None,
-        aliases: Optional[List[str]] = None
+        aliases: Optional[List[str]] = None,
     ) -> Tag:
         """
         Create a new tag.
@@ -95,11 +99,7 @@ class TagManager:
             return self._tags[name]
 
         tag = Tag(
-            name=name,
-            color=color,
-            description=description,
-            parent=parent,
-            aliases=aliases or []
+            name=name, color=color, description=description, parent=parent, aliases=aliases or []
         )
 
         self._tags[name] = tag
@@ -137,7 +137,7 @@ class TagManager:
         name: str,
         color: Optional[str] = None,
         description: Optional[str] = None,
-        aliases: Optional[List[str]] = None
+        aliases: Optional[List[str]] = None,
     ) -> bool:
         """Update tag properties."""
         if tag := self._tags.get(self._normalize_tag(name)):
@@ -286,11 +286,7 @@ class TagManager:
         tag_name = self._normalize_tag(tag_name)
         return self._tag_docs.get(tag_name, set()).copy()
 
-    def get_documents_by_tags(
-        self,
-        tags: List[str],
-        match_all: bool = True
-    ) -> Set[str]:
+    def get_documents_by_tags(self, tags: List[str], match_all: bool = True) -> Set[str]:
         """
         Get documents matching multiple tags.
 
@@ -320,7 +316,7 @@ class TagManager:
         content: str,
         title: str = "",
         existing_tags: Optional[List[str]] = None,
-        limit: int = 5
+        limit: int = 5,
     ) -> List[TagSuggestion]:
         """
         Suggest tags for content.
@@ -356,11 +352,7 @@ class TagManager:
 
         return unique_suggestions[:limit]
 
-    def _suggest_from_content(
-        self,
-        content: str,
-        existing: Set[str]
-    ) -> List[TagSuggestion]:
+    def _suggest_from_content(self, content: str, existing: Set[str]) -> List[TagSuggestion]:
         """Suggest tags based on content keywords."""
         suggestions = []
         content_lower = content.lower()
@@ -378,21 +370,19 @@ class TagManager:
                     count = content_lower.count(term)
                     confidence = min(0.9, 0.5 + (count * 0.1))
 
-                    suggestions.append(TagSuggestion(
-                        tag=tag.name,
-                        confidence=confidence,
-                        source="content",
-                        reason=f"Found '{term}' {count} time(s)"
-                    ))
+                    suggestions.append(
+                        TagSuggestion(
+                            tag=tag.name,
+                            confidence=confidence,
+                            source="content",
+                            reason=f"Found '{term}' {count} time(s)",
+                        )
+                    )
                     break
 
         return suggestions
 
-    def _suggest_from_title(
-        self,
-        title: str,
-        existing: Set[str]
-    ) -> List[TagSuggestion]:
+    def _suggest_from_title(self, title: str, existing: Set[str]) -> List[TagSuggestion]:
         """Suggest tags based on title."""
         suggestions = []
         title_lower = title.lower()
@@ -402,19 +392,15 @@ class TagManager:
                 continue
 
             if tag.name in title_lower:
-                suggestions.append(TagSuggestion(
-                    tag=tag.name,
-                    confidence=0.85,
-                    source="title",
-                    reason=f"Found in title"
-                ))
+                suggestions.append(
+                    TagSuggestion(
+                        tag=tag.name, confidence=0.85, source="title", reason="Found in title"
+                    )
+                )
 
         return suggestions
 
-    def _suggest_from_patterns(
-        self,
-        existing: Set[str]
-    ) -> List[TagSuggestion]:
+    def _suggest_from_patterns(self, existing: Set[str]) -> List[TagSuggestion]:
         """Suggest tags that commonly appear with existing tags."""
         if not existing:
             return []
@@ -434,21 +420,19 @@ class TagManager:
         # Suggest most common co-occurring tags
         for tag, count in co_occurrence.most_common(5):
             confidence = min(0.8, 0.3 + (count * 0.1))
-            suggestions.append(TagSuggestion(
-                tag=tag,
-                confidence=confidence,
-                source="similar_docs",
-                reason=f"Often used with {', '.join(list(existing)[:3])}"
-            ))
+            suggestions.append(
+                TagSuggestion(
+                    tag=tag,
+                    confidence=confidence,
+                    source="similar_docs",
+                    reason=f"Often used with {', '.join(list(existing)[:3])}",
+                )
+            )
 
         return suggestions
 
     def auto_tag(
-        self,
-        document_id: str,
-        content: str,
-        title: str = "",
-        min_confidence: float = 0.7
+        self, document_id: str, content: str, title: str = "", min_confidence: float = 0.7
     ) -> List[str]:
         """
         Automatically tag a document.
@@ -480,6 +464,7 @@ class TagManager:
 
     def get_tag_tree(self) -> List[Dict]:
         """Get hierarchical tag structure."""
+
         def build_tree(parent: Optional[str]) -> List[Dict]:
             children = [t for t in self._tags.values() if t.parent == parent]
             return [
@@ -487,7 +472,7 @@ class TagManager:
                     "name": t.name,
                     "color": t.color,
                     "use_count": t.use_count,
-                    "children": build_tree(t.name)
+                    "children": build_tree(t.name),
                 }
                 for t in sorted(children, key=lambda x: x.use_count, reverse=True)
             ]
@@ -521,8 +506,8 @@ class TagManager:
         """Normalize a tag name."""
         # Lowercase, replace spaces with hyphens, remove special chars
         name = name.lower().strip()
-        name = re.sub(r'\s+', '-', name)
-        name = re.sub(r'[^a-z0-9\-_]', '', name)
+        name = re.sub(r"\s+", "-", name)
+        name = re.sub(r"[^a-z0-9\-_]", "", name)
         return name
 
     def _load_state(self) -> None:
@@ -563,26 +548,29 @@ class TagManager:
 
         # Save tags
         with open(tags_file, "w") as f:
-            json.dump({
-                "tags": {
-                    name: {
-                        "name": t.name,
-                        "color": t.color,
-                        "description": t.description,
-                        "created_at": t.created_at,
-                        "use_count": t.use_count,
-                        "parent": t.parent,
-                        "aliases": t.aliases
+            json.dump(
+                {
+                    "tags": {
+                        name: {
+                            "name": t.name,
+                            "color": t.color,
+                            "description": t.description,
+                            "created_at": t.created_at,
+                            "use_count": t.use_count,
+                            "parent": t.parent,
+                            "aliases": t.aliases,
+                        }
+                        for name, t in self._tags.items()
                     }
-                    for name, t in self._tags.items()
-                }
-            }, f, indent=2)
+                },
+                f,
+                indent=2,
+            )
 
         # Save doc-tag mappings
         with open(docs_file, "w") as f:
-            json.dump({
-                "documents": {
-                    doc_id: list(tags)
-                    for doc_id, tags in self._doc_tags.items()
-                }
-            }, f, indent=2)
+            json.dump(
+                {"documents": {doc_id: list(tags) for doc_id, tags in self._doc_tags.items()}},
+                f,
+                indent=2,
+            )

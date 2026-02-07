@@ -8,13 +8,14 @@ Vectors find "similar things" but miss relationships.
 This graph layer answers: "How does X relate to Y?"
 """
 
+import json
 import logging
 import sqlite3
-import json
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Tuple, Set
 from pathlib import Path
-from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+from src.exceptions import DatabaseError as CoreRagDatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Entity:
     """An extracted entity."""
+
     name: str
     type: str  # person, project, technology, concept, organization
     document_id: str
@@ -32,17 +34,19 @@ class Entity:
 @dataclass
 class Relationship:
     """A relationship between entities."""
-    subject: str           # Entity name
-    predicate: str        # Relationship type
-    object: str           # Entity name
+
+    subject: str  # Entity name
+    predicate: str  # Relationship type
+    object: str  # Entity name
     document_id: str
     confidence: float = 1.0
-    context: str = ""     # Snippet where relationship was found
+    context: str = ""  # Snippet where relationship was found
 
 
 @dataclass
 class Triple:
     """Subject-Predicate-Object triple."""
+
     subject: str
     predicate: str
     object: str
@@ -54,9 +58,9 @@ class Triple:
         if not isinstance(other, Triple):
             return False
         return (
-            self.subject.lower() == other.subject.lower() and
-            self.predicate.lower() == other.predicate.lower() and
-            self.object.lower() == other.object.lower()
+            self.subject.lower() == other.subject.lower()
+            and self.predicate.lower() == other.predicate.lower()
+            and self.object.lower() == other.object.lower()
         )
 
 
@@ -91,11 +95,7 @@ JSON:"""
         """
         self.llm = llm
 
-    async def extract(
-        self,
-        text: str,
-        document_id: str
-    ) -> Tuple[List[Entity], List[Relationship]]:
+    async def extract(self, text: str, document_id: str) -> Tuple[List[Entity], List[Relationship]]:
         """
         Extract entities and relationships from text.
 
@@ -112,9 +112,7 @@ JSON:"""
             return self._extract_with_patterns(text, document_id)
 
     async def _extract_with_llm(
-        self,
-        text: str,
-        document_id: str
+        self, text: str, document_id: str
     ) -> Tuple[List[Entity], List[Relationship]]:
         """Extract using LLM."""
         try:
@@ -124,7 +122,8 @@ JSON:"""
             # Parse JSON from response
             # Find JSON block in response
             import re
-            json_match = re.search(r'\{[\s\S]*\}', response)
+
+            json_match = re.search(r"\{[\s\S]*\}", response)
             if not json_match:
                 return [], []
 
@@ -135,7 +134,7 @@ JSON:"""
                     name=e["name"],
                     type=e.get("type", "concept"),
                     document_id=document_id,
-                    confidence=e.get("confidence", 0.8)
+                    confidence=e.get("confidence", 0.8),
                 )
                 for e in data.get("entities", [])
             ]
@@ -146,7 +145,7 @@ JSON:"""
                     predicate=r["predicate"],
                     object=r["object"],
                     document_id=document_id,
-                    confidence=r.get("confidence", 0.8)
+                    confidence=r.get("confidence", 0.8),
                 )
                 for r in data.get("relationships", [])
             ]
@@ -158,9 +157,7 @@ JSON:"""
             return self._extract_with_patterns(text, document_id)
 
     def _extract_with_patterns(
-        self,
-        text: str,
-        document_id: str
+        self, text: str, document_id: str
     ) -> Tuple[List[Entity], List[Relationship]]:
         """Extract using regex patterns (fallback)."""
         import re
@@ -170,35 +167,39 @@ JSON:"""
 
         # Extract capitalized phrases (potential named entities)
         # Pattern: 2-4 capitalized words in sequence
-        cap_pattern = r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b'
+        cap_pattern = r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b"
         for match in re.finditer(cap_pattern, text):
             name = match.group(1)
             if len(name) > 3:  # Skip short matches
-                entities.append(Entity(
-                    name=name,
-                    type="concept",  # Can't determine type without LLM
-                    document_id=document_id,
-                    confidence=0.5
-                ))
+                entities.append(
+                    Entity(
+                        name=name,
+                        type="concept",  # Can't determine type without LLM
+                        document_id=document_id,
+                        confidence=0.5,
+                    )
+                )
 
         # Extract common relationship patterns
         rel_patterns = [
-            (r'(\w+)\s+(?:uses?|using)\s+(\w+)', 'uses'),
-            (r'(\w+)\s+(?:depends?\s+on|requires?)\s+(\w+)', 'depends_on'),
-            (r'(\w+)\s+(?:created?|authored?|wrote)\s+(\w+)', 'created'),
-            (r'(\w+)\s+(?:is\s+part\s+of|belongs?\s+to)\s+(\w+)', 'part_of'),
-            (r'(\w+)\s+(?:mentions?|references?)\s+(\w+)', 'mentions'),
+            (r"(\w+)\s+(?:uses?|using)\s+(\w+)", "uses"),
+            (r"(\w+)\s+(?:depends?\s+on|requires?)\s+(\w+)", "depends_on"),
+            (r"(\w+)\s+(?:created?|authored?|wrote)\s+(\w+)", "created"),
+            (r"(\w+)\s+(?:is\s+part\s+of|belongs?\s+to)\s+(\w+)", "part_of"),
+            (r"(\w+)\s+(?:mentions?|references?)\s+(\w+)", "mentions"),
         ]
 
         for pattern, predicate in rel_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                relationships.append(Relationship(
-                    subject=match.group(1),
-                    predicate=predicate,
-                    object=match.group(2),
-                    document_id=document_id,
-                    confidence=0.4
-                ))
+                relationships.append(
+                    Relationship(
+                        subject=match.group(1),
+                        predicate=predicate,
+                        object=match.group(2),
+                        document_id=document_id,
+                        confidence=0.4,
+                    )
+                )
 
         return entities, relationships
 
@@ -269,19 +270,25 @@ class KnowledgeGraph:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO entities (name, type, document_id, confidence, metadata)
                 VALUES (?, ?, ?, ?, ?)
-            """, (
-                entity.name,
-                entity.type,
-                entity.document_id,
-                entity.confidence,
-                json.dumps(entity.metadata)
-            ))
+            """,
+                (
+                    entity.name,
+                    entity.type,
+                    entity.document_id,
+                    entity.confidence,
+                    json.dumps(entity.metadata),
+                ),
+            )
             conn.commit()
         except Exception as e:
             logger.error(f"Error adding entity: {e}")
+            raise CoreRagDatabaseError(
+                f"Failed to add entity '{entity.name}': {e}", table_name="entities"
+            ) from e
         finally:
             conn.close()
 
@@ -291,29 +298,32 @@ class KnowledgeGraph:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO relationships
                 (subject, predicate, object, document_id, confidence, context)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                rel.subject,
-                rel.predicate,
-                rel.object,
-                rel.document_id,
-                rel.confidence,
-                rel.context
-            ))
+            """,
+                (
+                    rel.subject,
+                    rel.predicate,
+                    rel.object,
+                    rel.document_id,
+                    rel.confidence,
+                    rel.context,
+                ),
+            )
             conn.commit()
         except Exception as e:
             logger.error(f"Error adding relationship: {e}")
+            raise CoreRagDatabaseError(
+                f"Failed to add relationship '{rel.subject} -> {rel.object}': {e}",
+                table_name="relationships",
+            ) from e
         finally:
             conn.close()
 
-    def add_from_extraction(
-        self,
-        entities: List[Entity],
-        relationships: List[Relationship]
-    ):
+    def add_from_extraction(self, entities: List[Entity], relationships: List[Relationship]):
         """Batch add entities and relationships."""
         for entity in entities:
             self.add_entity(entity)
@@ -324,7 +334,7 @@ class KnowledgeGraph:
         self,
         entity_name: str,
         relationship_types: Optional[List[str]] = None,
-        direction: str = "both"  # "outgoing", "incoming", "both"
+        direction: str = "both",  # "outgoing", "incoming", "both"
     ) -> List[Dict]:
         """
         Get entities related to a given entity.
@@ -359,13 +369,15 @@ class KnowledgeGraph:
 
                 cursor.execute(query, params)
                 for row in cursor.fetchall():
-                    results.append({
-                        "entity": row[0],
-                        "relationship": row[1],
-                        "direction": "outgoing",
-                        "document_id": row[2],
-                        "confidence": row[3]
-                    })
+                    results.append(
+                        {
+                            "entity": row[0],
+                            "relationship": row[1],
+                            "direction": "outgoing",
+                            "document_id": row[2],
+                            "confidence": row[3],
+                        }
+                    )
 
             if direction in ("incoming", "both"):
                 query = """
@@ -382,25 +394,22 @@ class KnowledgeGraph:
 
                 cursor.execute(query, params)
                 for row in cursor.fetchall():
-                    results.append({
-                        "entity": row[0],
-                        "relationship": row[1],
-                        "direction": "incoming",
-                        "document_id": row[2],
-                        "confidence": row[3]
-                    })
+                    results.append(
+                        {
+                            "entity": row[0],
+                            "relationship": row[1],
+                            "direction": "incoming",
+                            "document_id": row[2],
+                            "confidence": row[3],
+                        }
+                    )
 
         finally:
             conn.close()
 
         return results
 
-    def find_path(
-        self,
-        start: str,
-        end: str,
-        max_hops: int = 3
-    ) -> Optional[List[Triple]]:
+    def find_path(self, start: str, end: str, max_hops: int = 3) -> Optional[List[Triple]]:
         """
         Find a path between two entities.
 
@@ -432,11 +441,9 @@ class KnowledgeGraph:
             for neighbor in self.get_neighbors(current, direction="both"):
                 entity = neighbor["entity"].lower()
                 if entity not in visited:
-                    new_path = path + [Triple(
-                        subject=current,
-                        predicate=neighbor["relationship"],
-                        object=entity
-                    )]
+                    new_path = path + [
+                        Triple(subject=current, predicate=neighbor["relationship"], object=entity)
+                    ]
                     queue.append((entity, new_path))
 
         return None
@@ -463,7 +470,7 @@ class KnowledgeGraph:
                 "total_entities": entity_count,
                 "total_relationships": rel_count,
                 "entity_types": entity_types,
-                "relationship_types": rel_types
+                "relationship_types": rel_types,
             }
 
         finally:
@@ -479,7 +486,8 @@ class KnowledgeGraph:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT e2.document_id, GROUP_CONCAT(DISTINCT e2.name)
                 FROM entities e1
                 JOIN entities e2 ON LOWER(e1.name) = LOWER(e2.name)
@@ -488,7 +496,9 @@ class KnowledgeGraph:
                 GROUP BY e2.document_id
                 ORDER BY COUNT(DISTINCT e2.name) DESC
                 LIMIT ?
-            """, (document_id, limit))
+            """,
+                (document_id, limit),
+            )
 
             return [
                 {"document_id": row[0], "shared_entities": row[1].split(",")}
@@ -529,7 +539,7 @@ class GraphEnhancedRetrieval:
         query_vector: List[float],
         k: int = 5,
         graph_expansion: int = 2,  # How many neighbor hops
-        **kwargs
+        **kwargs,
     ) -> List[Dict]:
         """
         Search with graph-based expansion.
@@ -541,10 +551,7 @@ class GraphEnhancedRetrieval:
         """
         # Step 1: Initial vector search
         initial_results = await self.retriever.search(
-            query=query,
-            query_vector=query_vector,
-            k=k,
-            **kwargs
+            query=query, query_vector=query_vector, k=k, **kwargs
         )
 
         # Step 2: Extract entities mentioned in results
@@ -554,10 +561,7 @@ class GraphEnhancedRetrieval:
             # Query graph for entities in this document
             conn = sqlite3.connect(self.graph.db_path)
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT DISTINCT name FROM entities WHERE document_id = ?",
-                (doc_id,)
-            )
+            cursor.execute("SELECT DISTINCT name FROM entities WHERE document_id = ?", (doc_id,))
             for row in cursor.fetchall():
                 mentioned_entities.add(row[0])
             conn.close()
@@ -580,6 +584,6 @@ class GraphEnhancedRetrieval:
             "results": initial_results,
             "graph_context": {
                 "mentioned_entities": list(mentioned_entities),
-                "related_documents": list(new_doc_ids)[:5]
-            }
+                "related_documents": list(new_doc_ids)[:5],
+            },
         }

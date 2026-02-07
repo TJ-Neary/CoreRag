@@ -6,19 +6,20 @@ Enables long-running jobs to be interrupted and resumed without losing progress.
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+import shutil
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import uuid
-import shutil
 
 logger = logging.getLogger(__name__)
 
 
 class JobStatus(Enum):
     """Status of a processing job."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -28,6 +29,7 @@ class JobStatus(Enum):
 
 class FileStatus(Enum):
     """Status of a file within a job."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -38,6 +40,7 @@ class FileStatus(Enum):
 @dataclass
 class FileProgress:
     """Progress tracking for a single file."""
+
     path: str
     status: FileStatus = FileStatus.PENDING
     doc_id: Optional[str] = None
@@ -49,6 +52,7 @@ class FileProgress:
 @dataclass
 class JobCheckpoint:
     """Checkpoint for a processing job."""
+
     job_id: str
     job_type: str
     status: JobStatus = JobStatus.PENDING
@@ -125,16 +129,15 @@ class CheckpointManager:
         Args:
             checkpoint_dir: Directory to store checkpoints
         """
-        self.checkpoint_dir = checkpoint_dir or Path.home() / ".corerag" / "checkpoints"
+        from src.config import CHECKPOINT_DIR
+
+        self.checkpoint_dir = checkpoint_dir or CHECKPOINT_DIR
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.completed_dir = self.checkpoint_dir / "completed"
         self.completed_dir.mkdir(exist_ok=True)
 
     def create_job(
-        self,
-        job_type: str,
-        files: List[Path],
-        config: Optional[Dict[str, Any]] = None
+        self, job_type: str, files: List[Path], config: Optional[Dict[str, Any]] = None
     ) -> JobCheckpoint:
         """
         Create a new processing job.
@@ -156,7 +159,7 @@ class CheckpointManager:
             source_paths=[str(f) for f in files],
             total_files=len(files),
             config=config or {},
-            files={str(f): {"status": FileStatus.PENDING.value} for f in files}
+            files={str(f): {"status": FileStatus.PENDING.value} for f in files},
         )
 
         self._save(checkpoint)
@@ -213,7 +216,7 @@ class CheckpointManager:
         path_str = str(file_path)
         job.files[path_str] = {
             "status": FileStatus.PROCESSING.value,
-            "started_at": datetime.now().isoformat()
+            "started_at": datetime.now().isoformat(),
         }
         job.current_file = path_str
         job.updated_at = datetime.now().isoformat()
@@ -221,10 +224,7 @@ class CheckpointManager:
         self._save(job)
 
     def mark_file_completed(
-        self,
-        job_id: str,
-        file_path: Path,
-        doc_id: Optional[str] = None
+        self, job_id: str, file_path: Path, doc_id: Optional[str] = None
     ) -> None:
         """Mark a file as successfully processed."""
         job = self.get_job(job_id)
@@ -235,7 +235,7 @@ class CheckpointManager:
         job.files[path_str] = {
             "status": FileStatus.COMPLETED.value,
             "doc_id": doc_id,
-            "completed_at": datetime.now().isoformat()
+            "completed_at": datetime.now().isoformat(),
         }
         job.processed += 1
         job.succeeded += 1
@@ -244,12 +244,7 @@ class CheckpointManager:
 
         self._save(job)
 
-    def mark_file_failed(
-        self,
-        job_id: str,
-        file_path: Path,
-        error: str
-    ) -> None:
+    def mark_file_failed(self, job_id: str, file_path: Path, error: str) -> None:
         """Mark a file as failed."""
         job = self.get_job(job_id)
         if not job:
@@ -259,27 +254,20 @@ class CheckpointManager:
         job.files[path_str] = {
             "status": FileStatus.FAILED.value,
             "error": error,
-            "completed_at": datetime.now().isoformat()
+            "completed_at": datetime.now().isoformat(),
         }
         job.processed += 1
         job.failed += 1
         job.current_file = None
-        job.errors.append({
-            "file": path_str,
-            "error": error,
-            "timestamp": datetime.now().isoformat()
-        })
+        job.errors.append(
+            {"file": path_str, "error": error, "timestamp": datetime.now().isoformat()}
+        )
         job.updated_at = datetime.now().isoformat()
 
         self._save(job)
         logger.warning(f"File failed: {path_str}: {error}")
 
-    def mark_file_skipped(
-        self,
-        job_id: str,
-        file_path: Path,
-        reason: str
-    ) -> None:
+    def mark_file_skipped(self, job_id: str, file_path: Path, reason: str) -> None:
         """Mark a file as skipped (e.g., duplicate)."""
         job = self.get_job(job_id)
         if not job:
@@ -289,7 +277,7 @@ class CheckpointManager:
         job.files[path_str] = {
             "status": FileStatus.SKIPPED.value,
             "reason": reason,
-            "completed_at": datetime.now().isoformat()
+            "completed_at": datetime.now().isoformat(),
         }
         job.processed += 1
         job.skipped += 1
@@ -327,11 +315,9 @@ class CheckpointManager:
 
         job.status = JobStatus.FAILED
         job.updated_at = datetime.now().isoformat()
-        job.errors.append({
-            "type": "job_failure",
-            "error": error,
-            "timestamp": datetime.now().isoformat()
-        })
+        job.errors.append(
+            {"type": "job_failure", "error": error, "timestamp": datetime.now().isoformat()}
+        )
 
         self._save(job)
         logger.error(f"Job {job_id} failed: {error}")
@@ -351,7 +337,9 @@ class CheckpointManager:
             "failed": job.failed,
             "skipped": job.skipped,
             "remaining": job.total_files - job.processed,
-            "percent_complete": (job.processed / job.total_files * 100) if job.total_files > 0 else 0,
+            "percent_complete": (
+                (job.processed / job.total_files * 100) if job.total_files > 0 else 0
+            ),
             "current_file": job.current_file,
         }
 

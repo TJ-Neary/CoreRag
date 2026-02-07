@@ -1,16 +1,15 @@
 import hashlib
 import logging
-import os
-import re
 from datetime import datetime
 from pathlib import Path
 
 from src import config
-from src.staging import get_item, update_item, load_manifest, save_manifest
 from src.archiver import archive_to_target
+from src.correction_log import log_correction
+from src.exceptions import ProcessingError
 from src.exporter import export_to_vault
 from src.extractor import extract_text
-from src.correction_log import log_correction
+from src.staging import get_item, update_item
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +27,7 @@ def _redact_pii(text: str, file_name: str) -> str:
     while stripping actual sensitive values before they reach Claude via MCP.
     """
     try:
-        from src.utils.privacy_audit import (
-            PrivacyScanner, load_custom_pii_terms, scan_custom_terms
-        )
+        from src.utils.privacy_audit import PrivacyScanner, load_custom_pii_terms, scan_custom_terms
 
         scanner = PrivacyScanner()  # hybrid: Presidio NER + regex patterns
         result = scanner.scan(text, file_path=file_name)
@@ -64,7 +61,7 @@ def _redact_pii(text: str, file_name: str) -> str:
         redacted = text
         for match in filtered:
             placeholder = f"[REDACTED-{match.data_type.value.upper()}]"
-            redacted = redacted[:match.start_pos] + placeholder + redacted[match.end_pos:]
+            redacted = redacted[: match.start_pos] + placeholder + redacted[match.end_pos :]
 
         logger.info(
             f"PII redaction: replaced {len(filtered)} matches in {file_name} "
@@ -72,6 +69,8 @@ def _redact_pii(text: str, file_name: str) -> str:
         )
         return redacted
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.error(f"PII redaction failed for {file_name}: {e}", exc_info=True)
         return text  # Fall back to original text rather than blocking
@@ -81,6 +80,7 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
     """Chunk, embed, and store document text in the LanceDB vector database."""
     try:
         import lancedb
+
         from src.chunking.parent_child import ParentChildChunker
         from src.embeddings.embedding_service import create_embedding_service
 
@@ -120,29 +120,33 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
 
         parent_data = []
         for p in parents:
-            parent_data.append({
-                "id": p.id,
-                "document_id": p.document_id,
-                "content": p.content,
-                "source_path": file_name,
-                "section_title": p.section_title or "",
-                "token_count": p.token_count,
-                "created_at": datetime.now().isoformat(),
-                "tags": tags_str,
-            })
+            parent_data.append(
+                {
+                    "id": p.id,
+                    "document_id": p.document_id,
+                    "content": p.content,
+                    "source_path": file_name,
+                    "section_title": p.section_title or "",
+                    "token_count": p.token_count,
+                    "created_at": datetime.now().isoformat(),
+                    "tags": tags_str,
+                }
+            )
 
         child_data = []
         for c, emb in zip(children, embeddings):
-            child_data.append({
-                "id": c.id,
-                "parent_id": c.parent_id,
-                "document_id": c.document_id,
-                "content": c.content,
-                "vector": emb,
-                "chunk_index": c.chunk_index,
-                "source_path": file_name,
-                "tags": tags_str,
-            })
+            child_data.append(
+                {
+                    "id": c.id,
+                    "parent_id": c.parent_id,
+                    "document_id": c.document_id,
+                    "content": c.content,
+                    "vector": emb,
+                    "chunk_index": c.chunk_index,
+                    "source_path": file_name,
+                    "tags": tags_str,
+                }
+            )
 
         # Store parents
         try:
@@ -166,29 +170,30 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                 child_table = db.open_table("child_chunks")
                 child_table.add(child_data)
 
-        logger.info(
-            f"RAG indexed: {file_name} ({len(parents)} parents, {len(children)} children)"
-        )
+        logger.info(f"RAG indexed: {file_name} ({len(parents)} parents, {len(children)} children)")
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.error(f"RAG indexing failed for {file_name}: {e}", exc_info=True)
+        raise ProcessingError(f"RAG indexing failed: {e}", file_path=file_name) from e
 
 
 def _extract_entities(text: str, file_name: str) -> None:
     """Extract entities and relationships from text, store in knowledge graph."""
     try:
         import asyncio
-        from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
 
-        graph_db_path = Path(
-            str(config.DB_PATH)
-        ).parent / "knowledge_graph.db"
+        from src.graph.knowledge_graph import EntityExtractor, KnowledgeGraph
+
+        graph_db_path = Path(str(config.DB_PATH)).parent / "knowledge_graph.db"
         graph = KnowledgeGraph(graph_db_path)
 
         # Try to use Ollama for better multi-word entity extraction
         llm = None
         try:
             from src.utils.ollama_llm import OllamaLLM
+
             llm = OllamaLLM()
         except Exception:
             pass
@@ -215,6 +220,8 @@ def _extract_entities(text: str, file_name: str) -> None:
         else:
             logger.info(f"Knowledge graph: no entities extracted from {file_name}")
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.warning(f"Entity extraction failed for {file_name}: {e}")
 
@@ -269,23 +276,29 @@ def execute_approved_item(item_id: str):
 
         # Build final metadata from human-reviewed proposed values
         final_metadata = item["metadata"].copy()
-        final_metadata.update({
-            "category": proposed.get("category"),
-            "year": proposed.get("year"),
-            "type": proposed.get("type"),
-            "tags": proposed.get("tags", []),
-        })
+        final_metadata.update(
+            {
+                "category": proposed.get("category"),
+                "year": proposed.get("year"),
+                "type": proposed.get("type"),
+                "tags": proposed.get("tags", []),
+            }
+        )
 
         # Extract full text BEFORE archiving (archive moves the file)
         try:
             export_text = extract_text(current_path)
             if not export_text:
-                logger.warning(f"Text extraction returned empty for {current_path.name}, using staged text")
+                logger.warning(
+                    f"Text extraction returned empty for {current_path.name}, using staged text"
+                )
                 export_text = item["redacted_text"]
             else:
                 logger.info(f"Extracted {len(export_text)} chars from {current_path.name}")
         except Exception as e:
-            logger.warning(f"Text extraction failed for {current_path.name}: {e}, using staged text")
+            logger.warning(
+                f"Text extraction failed for {current_path.name}: {e}, using staged text"
+            )
             export_text = item["redacted_text"]
 
         # If PII is flagged, redact the full text for both Obsidian and RAG.
@@ -316,6 +329,7 @@ def execute_approved_item(item_id: str):
         # Track document version
         try:
             from src.utils.versioning import VersionManager
+
             vm = VersionManager()
             document_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
             vm.create_version(
@@ -333,6 +347,7 @@ def execute_approved_item(item_id: str):
         # Register tags in central tag registry
         try:
             from src.utils.tagging import TagManager
+
             _tm = TagManager()
             for tag in final_metadata.get("tags", []):
                 _tm.create_tag(tag)
@@ -346,7 +361,9 @@ def execute_approved_item(item_id: str):
         update_item(item_id, {"status": "completed"})
         return True
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.error(f"Execution failed for {item_id}: {e}")
         update_item(item_id, {"status": "error", "error": str(e)})
-        return False
+        raise ProcessingError(f"Execution failed: {e}", file_path=str(original_path)) from e

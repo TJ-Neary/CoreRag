@@ -1,34 +1,98 @@
 import gc
-import os
-import threading
 import logging
+import os
+import secrets
+import threading
 import time
 from pathlib import Path
 
 import psutil
 import uvicorn
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Security
 from fastapi.responses import HTMLResponse
+from fastapi.security import APIKeyHeader
 from fastapi.templating import Jinja2Templates
 
-from src.staging import get_pending_items, update_item, get_item
-from src.executor import execute_approved_item
+from src.api.models import (
+    DeleteResponse,
+    IngestRequest,
+    IngestResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResultItem,
+    StatsResponse,
+)
 from src.batch_processor import BatchProcessor
+from src.config import DB_PATH, EMBEDDING_MODEL, STATE_DIR, validate_config
+from src.exceptions import CoreRagError
+from src.executor import execute_approved_item
 from src.folder_manager import (
+    ensure_folder_in_structure,
+    get_folder_choices,
     load_folder_structure,
     save_folder_structure,
-    get_folder_choices,
-    ensure_folder_in_structure,
 )
 from src.intelligence import suggest_folder_structure
-from src.config import validate_config
+from src.staging import get_item, get_pending_items, update_item
+
+# Logging (centralized: colored console, rotating file, JSON, error-only)
+from src.utils.logging_config import setup_logging
+from src.utils.query_sanitize import build_eq_clause, build_tag_clauses
 from src.utils.tagging import TagManager
 
-# Logging
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(
+    title="CoreRag API",
+    description="Local-first knowledge engine with RAG capabilities",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+)
+
+# ── API Key Authentication ──────────────────────────────────────────────────────
+# Set CORERAG_API_KEY in .env or environment to enable authentication.
+# If not set, API endpoints are open (for local development).
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _get_api_key() -> str | None:
+    """Get the configured API key from environment."""
+    return os.getenv("CORERAG_API_KEY")
+
+
+async def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> bool:
+    """
+    Verify API key for protected endpoints.
+
+    If CORERAG_API_KEY is not set, authentication is disabled (local dev mode).
+    If set, the X-API-Key header must match.
+    """
+    expected_key = _get_api_key()
+
+    # No key configured = auth disabled (local dev mode)
+    if not expected_key:
+        return True
+
+    # Key configured but not provided
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Provide X-API-Key header.",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+
+    # Constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(api_key.encode(), expected_key.encode()):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key",
+        )
+
+    return True
+
 
 # Ensure vault/archive/inbox directories exist
 validate_config()
@@ -48,10 +112,10 @@ _tag_manager = TagManager()
 
 # ── Commit Runner (sequential, memory-safe) ──────────────────────────────────
 
-MEMORY_PAUSE_THRESHOLD = 92   # Pause at this % RAM
+MEMORY_PAUSE_THRESHOLD = 92  # Pause at this % RAM
 MEMORY_RESUME_THRESHOLD = 88  # Resume when below this %
-MEMORY_CHECK_INTERVAL = 2     # Seconds between checks while paused
-COMMIT_BATCH_SIZE = 5         # Process this many, then check memory
+MEMORY_CHECK_INTERVAL = 2  # Seconds between checks while paused
+COMMIT_BATCH_SIZE = 5  # Process this many, then check memory
 
 _commit_state = {
     "status": "idle",  # idle | running | paused | stopped | complete | error
@@ -99,15 +163,17 @@ def _run_commit(item_ids: list[str]) -> None:
     _commit_stop_requested = False
 
     with _commit_lock:
-        _commit_state.update({
-            "status": "running",
-            "total": len(item_ids),
-            "committed": 0,
-            "current_file": "",
-            "errors": [],
-            "memory_pct": _get_memory_pct(),
-            "paused_reason": "",
-        })
+        _commit_state.update(
+            {
+                "status": "running",
+                "total": len(item_ids),
+                "committed": 0,
+                "current_file": "",
+                "errors": [],
+                "memory_pct": _get_memory_pct(),
+                "paused_reason": "",
+            }
+        )
 
     for i, item_id in enumerate(item_ids):
         # Check for stop
@@ -115,7 +181,9 @@ def _run_commit(item_ids: list[str]) -> None:
             if _commit_stop_requested:
                 _commit_state["status"] = "stopped"
                 _commit_state["current_file"] = ""
-                _commit_state["paused_reason"] = f"Stopped by user after {i} of {len(item_ids)} files"
+                _commit_state["paused_reason"] = (
+                    f"Stopped by user after {i} of {len(item_ids)} files"
+                )
                 logger.info(f"Commit stopped by user after {i} files.")
                 return
 
@@ -132,7 +200,9 @@ def _run_commit(item_ids: list[str]) -> None:
             if _commit_stop_requested:
                 _commit_state["status"] = "stopped"
                 _commit_state["current_file"] = ""
-                _commit_state["paused_reason"] = f"Stopped by user after {i} of {len(item_ids)} files"
+                _commit_state["paused_reason"] = (
+                    f"Stopped by user after {i} of {len(item_ids)} files"
+                )
                 logger.info(f"Commit stopped by user after {i} files.")
                 return
             _commit_state["status"] = "running"
@@ -165,7 +235,9 @@ def _run_commit(item_ids: list[str]) -> None:
             success = execute_approved_item(item_id)
             if not success:
                 with _commit_lock:
-                    _commit_state["errors"].append({"file": filename, "error": "Execution returned False"})
+                    _commit_state["errors"].append(
+                        {"file": filename, "error": "Execution returned False"}
+                    )
         except Exception as e:
             logger.error(f"Commit error for {filename}: {e}", exc_info=True)
             with _commit_lock:
@@ -185,6 +257,7 @@ def _run_commit(item_ids: list[str]) -> None:
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -215,6 +288,7 @@ async def approve_queue_item(item_id: str, background_tasks: BackgroundTasks):
 
 
 # ── Batch Analysis Routes ────────────────────────────────────────────────────
+
 
 @app.get("/api/inbox-count")
 async def inbox_count():
@@ -260,6 +334,7 @@ async def batch_stop():
 
 
 # ── Commit Routes (sequential, memory-safe) ──────────────────────────────────
+
 
 @app.post("/api/commit-all")
 async def commit_all():
@@ -314,6 +389,7 @@ async def commit_stop():
 
 # ── Folder Structure Routes ──────────────────────────────────────────────────
 
+
 @app.get("/api/folder-structure")
 async def get_folder_structure():
     structure = load_folder_structure()
@@ -335,15 +411,17 @@ async def suggest_folders():
 
     documents = []
     for item_id, item in pending.items():
-        documents.append({
-            "id": item_id,
-            "filename": item.get("proposed", {}).get("filename", "unknown"),
-            "category": item.get("proposed", {}).get("category", "Unsorted"),
-            "summary": item.get("metadata", {}).get("summary", ""),
-        })
+        documents.append(
+            {
+                "id": item_id,
+                "filename": item.get("proposed", {}).get("filename", "unknown"),
+                "category": item.get("proposed", {}).get("category", "Unsorted"),
+                "summary": item.get("metadata", {}).get("summary", ""),
+            }
+        )
 
     existing = load_folder_structure()
-    result = suggest_folder_structure(documents, existing)
+    result = await suggest_folder_structure(documents, existing)
 
     if result.get("folders"):
         merged = existing.copy()
@@ -355,13 +433,14 @@ async def suggest_folders():
 
 # ── RAG Browser Routes ────────────────────────────────────────────────────────
 
+
 @app.get("/api/rag-index")
 async def rag_index():
     """Return a summary of all files indexed in the RAG database."""
     try:
         import lancedb
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        db = lancedb.connect(db_path)
+
+        db = lancedb.connect(DB_PATH)
 
         parents = db.open_table("parent_chunks")
         children = db.open_table("child_chunks")
@@ -372,7 +451,12 @@ async def rag_index():
         files = {}
         for i, sp in enumerate(p_dict.get("source_path", [])):
             if sp not in files:
-                files[sp] = {"source_path": sp, "parent_chunks": 0, "child_chunks": 0, "preview": ""}
+                files[sp] = {
+                    "source_path": sp,
+                    "parent_chunks": 0,
+                    "child_chunks": 0,
+                    "preview": "",
+                }
             files[sp]["parent_chunks"] += 1
             if not files[sp]["preview"] and p_dict.get("content"):
                 files[sp]["preview"] = p_dict["content"][i][:200]
@@ -396,12 +480,12 @@ async def rag_delete(file_name: str):
     """Remove a file from the RAG database by source_path filename."""
     try:
         import lancedb
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        db = lancedb.connect(db_path)
+
+        db = lancedb.connect(DB_PATH)
 
         for table_name in ["parent_chunks", "child_chunks"]:
             tbl = db.open_table(table_name)
-            tbl.delete(f"source_path = '{file_name}'")
+            tbl.delete(build_eq_clause("source_path", file_name))
 
         return {"success": True, "deleted": file_name}
     except Exception as e:
@@ -410,6 +494,7 @@ async def rag_delete(file_name: str):
 
 
 # ── RAG Verification Routes ──────────────────────────────────────────────────
+
 
 @app.get("/api/rag-verify")
 async def rag_verify():
@@ -443,12 +528,14 @@ async def rag_verify():
 
 # ── Episodic Memory Routes ────────────────────────────────────────────────────
 
+
 @app.get("/api/user-facts")
 async def get_user_facts():
     """Get user facts and correction patterns for dashboard display."""
     try:
         from src.memory.episodic_memory import EpisodicMemoryManager
-        storage_path = Path.home() / ".corerag" / "profiles"
+
+        storage_path = STATE_DIR / "profiles"
         manager = EpisodicMemoryManager(storage_path)
         profile = manager.load_or_create("default")
 
@@ -467,13 +554,16 @@ async def get_user_facts():
         corrections = []
         try:
             from src.correction_log import _load_corrections
+
             raw = _load_corrections()
             for c in raw[-20:]:
-                corrections.append({
-                    "file": c.get("original_filename", ""),
-                    "corrections": c.get("corrections", {}),
-                    "timestamp": c.get("timestamp", ""),
-                })
+                corrections.append(
+                    {
+                        "file": c.get("original_filename", ""),
+                        "corrections": c.get("corrections", {}),
+                        "timestamp": c.get("timestamp", ""),
+                    }
+                )
         except Exception:
             pass
 
@@ -493,7 +583,8 @@ async def delete_user_fact(index: int):
     """Delete a user fact by index."""
     try:
         from src.memory.episodic_memory import EpisodicMemoryManager
-        storage_path = Path.home() / ".corerag" / "profiles"
+
+        storage_path = STATE_DIR / "profiles"
         manager = EpisodicMemoryManager(storage_path)
         profile = manager.load_or_create("default")
 
@@ -507,6 +598,7 @@ async def delete_user_fact(index: int):
 
 
 # ── Chat Routes (LLM with RAG context) ───────────────────────────────────────
+
 
 @app.post("/api/chat")
 async def chat(request: Request):
@@ -526,10 +618,10 @@ async def chat(request: Request):
     if use_rag:
         try:
             import lancedb
+
             from src.embeddings.embedding_service import create_embedding_service
 
-            db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-            db = lancedb.connect(db_path)
+            db = lancedb.connect(DB_PATH)
 
             if "child_chunks" in db.table_names():
                 embedder = create_embedding_service()
@@ -565,6 +657,7 @@ async def chat(request: Request):
     # Call Ollama
     try:
         import httpx
+
         ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
         ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
@@ -590,13 +683,19 @@ async def chat(request: Request):
 
 # ── Tag Management Routes ────────────────────────────────────────────────────
 
+
 @app.get("/api/tags")
 async def list_tags():
     """List all known tags from the tag registry."""
     tags = _tag_manager.get_all_tags()
     return {
         "tags": [
-            {"name": t.name, "color": t.color, "use_count": t.use_count, "description": t.description}
+            {
+                "name": t.name,
+                "color": t.color,
+                "use_count": t.use_count,
+                "description": t.description,
+            }
             for t in tags
         ]
     }
@@ -637,19 +736,20 @@ async def update_document_tags(doc_id: str, request: Request):
 
     try:
         import lancedb
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        db = lancedb.connect(db_path)
+
+        db = lancedb.connect(DB_PATH)
 
         updated = 0
         for table_name in ["parent_chunks", "child_chunks"]:
             if table_name in db.table_names():
                 tbl = db.open_table(table_name)
                 # LanceDB update: delete + re-add rows matching document_id
-                rows = tbl.search().where(f"document_id = '{doc_id}'").limit(10000).to_list()
+                doc_filter = build_eq_clause("document_id", doc_id)
+                rows = tbl.search().where(doc_filter).limit(10000).to_list()
                 if rows:
                     for row in rows:
                         row["tags"] = tags_str
-                    tbl.delete(f"document_id = '{doc_id}'")
+                    tbl.delete(doc_filter)
                     tbl.add(rows)
                     updated += len(rows)
 
@@ -665,6 +765,7 @@ async def update_document_tags(doc_id: str, request: Request):
 
 # ── Legacy bulk approve (kept for backwards compat) ──────────────────────────
 
+
 @app.post("/api/approve-all")
 async def approve_all():
     """Redirects to commit-all for the new workflow."""
@@ -672,6 +773,7 @@ async def approve_all():
 
 
 # ── Core Memory API (v1) — For external AI systems ──────────────────────────
+
 
 @app.get("/api/v1/manifest")
 async def api_manifest():
@@ -684,12 +786,10 @@ async def api_manifest():
     """
     import lancedb
 
-    db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-
     # Collect live stats
     stats = {"documents": 0, "chunks": 0, "entities": 0, "relationships": 0}
     try:
-        db = lancedb.connect(db_path)
+        db = lancedb.connect(DB_PATH)
         if "child_chunks" in db.table_names():
             stats["chunks"] = db.open_table("child_chunks").count_rows()
         if "parent_chunks" in db.table_names():
@@ -700,7 +800,8 @@ async def api_manifest():
 
     try:
         from src.graph.knowledge_graph import KnowledgeGraph
-        graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+
+        graph_db_path = STATE_DIR / "knowledge_graph.db"
         if graph_db_path.exists():
             graph = KnowledgeGraph(graph_db_path)
             gs = graph.get_stats()
@@ -714,19 +815,35 @@ async def api_manifest():
         "version": "1.0",
         "description": "Local-first Personal Knowledge Management RAG database",
         "schema": {
-            "embedding_model": "all-MiniLM-L6-v2",
+            "embedding_model": EMBEDDING_MODEL,
             "embedding_dimensions": 384,
             "chunking_strategy": "parent-child (512 token children, 2048 token parents)",
             "vector_db": "LanceDB",
             "tables": {
                 "parent_chunks": {
-                    "fields": ["id", "document_id", "content", "source_path",
-                               "section_title", "token_count", "created_at", "tags"],
+                    "fields": [
+                        "id",
+                        "document_id",
+                        "content",
+                        "source_path",
+                        "section_title",
+                        "token_count",
+                        "created_at",
+                        "tags",
+                    ],
                     "description": "Full-context parent chunks for retrieval augmentation",
                 },
                 "child_chunks": {
-                    "fields": ["id", "parent_id", "document_id", "content",
-                               "vector", "chunk_index", "source_path", "tags"],
+                    "fields": [
+                        "id",
+                        "parent_id",
+                        "document_id",
+                        "content",
+                        "vector",
+                        "chunk_index",
+                        "source_path",
+                        "tags",
+                    ],
                     "description": "Embedded child chunks for vector search",
                 },
             },
@@ -783,73 +900,85 @@ async def api_manifest():
             "pii_detection": True,
             "dedup_check": False,
         },
+        "authentication": {
+            "enabled": bool(_get_api_key()),
+            "type": "api_key",
+            "header": "X-API-Key",
+            "note": "This manifest endpoint is always public. All other endpoints require X-API-Key header when CORERAG_API_KEY is set.",
+        },
         "stats": stats,
     }
 
 
-@app.get("/api/v1/stats")
-async def api_stats():
+@app.get("/api/v1/stats", response_model=StatsResponse)
+async def api_stats(_: bool = Depends(verify_api_key)) -> StatsResponse:
     """Database statistics for health monitoring."""
     import lancedb
 
-    db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+    db_path = str(DB_PATH)
 
-    stats = {
-        "documents": 0,
-        "parent_chunks": 0,
-        "child_chunks": 0,
-        "entities": 0,
-        "relationships": 0,
-    }
+    documents = 0
+    parent_chunks = 0
+    child_chunks = 0
+    entities = 0
+    relationships = 0
 
     try:
         db = lancedb.connect(db_path)
         if "parent_chunks" in db.table_names():
             pt = db.open_table("parent_chunks")
-            stats["parent_chunks"] = pt.count_rows()
+            parent_chunks = pt.count_rows()
             sources = pt.to_arrow().column("source_path").to_pylist()
-            stats["documents"] = len(set(sources))
+            documents = len(set(sources))
         if "child_chunks" in db.table_names():
-            stats["child_chunks"] = db.open_table("child_chunks").count_rows()
+            child_chunks = db.open_table("child_chunks").count_rows()
     except Exception as e:
         logger.error(f"Stats query failed: {e}")
 
     try:
         from src.graph.knowledge_graph import KnowledgeGraph
-        graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+
+        graph_db_path = STATE_DIR / "knowledge_graph.db"
         if graph_db_path.exists():
             graph = KnowledgeGraph(graph_db_path)
             gs = graph.get_stats()
-            stats["entities"] = gs["total_entities"]
-            stats["relationships"] = gs["total_relationships"]
+            entities = gs["total_entities"]
+            relationships = gs["total_relationships"]
     except Exception:
         pass
 
-    return stats
+    return StatsResponse(
+        documents=documents,
+        parent_chunks=parent_chunks,
+        child_chunks=child_chunks,
+        entities=entities,
+        relationships=relationships,
+    )
 
 
-@app.post("/api/v1/search")
-async def api_search(request: Request):
+@app.post("/api/v1/search", response_model=SearchResponse)
+async def api_search(
+    request_body: SearchRequest, _: bool = Depends(verify_api_key)
+) -> SearchResponse:
     """
     Semantic search over the knowledge base.
 
-    Input: {"query": "...", "k": 5, "use_hyde": false}
-    Output: {"results": [...], "total": N}
+    Performs vector similarity search with optional HyDE expansion and tag filtering.
     """
-    body = await request.json()
-    query = body.get("query", "")
-    k = body.get("k", 5)
-    use_hyde = body.get("use_hyde", False)
-    tags = body.get("tags", [])
+    query = request_body.query
+    k = request_body.k
+    use_hyde = request_body.use_hyde
+    tags = request_body.tags
 
     if not query:
-        return {"error": "No query provided", "results": []}
+        return SearchResponse(error="No query provided", results=[], total=0, query="")
 
     try:
         import lancedb
+
         from src.embeddings.embedding_service import create_embedding_service
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+        db_path = str(DB_PATH)
         db = lancedb.connect(db_path)
 
         if "child_chunks" not in db.table_names():
@@ -862,6 +991,7 @@ async def api_search(request: Request):
         if use_hyde:
             try:
                 from src.search.hyde import create_hyde_expander
+
                 hyde = create_hyde_expander(
                     backend="ollama",
                     model=os.getenv("OLLAMA_MODEL", "qwen2.5:32b"),
@@ -878,8 +1008,7 @@ async def api_search(request: Request):
 
         # Apply tag filtering if specified
         if tags:
-            tag_clauses = [f"tags LIKE '%,{t},%'" for t in tags]
-            search_op = search_op.where(" AND ".join(tag_clauses))
+            search_op = search_op.where(build_tag_clauses(tags))
 
         results_raw = search_op.to_list()
 
@@ -888,55 +1017,52 @@ async def api_search(request: Request):
             # Parse tags from comma-delimited string back to list
             raw_tags = r.get("tags", "")
             result_tags = [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
-            results.append({
-                "content": r.get("content", ""),
-                "source_path": r.get("source_path", ""),
-                "document_id": r.get("document_id", ""),
-                "parent_id": r.get("parent_id", ""),
-                "chunk_index": r.get("chunk_index", 0),
-                "score": float(r.get("_distance", 0)),
-                "tags": result_tags,
-            })
+            results.append(
+                SearchResultItem(
+                    content=r.get("content", ""),
+                    source_path=r.get("source_path", ""),
+                    document_id=r.get("document_id", ""),
+                    parent_id=r.get("parent_id", ""),
+                    chunk_index=r.get("chunk_index", 0),
+                    score=float(r.get("_distance", 0)),
+                    tags=result_tags,
+                )
+            )
 
-        return {"results": results, "total": len(results), "query": query}
+        return SearchResponse(results=results, total=len(results), query=query)
 
+    except CoreRagError as e:
+        logger.error(f"Search API failed: {e}")
+        return SearchResponse(error=str(e), results=[], total=0, query=query)
     except Exception as e:
         logger.error(f"Search API failed: {e}", exc_info=True)
-        return {"error": str(e), "results": []}
+        return SearchResponse(error=str(e), results=[], total=0, query=query)
 
 
-@app.post("/api/v1/ingest")
-async def api_ingest(request: Request):
+@app.post("/api/v1/ingest", response_model=IngestResponse)
+async def api_ingest(
+    request_body: IngestRequest, _: bool = Depends(verify_api_key)
+) -> IngestResponse:
     """
     Ingest text content into the knowledge base.
 
-    Input: {
-        "content": "...",
-        "source": "ai-assistant-note",
-        "metadata": {"category": "notes", "year": "2026", "tags": []}
-    }
-    Output: {"document_id": "abc123", "chunks_created": 12}
+    Chunks content, generates embeddings, and indexes for search.
     """
     import hashlib
 
-    body = await request.json()
-    content = body.get("content", "")
-    source = body.get("source", "api-ingest")
-    metadata = body.get("metadata", {})
-
-    if not content:
-        return {"error": "No content provided"}
-
-    if len(content) > 100000:
-        return {"error": f"Content too large ({len(content)} chars). Max 100,000."}
+    content = request_body.content
+    source = request_body.source
+    metadata = request_body.metadata
 
     try:
-        import lancedb
-        from src.chunking.parent_child import ParentChildChunker
-        from src.embeddings.embedding_service import create_embedding_service
         from datetime import datetime
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+        import lancedb
+
+        from src.chunking.parent_child import ParentChildChunker
+        from src.embeddings.embedding_service import create_embedding_service
+
+        db_path = str(DB_PATH)
         db = lancedb.connect(db_path)
         chunker = ParentChildChunker()
         embedder = create_embedding_service()
@@ -950,49 +1076,59 @@ async def api_ingest(request: Request):
                 "source_path": source,
                 "file_type": "api_ingest",
                 "file_name": source,
-                "category": metadata.get("category", ""),
-                "year": metadata.get("year", ""),
+                "category": metadata.category or "",
+                "year": metadata.year or "",
             },
         )
 
         if not children:
-            return {"error": "Content too short to create chunks", "document_id": document_id}
+            return IngestResponse(
+                error="Content too short to create chunks",
+                document_id=document_id,
+                source=source,
+                chunks_created=0,
+                parent_chunks=0,
+            )
 
         child_texts = [c.content for c in children]
         embeddings = embedder.embed_documents(child_texts, show_progress=False)
 
         # Build comma-delimited tags string for LIKE-based filtering
-        raw_tags = metadata.get("tags", [])
-        if isinstance(raw_tags, list) and raw_tags:
+        raw_tags = metadata.tags
+        if raw_tags:
             tags_str = "," + ",".join(raw_tags) + ","
         else:
             tags_str = ""
 
         parent_data = []
         for p in parents:
-            parent_data.append({
-                "id": p.id,
-                "document_id": p.document_id,
-                "content": p.content,
-                "source_path": source,
-                "section_title": p.section_title or "",
-                "token_count": p.token_count,
-                "created_at": datetime.now().isoformat(),
-                "tags": tags_str,
-            })
+            parent_data.append(
+                {
+                    "id": p.id,
+                    "document_id": p.document_id,
+                    "content": p.content,
+                    "source_path": source,
+                    "section_title": p.section_title or "",
+                    "token_count": p.token_count,
+                    "created_at": datetime.now().isoformat(),
+                    "tags": tags_str,
+                }
+            )
 
         child_data = []
         for c, emb in zip(children, embeddings):
-            child_data.append({
-                "id": c.id,
-                "parent_id": c.parent_id,
-                "document_id": c.document_id,
-                "content": c.content,
-                "vector": emb,
-                "chunk_index": c.chunk_index,
-                "source_path": source,
-                "tags": tags_str,
-            })
+            child_data.append(
+                {
+                    "id": c.id,
+                    "parent_id": c.parent_id,
+                    "document_id": c.document_id,
+                    "content": c.content,
+                    "vector": emb,
+                    "chunk_index": c.chunk_index,
+                    "source_path": source,
+                    "tags": tags_str,
+                }
+            )
 
         # Store parents
         try:
@@ -1018,12 +1154,15 @@ async def api_ingest(request: Request):
 
         # Optional: extract entities for knowledge graph
         try:
-            from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
-            graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+            from src.graph.knowledge_graph import EntityExtractor, KnowledgeGraph
+
+            graph_db_path = STATE_DIR / "knowledge_graph.db"
             if graph_db_path.exists():
                 graph = KnowledgeGraph(graph_db_path)
                 extractor = EntityExtractor()
-                entities, relationships = extractor._extract_with_patterns(content[:10000], document_id)
+                entities, relationships = extractor._extract_with_patterns(
+                    content[:10000], document_id
+                )
                 if entities or relationships:
                     graph.add_from_extraction(entities, relationships)
         except Exception as e:
@@ -1031,59 +1170,98 @@ async def api_ingest(request: Request):
 
         logger.info(f"API ingest: {source} ({len(parents)} parents, {len(children)} children)")
 
-        return {
-            "document_id": document_id,
-            "source": source,
-            "chunks_created": len(children),
-            "parent_chunks": len(parents),
-        }
+        return IngestResponse(
+            document_id=document_id,
+            source=source,
+            chunks_created=len(children),
+            parent_chunks=len(parents),
+        )
 
+    except CoreRagError as e:
+        logger.error(f"Ingest API failed: {e}")
+        return IngestResponse(
+            error=str(e),
+            document_id="",
+            source=source,
+            chunks_created=0,
+            parent_chunks=0,
+        )
     except Exception as e:
         logger.error(f"Ingest API failed: {e}", exc_info=True)
-        return {"error": str(e)}
+        return IngestResponse(
+            error=str(e),
+            document_id="",
+            source=source,
+            chunks_created=0,
+            parent_chunks=0,
+        )
 
 
-@app.delete("/api/v1/documents/{document_id}")
-async def api_delete_document(document_id: str):
+@app.delete("/api/v1/documents/{document_id}", response_model=DeleteResponse)
+async def api_delete_document(
+    document_id: str, _: bool = Depends(verify_api_key)
+) -> DeleteResponse:
     """Remove a document and all its chunks from the RAG database."""
     try:
         import lancedb
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
+        db_path = str(DB_PATH)
         db = lancedb.connect(db_path)
 
         deleted = {"parent_chunks": 0, "child_chunks": 0}
+        doc_filter = build_eq_clause("document_id", document_id)
         for table_name in ["parent_chunks", "child_chunks"]:
             if table_name in db.table_names():
                 tbl = db.open_table(table_name)
                 before = tbl.count_rows()
-                tbl.delete(f"document_id = '{document_id}'")
+                tbl.delete(doc_filter)
                 after = tbl.count_rows()
                 deleted[table_name] = before - after
 
         # Also remove from knowledge graph
+        graph_deleted = 0
         try:
             from src.graph.knowledge_graph import KnowledgeGraph
-            graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+
+            graph_db_path = STATE_DIR / "knowledge_graph.db"
             if graph_db_path.exists():
                 graph = KnowledgeGraph(graph_db_path)
-                graph.delete_by_document(document_id)
+                graph_deleted = graph.delete_by_document(document_id) or 0
         except Exception:
             pass
 
         total_deleted = deleted["parent_chunks"] + deleted["child_chunks"]
         if total_deleted == 0:
-            return {"success": False, "error": f"Document not found: {document_id}"}
+            return DeleteResponse(
+                success=False,
+                document_id=document_id,
+                chunks_deleted=0,
+                error=f"Document not found: {document_id}",
+            )
 
-        return {
-            "success": True,
-            "document_id": document_id,
-            "deleted_chunks": deleted,
-        }
+        return DeleteResponse(
+            success=True,
+            document_id=document_id,
+            chunks_deleted=total_deleted,
+            graph_deleted=graph_deleted,
+        )
 
+    except CoreRagError as e:
+        logger.error(f"Delete API failed: {e}")
+        return DeleteResponse(
+            success=False,
+            document_id=document_id,
+            chunks_deleted=0,
+            error=str(e),
+        )
     except Exception as e:
         logger.error(f"Delete API failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+        return DeleteResponse(
+            success=False,
+            document_id=document_id,
+            chunks_deleted=0,
+            error=str(e),
+        )
 
 
 if __name__ == "__main__":

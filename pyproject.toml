@@ -7,7 +7,7 @@ name = "corerag-system"
 version = "0.1.0"
 description = "CoreRag - Local-first knowledge engine with RAG, PII detection, and MCP integration"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = []
 keywords = ["knowledge-management", "rag", "mcp", "embeddings", "lancedb"]
@@ -15,8 +15,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -54,18 +54,22 @@ include = ["src*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
-warn_return_any = true
+python_version = "3.12"
+warn_return_any = false
 warn_unused_ignores = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

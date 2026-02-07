@@ -1,11 +1,13 @@
 import logging
 import re
 from pathlib import Path
+
+from src.classification.auto_tagger import AutoTagger
+from src.exceptions import ProcessingError
 from src.extractor import extract_text
 from src.intelligence import analyze_document
 from src.quality.duplicate_detector import DuplicateDetector
 from src.utils.privacy_audit import PrivacyScanner, load_custom_pii_terms, scan_custom_terms
-from src.classification.auto_tagger import AutoTagger
 
 # Singleton detector so state persists across files in a batch
 _dedup = DuplicateDetector()
@@ -27,6 +29,7 @@ def _get_auto_tagger() -> AutoTagger:
         embedder = None
         try:
             from src.embeddings.embedding_service import create_embedding_service
+
             svc = create_embedding_service()
             embedder = svc.embed_query
             logging.info("Auto-tagger initialized with embedding support (hybrid mode)")
@@ -36,7 +39,7 @@ def _get_auto_tagger() -> AutoTagger:
     return _auto_tagger
 
 
-def process_document(file_path: Path):
+async def process_document(file_path: Path):
     """
     Orchestrates the ingestion:
     1. Immediately stage with 'processing' status (visible in dashboard)
@@ -57,7 +60,7 @@ def process_document(file_path: Path):
             "suggested_name": file_path.name,
             "category": "Analyzing...",
             "year": "...",
-            "summary": "AI Analysis in progress..."
+            "summary": "AI Analysis in progress...",
         }
 
         # Add to manifest with 'processing' status
@@ -90,7 +93,7 @@ def process_document(file_path: Path):
 
         # 3. Intelligence Analysis (classification + summary; PII is handled below)
         logging.info("Analyzing document content...")
-        metadata, full_text = analyze_document(text)
+        metadata, full_text = await analyze_document(text)
 
         # 4. PII Detection (Presidio + custom dictionary — replaces LLM is_sensitive)
         pii_sample = text[:20000]  # Scan first 20K chars for speed
@@ -106,11 +109,13 @@ def process_document(file_path: Path):
         # Build detection summary for the dashboard (no raw PII values)
         pii_detections = []
         for m in high_confidence:
-            pii_detections.append({
-                "type": m.data_type.value,
-                "confidence": round(m.confidence, 2),
-                "context": m.context[:80],  # Truncated, already redacted by scanner
-            })
+            pii_detections.append(
+                {
+                    "type": m.data_type.value,
+                    "confidence": round(m.confidence, 2),
+                    "context": m.context[:80],  # Truncated, already redacted by scanner
+                }
+            )
 
         metadata["is_sensitive"] = is_sensitive
         metadata["pii_detections"] = pii_detections
@@ -122,9 +127,7 @@ def process_document(file_path: Path):
             metadata["tags"] = tag_result.assigned_tags
             metadata["suggested_tags"] = tag_result.suggested_tags
             if tag_result.assigned_tags:
-                logging.info(
-                    f"Auto-tagged {file_path.name}: {', '.join(tag_result.assigned_tags)}"
-                )
+                logging.info(f"Auto-tagged {file_path.name}: {', '.join(tag_result.assigned_tags)}")
         except Exception as e:
             logging.warning(f"Auto-tagging failed for {file_path.name}: {e}")
             metadata["tags"] = []
@@ -141,7 +144,7 @@ def process_document(file_path: Path):
         # Calculate Suggested Filename (with CUI Logic)
         base_name = metadata.get("suggested_name", "") or file_path.stem
         # Clean up: replace spaces with underscores, remove problematic chars
-        base_name = re.sub(r'[^\w\-]', '_', base_name).strip('_')
+        base_name = re.sub(r"[^\w\-]", "_", base_name).strip("_")
         if not base_name:
             base_name = file_path.stem
 
@@ -167,7 +170,7 @@ def process_document(file_path: Path):
                 "year": metadata.get("year", "Unknown"),
                 "type": metadata.get("type", "Document"),
                 "tags": metadata.get("tags", []),
-            }
+            },
         }
         if duplicate_info:
             update_data["duplicate"] = duplicate_info
@@ -180,5 +183,8 @@ def process_document(file_path: Path):
 
         logging.info(f"--- File Staged for Review: {file_path.name} ---")
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logging.error(f"Critical error during processing of {file_path.name}: {e}", exc_info=True)
+        raise ProcessingError(str(e), file_path=str(file_path)) from e

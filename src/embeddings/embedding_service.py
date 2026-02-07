@@ -14,10 +14,12 @@ import hashlib
 import json
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Union
-import time
+from typing import Dict, List, Optional
+
+from src.exceptions import EmbeddingError
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ logger = logging.getLogger(__name__)
 ST_AVAILABLE = False
 try:
     from sentence_transformers import SentenceTransformer
+
     ST_AVAILABLE = True
 except ImportError:
     logger.warning("sentence-transformers not installed")
@@ -33,6 +36,7 @@ except ImportError:
 @dataclass
 class EmbeddingResult:
     """Result of an embedding operation."""
+
     text: str
     embedding: List[float]
     model: str
@@ -43,6 +47,7 @@ class EmbeddingResult:
 @dataclass
 class EmbeddingStats:
     """Statistics for embedding operations."""
+
     total_requests: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
@@ -84,7 +89,9 @@ class EmbeddingCache:
             persist: Whether to persist to disk
         """
         self.max_size = max_size
-        self.cache_dir = cache_dir or Path.home() / ".corerag" / "embedding_cache"
+        from src.config import STATE_DIR
+
+        self.cache_dir = cache_dir or STATE_DIR / "embedding_cache"
         self.persist = persist
 
         self._cache: Dict[str, List[float]] = {}
@@ -148,10 +155,13 @@ class EmbeddingCache:
 
         try:
             with open(cache_file, "w") as f:
-                json.dump({
-                    "cache": self._cache,
-                    "order": self._access_order,
-                }, f)
+                json.dump(
+                    {
+                        "cache": self._cache,
+                        "order": self._access_order,
+                    },
+                    f,
+                )
         except Exception as e:
             logger.warning(f"Failed to save embedding cache: {e}")
 
@@ -193,7 +203,7 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",  # Default to a simpler model that works out of the box
+        model_name: str = None,
         cache_enabled: bool = True,
         cache_dir: Optional[Path] = None,
         device: str = "mps",  # Apple Silicon
@@ -210,7 +220,13 @@ class EmbeddingService:
             batch_size: Default batch size for encoding
         """
         if not ST_AVAILABLE:
-            raise ImportError("sentence-transformers required")
+            raise EmbeddingError("sentence-transformers required", model_name=model_name)
+
+        # Default to config if not specified
+        if model_name is None:
+            from src.config import EMBEDDING_MODEL
+
+            model_name = EMBEDDING_MODEL
 
         # Resolve model name aliases
         self.model_name = self.MODEL_ALIASES.get(model_name, model_name)
@@ -219,15 +235,20 @@ class EmbeddingService:
 
         # Initialize model
         logger.info(f"Loading embedding model: {self.model_name}")
-        
-        # nomic models require trust_remote_code
-        trust_remote = "nomic" in self.model_name.lower()
-        self._model = SentenceTransformer(
-            self.model_name, 
-            device=device,
-            trust_remote_code=trust_remote
-        )
-        self._dimension = self._model.get_sentence_embedding_dimension()
+
+        try:
+            # nomic models require trust_remote_code
+            trust_remote = "nomic" in self.model_name.lower()
+            self._model = SentenceTransformer(
+                self.model_name, device=device, trust_remote_code=trust_remote
+            )
+            self._dimension = self._model.get_sentence_embedding_dimension()
+        except EmbeddingError:
+            raise
+        except Exception as e:
+            raise EmbeddingError(
+                f"Failed to load embedding model: {e}", model_name=self.model_name
+            ) from e
 
         # Initialize cache
         self.cache_enabled = cache_enabled
@@ -291,12 +312,14 @@ class EmbeddingService:
                 if cached is not None:
                     with self._lock:
                         self._stats.cache_hits += 1
-                    results.append(EmbeddingResult(
-                        text=text,
-                        embedding=cached,
-                        model=self.model_name,
-                        cached=True,
-                    ))
+                    results.append(
+                        EmbeddingResult(
+                            text=text,
+                            embedding=cached,
+                            model=self.model_name,
+                            cached=True,
+                        )
+                    )
                     continue
 
             with self._lock:
@@ -409,7 +432,7 @@ class EmbeddingService:
                 "total_requests": self._stats.total_requests,
                 "cache_hit_rate": f"{self._stats.cache_hit_rate:.2%}",
                 "avg_latency_ms": f"{self._stats.avg_latency_ms:.2f}",
-            }
+            },
         }
 
 
@@ -418,7 +441,7 @@ _default_service: Optional[EmbeddingService] = None
 
 
 def get_embedding_service(
-    model_name: str = "all-MiniLM-L6-v2",
+    model_name: str = None,
     **kwargs,
 ) -> EmbeddingService:
     """
@@ -440,7 +463,7 @@ def get_embedding_service(
 
 
 def create_embedding_service(
-    model_name: str = "all-MiniLM-L6-v2",
+    model_name: str = None,
     **kwargs,
 ) -> EmbeddingService:
     """

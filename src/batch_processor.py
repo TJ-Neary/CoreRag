@@ -1,21 +1,21 @@
+import asyncio
 import gc
 import logging
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import psutil
 
 from src.config import INBOX_PATH, STATE_DIR
 from src.processor import process_document
-from src.utils.queue_manager import QueueManager, Priority
+from src.utils.queue_manager import Priority, QueueManager
 
 logger = logging.getLogger(__name__)
 
-MEMORY_PAUSE_THRESHOLD = 92   # Pause at this % RAM
+MEMORY_PAUSE_THRESHOLD = 92  # Pause at this % RAM
 MEMORY_RESUME_THRESHOLD = 88  # Resume when below this %
-MEMORY_CHECK_INTERVAL = 2     # Seconds between checks while paused
+MEMORY_CHECK_INTERVAL = 2  # Seconds between checks while paused
 
 
 class BatchProcessor:
@@ -52,10 +52,7 @@ class BatchProcessor:
         """Lists all non-hidden files in INBOX_PATH."""
         if not INBOX_PATH.exists():
             return []
-        return sorted(
-            f for f in INBOX_PATH.iterdir()
-            if f.is_file() and not f.name.startswith(".")
-        )
+        return sorted(f for f in INBOX_PATH.iterdir() if f.is_file() and not f.name.startswith("."))
 
     def is_running(self) -> bool:
         with self._lock:
@@ -161,13 +158,11 @@ class BatchProcessor:
             logger.info(f"Batch [{i + 1}/{len(files)}]: {file_path.name}")
 
             try:
-                process_document(file_path)
+                asyncio.run(process_document(file_path))
             except Exception as e:
                 logger.error(f"Error processing {file_path.name}: {e}", exc_info=True)
                 with self._lock:
-                    self._progress["errors"].append(
-                        {"file": file_path.name, "error": str(e)}
-                    )
+                    self._progress["errors"].append({"file": file_path.name, "error": str(e)})
 
             with self._lock:
                 self._progress["processed"] = i + 1
@@ -216,7 +211,7 @@ class BatchProcessor:
         if mem > MEMORY_PAUSE_THRESHOLD:
             self._wait_for_safe_memory()
 
-        process_document(file_path)
+        asyncio.run(process_document(file_path))
         gc.collect()
         return {"status": "completed", "file": file_path.name}
 

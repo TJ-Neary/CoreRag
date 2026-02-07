@@ -8,17 +8,19 @@ Implements Small-to-Big retrieval pattern:
 This solves the retrieval-generation mismatch problem.
 """
 
+import json
 import re
 import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-from pathlib import Path
-import json
+
+from src.utils.query_sanitize import build_eq_clause, build_filter_clause
 
 
 @dataclass
 class ParentChunk:
     """Large chunk returned to LLM for context."""
+
     id: str
     document_id: str
     content: str
@@ -44,6 +46,7 @@ class ParentChunk:
 @dataclass
 class ChildChunk:
     """Small chunk used for vector search."""
+
     id: str
     parent_id: str
     document_id: str
@@ -95,10 +98,7 @@ class ParentChildChunker:
         return len(text) // self.CHARS_PER_TOKEN
 
     def chunk_document(
-        self,
-        content: str,
-        document_id: str,
-        metadata: Optional[dict] = None
+        self, content: str, document_id: str, metadata: Optional[dict] = None
     ) -> Tuple[List[ParentChunk], List[ChildChunk]]:
         """
         Split document into parent and child chunks.
@@ -120,10 +120,7 @@ class ParentChildChunker:
         return parents, all_children
 
     def _create_parent_chunks(
-        self,
-        content: str,
-        document_id: str,
-        metadata: dict
+        self, content: str, document_id: str, metadata: dict
     ) -> List[ParentChunk]:
         """Split document into parent chunks at natural boundaries."""
 
@@ -135,22 +132,19 @@ class ParentChildChunker:
 
     def _has_markdown_headers(self, content: str) -> bool:
         """Check if content has markdown-style headers."""
-        return bool(re.search(r'^#{1,6}\s+.+$', content, re.MULTILINE))
+        return bool(re.search(r"^#{1,6}\s+.+$", content, re.MULTILINE))
 
     def _split_by_headers(
-        self,
-        content: str,
-        document_id: str,
-        metadata: dict
+        self, content: str, document_id: str, metadata: dict
     ) -> List[ParentChunk]:
         """Split by markdown headers, respecting token limits."""
         # Pattern matches headers like # Title, ## Section, etc.
-        header_pattern = r'^(#{1,6})\s+(.+)$'
+        header_pattern = r"^(#{1,6})\s+(.+)$"
 
         sections = []
         current_section = {"title": None, "content": "", "start": 0}
 
-        lines = content.split('\n')
+        lines = content.split("\n")
         char_pos = 0
 
         for line in lines:
@@ -165,7 +159,7 @@ class ParentChildChunker:
                 current_section = {
                     "title": match.group(2).strip(),
                     "content": line + "\n",
-                    "start": char_pos
+                    "start": char_pos,
                 }
             else:
                 current_section["content"] += line + "\n"
@@ -180,24 +174,17 @@ class ParentChildChunker:
         parents = []
         for section in sections:
             section_parents = self._split_large_section(
-                section["content"],
-                section["title"],
-                section["start"],
-                document_id,
-                metadata
+                section["content"], section["title"], section["start"], document_id, metadata
             )
             parents.extend(section_parents)
 
         return parents
 
     def _split_by_paragraphs(
-        self,
-        content: str,
-        document_id: str,
-        metadata: dict
+        self, content: str, document_id: str, metadata: dict
     ) -> List[ParentChunk]:
         """Split by double newlines (paragraphs)."""
-        paragraphs = re.split(r'\n\n+', content)
+        paragraphs = re.split(r"\n\n+", content)
 
         parents = []
         current_content = ""
@@ -210,15 +197,17 @@ class ParentChildChunker:
 
             if current_tokens + para_tokens > self.parent_max_tokens and current_content:
                 # Emit current parent
-                parents.append(ParentChunk(
-                    id=str(uuid.uuid4()),
-                    document_id=document_id,
-                    content=current_content.strip(),
-                    start_char=current_start,
-                    end_char=current_start + len(current_content),
-                    token_count=current_tokens,
-                    metadata=metadata.copy()
-                ))
+                parents.append(
+                    ParentChunk(
+                        id=str(uuid.uuid4()),
+                        document_id=document_id,
+                        content=current_content.strip(),
+                        start_char=current_start,
+                        end_char=current_start + len(current_content),
+                        token_count=current_tokens,
+                        metadata=metadata.copy(),
+                    )
+                )
                 current_content = para + "\n\n"
                 current_start = char_pos
             else:
@@ -228,43 +217,42 @@ class ParentChildChunker:
 
         # Final parent
         if current_content.strip():
-            parents.append(ParentChunk(
-                id=str(uuid.uuid4()),
-                document_id=document_id,
-                content=current_content.strip(),
-                start_char=current_start,
-                end_char=current_start + len(current_content),
-                token_count=self.estimate_tokens(current_content),
-                metadata=metadata.copy()
-            ))
+            parents.append(
+                ParentChunk(
+                    id=str(uuid.uuid4()),
+                    document_id=document_id,
+                    content=current_content.strip(),
+                    start_char=current_start,
+                    end_char=current_start + len(current_content),
+                    token_count=self.estimate_tokens(current_content),
+                    metadata=metadata.copy(),
+                )
+            )
 
         return parents
 
     def _split_large_section(
-        self,
-        content: str,
-        title: Optional[str],
-        start_char: int,
-        document_id: str,
-        metadata: dict
+        self, content: str, title: Optional[str], start_char: int, document_id: str, metadata: dict
     ) -> List[ParentChunk]:
         """Split an oversized section into multiple parents."""
         tokens = self.estimate_tokens(content)
 
         if tokens <= self.parent_max_tokens:
-            return [ParentChunk(
-                id=str(uuid.uuid4()),
-                document_id=document_id,
-                content=content.strip(),
-                start_char=start_char,
-                end_char=start_char + len(content),
-                section_title=title,
-                token_count=tokens,
-                metadata=metadata.copy()
-            )]
+            return [
+                ParentChunk(
+                    id=str(uuid.uuid4()),
+                    document_id=document_id,
+                    content=content.strip(),
+                    start_char=start_char,
+                    end_char=start_char + len(content),
+                    section_title=title,
+                    token_count=tokens,
+                    metadata=metadata.copy(),
+                )
+            ]
 
         # Need to split - use paragraph boundaries
-        paragraphs = re.split(r'\n\n+', content)
+        paragraphs = re.split(r"\n\n+", content)
         parents = []
         current = ""
         current_start = start_char
@@ -272,16 +260,18 @@ class ParentChildChunker:
 
         for para in paragraphs:
             if self.estimate_tokens(current + para) > self.parent_max_tokens and current:
-                parents.append(ParentChunk(
-                    id=str(uuid.uuid4()),
-                    document_id=document_id,
-                    content=current.strip(),
-                    start_char=current_start,
-                    end_char=current_start + len(current),
-                    section_title=f"{title} (Part {part})" if title else None,
-                    token_count=self.estimate_tokens(current),
-                    metadata=metadata.copy()
-                ))
+                parents.append(
+                    ParentChunk(
+                        id=str(uuid.uuid4()),
+                        document_id=document_id,
+                        content=current.strip(),
+                        start_char=current_start,
+                        end_char=current_start + len(current),
+                        section_title=f"{title} (Part {part})" if title else None,
+                        token_count=self.estimate_tokens(current),
+                        metadata=metadata.copy(),
+                    )
+                )
                 part += 1
                 current_start += len(current)
                 current = para + "\n\n"
@@ -289,24 +279,22 @@ class ParentChildChunker:
                 current += para + "\n\n"
 
         if current.strip():
-            parents.append(ParentChunk(
-                id=str(uuid.uuid4()),
-                document_id=document_id,
-                content=current.strip(),
-                start_char=current_start,
-                end_char=current_start + len(current),
-                section_title=f"{title} (Part {part})" if title and part > 1 else title,
-                token_count=self.estimate_tokens(current),
-                metadata=metadata.copy()
-            ))
+            parents.append(
+                ParentChunk(
+                    id=str(uuid.uuid4()),
+                    document_id=document_id,
+                    content=current.strip(),
+                    start_char=current_start,
+                    end_char=current_start + len(current),
+                    section_title=f"{title} (Part {part})" if title and part > 1 else title,
+                    token_count=self.estimate_tokens(current),
+                    metadata=metadata.copy(),
+                )
+            )
 
         return parents
 
-    def _create_child_chunks(
-        self,
-        parent: ParentChunk,
-        document_id: str
-    ) -> List[ChildChunk]:
+    def _create_child_chunks(self, parent: ParentChunk, document_id: str) -> List[ChildChunk]:
         """Split parent into small, overlapping child chunks."""
         # Simple sentence splitting (could use NLTK/spaCy for better results)
         sentences = self._split_sentences(parent.content)
@@ -325,15 +313,17 @@ class ParentChildChunker:
                 child_content = " ".join(current_sentences)
                 child_start = parent.start_char + parent.content.find(current_sentences[0])
 
-                children.append(ChildChunk(
-                    id=str(uuid.uuid4()),
-                    parent_id=parent.id,
-                    document_id=document_id,
-                    content=child_content,
-                    start_char=child_start,
-                    end_char=child_start + len(child_content),
-                    chunk_index=chunk_index,
-                ))
+                children.append(
+                    ChildChunk(
+                        id=str(uuid.uuid4()),
+                        parent_id=parent.id,
+                        document_id=document_id,
+                        content=child_content,
+                        start_char=child_start,
+                        end_char=child_start + len(child_content),
+                        chunk_index=chunk_index,
+                    )
+                )
                 chunk_index += 1
 
                 # Overlap: keep sentences that fit in overlap budget
@@ -358,15 +348,17 @@ class ParentChildChunker:
             child_content = " ".join(current_sentences)
             child_start = parent.start_char + parent.content.find(current_sentences[0])
 
-            children.append(ChildChunk(
-                id=str(uuid.uuid4()),
-                parent_id=parent.id,
-                document_id=document_id,
-                content=child_content,
-                start_char=child_start,
-                end_char=child_start + len(child_content),
-                chunk_index=chunk_index,
-            ))
+            children.append(
+                ChildChunk(
+                    id=str(uuid.uuid4()),
+                    parent_id=parent.id,
+                    document_id=document_id,
+                    content=child_content,
+                    start_char=child_start,
+                    end_char=child_start + len(child_content),
+                    chunk_index=chunk_index,
+                )
+            )
 
         return children
 
@@ -376,14 +368,14 @@ class ParentChildChunker:
         Simple regex-based approach; can be upgraded to NLTK/spaCy.
         """
         # Handle common abbreviations
-        text = re.sub(r'\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr)\.\s', r'\1<DOT> ', text)
-        text = re.sub(r'\b(vs|etc|e\.g|i\.e)\.\s', r'\1<DOT> ', text)
+        text = re.sub(r"\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr)\.\s", r"\1<DOT> ", text)
+        text = re.sub(r"\b(vs|etc|e\.g|i\.e)\.\s", r"\1<DOT> ", text)
 
         # Split on sentence boundaries
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
 
         # Restore dots
-        sentences = [s.replace('<DOT>', '.') for s in sentences]
+        sentences = [s.replace("<DOT>", ".") for s in sentences]
 
         # Filter empty
         return [s.strip() for s in sentences if s.strip()]
@@ -406,11 +398,7 @@ class ParentChildRetriever:
         self.child_table = db.open_table("child_chunks")
 
     async def search(
-        self,
-        query: str,
-        k: int = 5,
-        child_oversample: int = 3,
-        filters: Optional[dict] = None
+        self, query: str, k: int = 5, child_oversample: int = 3, filters: Optional[dict] = None
     ) -> List[dict]:
         """
         Search children, return parents with match context.
@@ -431,8 +419,7 @@ class ParentChildRetriever:
         search = self.child_table.search(query_vector).limit(k * child_oversample)
 
         if filters:
-            for key, value in filters.items():
-                search = search.where(f"{key} = '{value}'")
+            search = search.where(build_filter_clause(filters))
 
         child_results = search.to_list()
 
@@ -451,29 +438,31 @@ class ParentChildRetriever:
                 }
 
         # Step 4: Sort by score, take top k
-        top_parents = sorted(
-            parent_scores.values(),
-            key=lambda x: x["score"]
-        )[:k]
+        top_parents = sorted(parent_scores.values(), key=lambda x: x["score"])[:k]
 
         # Step 5: Fetch parent content
         results = []
         for p in top_parents:
-            parent_rows = self.parent_table.search().where(
-                f"id = '{p['parent_id']}'"
-            ).limit(1).to_list()
+            parent_rows = (
+                self.parent_table.search()
+                .where(build_eq_clause("id", p["parent_id"]))
+                .limit(1)
+                .to_list()
+            )
 
             if parent_rows:
                 parent = parent_rows[0]
-                results.append({
-                    "content": parent["content"],
-                    "matched_snippet": p["matched_child_content"],
-                    "score": p["score"],
-                    "parent_id": p["parent_id"],
-                    "document_id": parent["document_id"],
-                    "section_title": parent.get("section_title"),
-                    "metadata": json.loads(parent.get("metadata", "{}")),
-                })
+                results.append(
+                    {
+                        "content": parent["content"],
+                        "matched_snippet": p["matched_child_content"],
+                        "score": p["score"],
+                        "parent_id": p["parent_id"],
+                        "document_id": parent["document_id"],
+                        "section_title": parent.get("section_title"),
+                        "metadata": json.loads(parent.get("metadata", "{}")),
+                    }
+                )
 
         return results
 
@@ -488,37 +477,41 @@ def create_parent_child_tables(db) -> Tuple:
     """
     import pyarrow as pa
 
-    parent_schema = pa.schema([
-        pa.field("id", pa.string()),
-        pa.field("document_id", pa.string()),
-        pa.field("content", pa.string()),
-        pa.field("section_title", pa.string()),
-        pa.field("start_char", pa.int64()),
-        pa.field("end_char", pa.int64()),
-        pa.field("token_count", pa.int32()),
-        pa.field("metadata", pa.string()),
-    ])
+    parent_schema = pa.schema(
+        [
+            pa.field("id", pa.string()),
+            pa.field("document_id", pa.string()),
+            pa.field("content", pa.string()),
+            pa.field("section_title", pa.string()),
+            pa.field("start_char", pa.int64()),
+            pa.field("end_char", pa.int64()),
+            pa.field("token_count", pa.int32()),
+            pa.field("metadata", pa.string()),
+        ]
+    )
 
-    child_schema = pa.schema([
-        pa.field("id", pa.string()),
-        pa.field("parent_id", pa.string()),
-        pa.field("document_id", pa.string()),
-        pa.field("content", pa.string()),
-        pa.field("vector", pa.list_(pa.float32(), 768)),
-        pa.field("start_char", pa.int64()),
-        pa.field("end_char", pa.int64()),
-        pa.field("chunk_index", pa.int32()),
-    ])
+    child_schema = pa.schema(
+        [
+            pa.field("id", pa.string()),
+            pa.field("parent_id", pa.string()),
+            pa.field("document_id", pa.string()),
+            pa.field("content", pa.string()),
+            pa.field("vector", pa.list_(pa.float32(), 768)),
+            pa.field("start_char", pa.int64()),
+            pa.field("end_char", pa.int64()),
+            pa.field("chunk_index", pa.int32()),
+        ]
+    )
 
     # Create tables if they don't exist
-    try:
+    if "parent_chunks" in db.table_names():
         parent_table = db.open_table("parent_chunks")
-    except:
+    else:
         parent_table = db.create_table("parent_chunks", schema=parent_schema)
 
-    try:
+    if "child_chunks" in db.table_names():
         child_table = db.open_table("child_chunks")
-    except:
+    else:
         child_table = db.create_table("child_chunks", schema=child_schema)
 
     return parent_table, child_table

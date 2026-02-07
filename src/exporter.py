@@ -1,9 +1,9 @@
 import hashlib
 import logging
-import os
 import re
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
 from src.config import VAULT_PATH
 
 
@@ -16,15 +16,15 @@ def export_to_vault(redacted_text: str, metadata: dict, original_filename: str):
         return
 
     # Construct Title
-    year = metadata.get('year', 'Unknown')
-    doc_type = metadata.get('type', 'Doc')
+    year = metadata.get("year", "Unknown")
+    doc_type = metadata.get("type", "Doc")
     sanitized_name = Path(original_filename).stem
     title = f"{year} - {doc_type} - {sanitized_name}"
     title = _sanitize_filename(title)
 
     # Metadata for YAML
-    category = metadata.get('category', 'Unsorted')
-    summary = metadata.get('summary', 'No summary provided.').replace('"', '\\"')
+    category = metadata.get("category", "Unsorted")
+    summary = metadata.get("summary", "No summary provided.").replace('"', '\\"')
 
     # YAML Frontmatter
     note_content = f"""---
@@ -76,11 +76,10 @@ tags:
 def _generate_backlinks(text: str, original_filename: str) -> str:
     """Generate Obsidian [[wikilinks]] based on shared entities in the knowledge graph."""
     try:
+        from src.config import DB_PATH
         from src.graph.knowledge_graph import KnowledgeGraph
 
-        graph_db_path = Path(
-            os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        ).parent / "knowledge_graph.db"
+        graph_db_path = DB_PATH.parent / "knowledge_graph.db"
 
         if not graph_db_path.exists():
             return ""
@@ -138,4 +137,4 @@ def _generate_backlinks(text: str, original_filename: str) -> str:
 
 
 def _sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '', name).strip()
+    return re.sub(r'[<>:"/\\|?*]', "", name).strip()

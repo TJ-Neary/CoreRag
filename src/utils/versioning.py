@@ -4,6 +4,7 @@ Version history and changelog for documents.
 Tracks document changes over time.
 """
 
+import difflib
 import hashlib
 import json
 import logging
@@ -11,7 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
-import difflib
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DocumentVersion:
     """A single version of a document."""
+
     version_id: str
     document_id: str
     version_number: int
@@ -36,6 +37,7 @@ class DocumentVersion:
 @dataclass
 class VersionDiff:
     """Difference between two versions."""
+
     from_version: int
     to_version: int
     additions: int
@@ -60,7 +62,9 @@ class VersionManager:
         Args:
             state_dir: Directory for version storage
         """
-        self.state_dir = state_dir or Path.home() / ".corerag" / "versions"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "versions"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._versions: Dict[str, List[DocumentVersion]] = {}
@@ -73,7 +77,7 @@ class VersionManager:
         changed_by: str = "user",
         change_type: str = "update",
         change_summary: str = "",
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
     ) -> DocumentVersion:
         """
         Create a new version of a document.
@@ -119,7 +123,7 @@ class VersionManager:
             change_type=change_type,
             change_summary=change_summary or f"Version {version_number}",
             metadata=metadata or {},
-            content_stored=True
+            content_stored=True,
         )
 
         # Store content
@@ -165,10 +169,7 @@ class VersionManager:
         return None
 
     def get_diff(
-        self,
-        document_id: str,
-        from_version: int,
-        to_version: int
+        self, document_id: str, from_version: int, to_version: int
     ) -> Optional[VersionDiff]:
         """
         Get diff between two versions.
@@ -191,14 +192,14 @@ class VersionManager:
         from_lines = from_content.splitlines(keepends=True)
         to_lines = to_content.splitlines(keepends=True)
 
-        diff = list(difflib.unified_diff(
-            from_lines, to_lines,
-            fromfile=f"v{from_version}",
-            tofile=f"v{to_version}"
-        ))
+        diff = list(
+            difflib.unified_diff(
+                from_lines, to_lines, fromfile=f"v{from_version}", tofile=f"v{to_version}"
+            )
+        )
 
-        additions = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
-        deletions = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
+        additions = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
+        deletions = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
 
         return VersionDiff(
             from_version=from_version,
@@ -206,14 +207,10 @@ class VersionManager:
             additions=additions,
             deletions=deletions,
             diff_lines=diff,
-            summary=f"+{additions}/-{deletions} lines"
+            summary=f"+{additions}/-{deletions} lines",
         )
 
-    def restore_version(
-        self,
-        document_id: str,
-        version_number: int
-    ) -> Optional[DocumentVersion]:
+    def restore_version(self, document_id: str, version_number: int) -> Optional[DocumentVersion]:
         """
         Restore a previous version (creates new version with old content).
 
@@ -234,7 +231,7 @@ class VersionManager:
             content=content,
             changed_by="user",
             change_type="restore",
-            change_summary=f"Restored from version {version_number}"
+            change_summary=f"Restored from version {version_number}",
         )
 
     def get_history(self, document_id: str, limit: int = 10) -> List[Dict]:
@@ -252,13 +249,15 @@ class VersionManager:
 
         history = []
         for v in reversed(versions):
-            history.append({
-                "version": v.version_number,
-                "date": v.created_at,
-                "changed_by": v.changed_by,
-                "type": v.change_type,
-                "summary": v.change_summary
-            })
+            history.append(
+                {
+                    "version": v.version_number,
+                    "date": v.created_at,
+                    "changed_by": v.changed_by,
+                    "type": v.change_type,
+                    "summary": v.change_summary,
+                }
+            )
 
         return history
 
@@ -297,8 +296,8 @@ class VersionManager:
 
         if len(versions) > self.MAX_VERSIONS_PER_DOC:
             # Remove oldest versions
-            to_remove = versions[:-self.MAX_VERSIONS_PER_DOC]
-            self._versions[document_id] = versions[-self.MAX_VERSIONS_PER_DOC:]
+            to_remove = versions[: -self.MAX_VERSIONS_PER_DOC]
+            self._versions[document_id] = versions[-self.MAX_VERSIONS_PER_DOC :]
 
             # Delete content files
             for v in to_remove:
@@ -317,9 +316,7 @@ class VersionManager:
                     data = json.load(f)
 
                 for doc_id, versions in data.get("documents", {}).items():
-                    self._versions[doc_id] = [
-                        DocumentVersion(**v) for v in versions
-                    ]
+                    self._versions[doc_id] = [DocumentVersion(**v) for v in versions]
 
             except Exception as e:
                 logger.error(f"Failed to load version metadata: {e}")
@@ -341,13 +338,13 @@ class VersionManager:
                         "change_type": v.change_type,
                         "change_summary": v.change_summary,
                         "metadata": v.metadata,
-                        "content_stored": v.content_stored
+                        "content_stored": v.content_stored,
                     }
                     for v in versions
                 ]
                 for doc_id, versions in self._versions.items()
             },
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now().isoformat(),
         }
 
         with open(metadata_file, "w") as f:

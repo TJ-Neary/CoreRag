@@ -7,7 +7,7 @@
 ## Python Standards
 
 ### General
-- Python 3.11+ required
+- Python 3.12+ required
 - Use type hints for all function signatures
 - Use dataclasses or Pydantic for data structures
 - Follow PEP 8 style guide
@@ -90,11 +90,7 @@ CoreRag/
 │   │
 │   ├── embeddings/              # Embedding generation
 │   │   ├── __init__.py
-│   │   └── embedding_service.py # nomic-embed-text with caching
-│   │
-│   ├── storage/                 # Database operations
-│   │   ├── __init__.py
-│   │   └── vector_store.py      # LanceDB wrapper
+│   │   └── embedding_service.py # all-MiniLM-L6-v2 (384d) with caching
 │   │
 │   ├── ingestion/               # File ingestion pipeline
 │   │   ├── __init__.py
@@ -271,9 +267,9 @@ class Config:
     chunk_overlap: int = 50
     parent_chunk_size: int = 2048
 
-    # Embeddings
-    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
-    embedding_dimensions: int = 768
+    # Embeddings (actual model: all-MiniLM-L6-v2)
+    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_dimensions: int = 384
     embedding_batch_size: int = 32
 
     # Memory thresholds
@@ -297,30 +293,28 @@ config = Config.from_env()
 ## Error Handling
 
 ### Custom Exceptions
+Custom exceptions are defined in `src/exceptions.py`. Always use specific exception types instead of bare `except:` or `except Exception:`.
+
 ```python
-class CoreRagError(Exception):
-    """Base exception for CoreRag system."""
-    pass
+from src.exceptions import (
+    CoreRagError,           # Base exception (catch-all for our exceptions)
+    ProcessingError,        # File processing failures (extraction, analysis)
+    EmbeddingError,         # Embedding generation failures
+    DatabaseError,          # LanceDB operations (connection, query, write)
+    SearchError,            # Search pipeline failures (hybrid, reranker)
+    ConfigurationError,     # Missing/invalid config (env vars, paths)
+    CoreRagMemoryError,     # Memory threshold exceeded (not stdlib MemoryError)
+)
 
-class ProcessingError(CoreRagError):
-    """Error during file processing."""
-    pass
-
-class EmbeddingError(CoreRagError):
-    """Error generating embeddings."""
-    pass
-
-class DatabaseError(CoreRagError):
-    """Error with vector database operations."""
-    pass
-
-class MemoryError(CoreRagError):
-    """Memory threshold exceeded."""
-    pass
+# Each exception includes context-aware messages:
+raise DatabaseError("LanceDB connection failed", {"db_path": db_path})
+raise ProcessingError("Text extraction failed", {"file": str(file_path)})
 ```
 
 ### Try/Except Pattern
 ```python
+from src.exceptions import ProcessingError, CoreRagMemoryError, DatabaseError
+
 def process_file(file_path: Path) -> Optional[Document]:
     """Process a file with proper error handling."""
     try:
@@ -329,9 +323,12 @@ def process_file(file_path: Path) -> Optional[Document]:
     except ProcessingError as e:
         logger.warning(f"Failed to process {file_path}: {e}")
         return None
-    except MemoryError as e:
+    except CoreRagMemoryError as e:
         logger.error(f"Memory exceeded processing {file_path}: {e}")
         raise  # Re-raise for SafeProcessor to handle
+    except DatabaseError as e:
+        logger.error(f"Database error processing {file_path}: {e}")
+        raise
     except Exception as e:
         logger.error(f"Unexpected error processing {file_path}: {e}")
         raise
@@ -504,4 +501,4 @@ if __name__ == "__main__":
 ---
 
 *Follow these conventions consistently. Update this file if new patterns emerge.*
-*Last Updated: 2026-01-31*
+*Last Updated: 2026-02-03*

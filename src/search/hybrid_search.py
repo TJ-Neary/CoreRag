@@ -7,8 +7,10 @@ CRITICAL: FTS index MUST be created for hybrid search to work correctly.
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from src.exceptions import SearchError
+from src.utils.query_sanitize import build_filter_clause
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SearchResult:
     """Result from hybrid search with scoring details."""
+
     id: str
     content: str
     document_id: str
@@ -93,7 +96,7 @@ class HybridSearcher:
         """
         try:
             # Try a simple FTS query
-            results = self.table.search("test", query_type="fts").limit(1).to_list()
+            self.table.search("test", query_type="fts").limit(1).to_list()
             self._fts_verified = True
             return True
         except Exception as e:
@@ -109,7 +112,7 @@ class HybridSearcher:
         vector_weight: float = 0.7,
         fts_weight: float = 0.3,
         filters: Optional[Dict[str, Any]] = None,
-        debug: bool = False
+        debug: bool = False,
     ) -> List[SearchResult]:
         """
         Perform hybrid search with RRF fusion.
@@ -143,11 +146,7 @@ class HybridSearcher:
 
         # Fuse with RRF
         fused = self._reciprocal_rank_fusion(
-            vector_results,
-            fts_results,
-            vector_weight,
-            fts_weight,
-            debug
+            vector_results, fts_results, vector_weight, fts_weight, debug
         )
 
         return fused[:k]
@@ -158,23 +157,13 @@ class HybridSearcher:
         The 'tags' key is special: it uses LIKE-based matching against
         the comma-delimited tags column (e.g. ",sphr-study,cert-prep,").
         All other keys use exact equality matching.
+
+        Uses centralized query sanitization to prevent SQL injection.
         """
-        clauses = []
-        for key, value in filters.items():
-            if key == "tags":
-                # Tags stored as ",tag1,tag2," — match with LIKE '%,tag,%'
-                tag_list = value if isinstance(value, list) else [value]
-                for tag in tag_list:
-                    clauses.append(f"tags LIKE '%,{tag},%'")
-            else:
-                clauses.append(f"{key} = '{value}'")
-        return " AND ".join(clauses)
+        return build_filter_clause(filters)
 
     async def _vector_search(
-        self,
-        query_vector: List[float],
-        k: int,
-        filters: Optional[Dict[str, Any]]
+        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]]
     ) -> List[Dict]:
         """Perform ANN vector search."""
         search = self.table.search(query_vector).limit(k)
@@ -185,10 +174,7 @@ class HybridSearcher:
         return search.to_list()
 
     async def _fts_search(
-        self,
-        query: str,
-        k: int,
-        filters: Optional[Dict[str, Any]]
+        self, query: str, k: int, filters: Optional[Dict[str, Any]]
     ) -> List[Dict]:
         """Perform full-text search."""
         try:
@@ -203,11 +189,7 @@ class HybridSearcher:
             return []
 
     async def _vector_only_search(
-        self,
-        query_vector: List[float],
-        k: int,
-        filters: Optional[Dict[str, Any]],
-        debug: bool
+        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]], debug: bool
     ) -> List[SearchResult]:
         """Fallback when FTS is unavailable."""
         results = await self._vector_search(query_vector, k, filters)
@@ -222,7 +204,7 @@ class HybridSearcher:
                 rrf_score=1 / (self.RRF_K + i + 1),
                 metadata=r.get("metadata", {}),
                 vector_rank=i + 1 if debug else None,
-                fts_rank=None
+                fts_rank=None,
             )
             for i, r in enumerate(results)
         ]
@@ -233,7 +215,7 @@ class HybridSearcher:
         fts_results: List[Dict],
         vector_weight: float,
         fts_weight: float,
-        debug: bool
+        debug: bool,
     ) -> List[SearchResult]:
         """
         Combine results using Reciprocal Rank Fusion.
@@ -270,17 +252,19 @@ class HybridSearcher:
                 idx = fts_ranks[doc_id] - 1
                 doc = fts_results[idx]
 
-            scored.append(SearchResult(
-                id=doc_id,
-                content=doc["content"],
-                document_id=doc["document_id"],
-                vector_score=doc.get("_distance", 0) if v_rank else None,
-                fts_score=doc.get("_score", 0) if f_rank else None,
-                rrf_score=rrf_score,
-                metadata=doc.get("metadata", {}),
-                vector_rank=v_rank if debug else None,
-                fts_rank=f_rank if debug else None
-            ))
+            scored.append(
+                SearchResult(
+                    id=doc_id,
+                    content=doc["content"],
+                    document_id=doc["document_id"],
+                    vector_score=doc.get("_distance", 0) if v_rank else None,
+                    fts_score=doc.get("_score", 0) if f_rank else None,
+                    rrf_score=rrf_score,
+                    metadata=doc.get("metadata", {}),
+                    vector_rank=v_rank if debug else None,
+                    fts_rank=f_rank if debug else None,
+                )
+            )
 
         # Sort by RRF score (descending)
         scored.sort(key=lambda x: x.rrf_score, reverse=True)
@@ -295,12 +279,12 @@ def ensure_hybrid_search_ready(db, table_name: str = "child_chunks") -> HybridSe
     This should be called during ingestion pipeline initialization.
 
     Raises:
-        RuntimeError: If FTS index cannot be created
+        SearchError: If FTS index cannot be created
     """
     searcher = HybridSearcher(db, table_name)
 
     if not searcher.ensure_fts_index():
-        raise RuntimeError(
+        raise SearchError(
             f"Failed to create FTS index on {table_name}. "
             "Hybrid search will not function correctly. "
             "Check LanceDB version and table schema."
@@ -324,4 +308,4 @@ def post_ingestion_index_update(db, table_name: str = "child_chunks"):
         logger.info(f"FTS index rebuilt for {table_name}")
     except Exception as e:
         logger.error(f"Failed to rebuild FTS index: {e}")
-        raise
+        raise SearchError(f"Failed to rebuild FTS index: {e}") from e

@@ -1,9 +1,11 @@
-import json
-import uuid
 import fcntl
+import json
 import logging
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
+
+from src.exceptions import DatabaseError
 
 STAGING_MANIFEST_PATH = Path("staging_manifest.json")
 
@@ -37,7 +39,9 @@ def load_manifest():
             return _read_locked(f)
     except Exception as e:
         logging.error(f"Failed to load manifest: {e}")
-        return {}
+        raise DatabaseError(
+            f"Failed to load staging manifest: {e}", table_name="staging_manifest"
+        ) from e
 
 
 def save_manifest(data):
@@ -46,6 +50,9 @@ def save_manifest(data):
             _write_locked(f, data)
     except Exception as e:
         logging.error(f"Failed to save manifest: {e}")
+        raise DatabaseError(
+            f"Failed to save staging manifest: {e}", table_name="staging_manifest"
+        ) from e
 
 
 def _load_modify_save(modifier):
@@ -70,10 +77,14 @@ def _load_modify_save(modifier):
         return result
     except Exception as e:
         logging.error(f"Failed to modify manifest: {e}")
-        return None
+        raise DatabaseError(
+            f"Failed to modify staging manifest: {e}", table_name="staging_manifest"
+        ) from e
 
 
-def add_to_staging(original_path: Path, metadata: dict, redacted_text: str, suggested_filename: str):
+def add_to_staging(
+    original_path: Path, metadata: dict, redacted_text: str, suggested_filename: str
+):
     item_id = str(uuid.uuid4())
 
     def _add(manifest):

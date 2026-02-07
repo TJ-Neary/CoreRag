@@ -27,21 +27,23 @@ logger = logging.getLogger(__name__)
 
 class LinkStatus(Enum):
     """Status of a checked link."""
-    OK = "ok"                      # 2xx response
-    REDIRECT = "redirect"          # 3xx response
-    NOT_FOUND = "not_found"        # 404
-    FORBIDDEN = "forbidden"        # 403
+
+    OK = "ok"  # 2xx response
+    REDIRECT = "redirect"  # 3xx response
+    NOT_FOUND = "not_found"  # 404
+    FORBIDDEN = "forbidden"  # 403
     SERVER_ERROR = "server_error"  # 5xx
-    TIMEOUT = "timeout"            # Request timed out
-    DNS_ERROR = "dns_error"        # Could not resolve host
-    SSL_ERROR = "ssl_error"        # Certificate issue
+    TIMEOUT = "timeout"  # Request timed out
+    DNS_ERROR = "dns_error"  # Could not resolve host
+    SSL_ERROR = "ssl_error"  # Certificate issue
     CONNECTION_ERROR = "connection_error"  # Network error
-    UNKNOWN = "unknown"            # Other error
+    UNKNOWN = "unknown"  # Other error
 
 
 @dataclass
 class LinkCheckResult:
     """Result of checking a single link."""
+
     url: str
     status: LinkStatus
     status_code: Optional[int] = None
@@ -66,6 +68,7 @@ class LinkCheckResult:
 @dataclass
 class DocumentLinkReport:
     """Link report for a single document."""
+
     file_path: str
     total_links: int
     ok_links: int
@@ -84,6 +87,7 @@ class DocumentLinkReport:
 @dataclass
 class LinkRotReport:
     """Complete link rot report."""
+
     scan_started: datetime
     scan_completed: datetime
     documents_scanned: int
@@ -106,10 +110,8 @@ class LinkExtractor:
     """Extract URLs from various document types."""
 
     # URL patterns
-    MARKDOWN_LINK = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
-    BARE_URL = re.compile(
-        r'https?://[^\s<>\[\]()"\',;]+[^\s<>\[\]()"\',;.!?]'
-    )
+    MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+    BARE_URL = re.compile(r'https?://[^\s<>\[\]()"\',;]+[^\s<>\[\]()"\',;.!?]')
     HTML_HREF = re.compile(r'href=["\']([^"\']+)["\']')
 
     @classmethod
@@ -190,7 +192,9 @@ class LinkCache:
             cache_dir: Directory for cache storage
             cache_duration: How long to cache results
         """
-        self.cache_dir = cache_dir or Path.home() / ".corerag" / "link_cache"
+        from src.config import STATE_DIR
+
+        self.cache_dir = cache_dir or STATE_DIR / "link_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_duration = cache_duration
         self._cache: Dict[str, LinkCheckResult] = {}
@@ -511,14 +515,16 @@ class LinkChecker:
                         broken_count += 1
                         all_broken.append((file_path, url, result))
 
-            doc_reports.append(DocumentLinkReport(
-                file_path=file_path,
-                total_links=len(urls),
-                ok_links=ok_count,
-                broken_links=broken_count,
-                redirect_links=redirect_count,
-                links=link_results,
-            ))
+            doc_reports.append(
+                DocumentLinkReport(
+                    file_path=file_path,
+                    total_links=len(urls),
+                    ok_links=ok_count,
+                    broken_links=broken_count,
+                    redirect_links=redirect_count,
+                    links=link_results,
+                )
+            )
 
         scan_completed = datetime.now()
 
@@ -554,10 +560,12 @@ def format_report(report: LinkRotReport) -> str:
     ]
 
     if report.broken_details:
-        lines.extend([
-            "## Broken Links",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Broken Links",
+                "",
+            ]
+        )
 
         # Group by file
         by_file: Dict[str, List[Tuple[str, LinkCheckResult]]] = {}

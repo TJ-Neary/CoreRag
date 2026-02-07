@@ -11,10 +11,11 @@ Pipeline: Bi-encoder (top 50) → Cross-encoder (top 5)
 """
 
 import logging
-from dataclasses import dataclass
-from typing import List, Optional, Callable
-from pathlib import Path
 import time
+from dataclasses import dataclass
+from typing import List, Optional
+
+from src.exceptions import SearchError
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RerankResult:
     """Result after cross-encoder re-ranking."""
+
     id: str
     content: str
     document_id: str
@@ -50,7 +52,7 @@ class CrossEncoderReranker:
         model_name: str = "mixedbread-ai/mxbai-rerank-base-v1",
         backend: str = "auto",
         batch_size: int = 32,
-        max_length: int = 512
+        max_length: int = 512,
     ):
         """
         Initialize re-ranker.
@@ -75,21 +77,24 @@ class CrossEncoderReranker:
 
         # Prefer MLX on Apple Silicon
         try:
-            import mlx.core
+            import importlib.util
             import platform
-            if platform.processor() == "arm":
+
+            if importlib.util.find_spec("mlx.core") and platform.processor() == "arm":
                 return "mlx"
         except ImportError:
             pass
 
         # Fallback to transformers
         try:
-            from sentence_transformers import CrossEncoder
-            return "transformers"
+            import importlib.util
+
+            if importlib.util.find_spec("sentence_transformers"):
+                return "transformers"
         except ImportError:
             pass
 
-        raise RuntimeError("No re-ranking backend available. Install sentence-transformers or mlx.")
+        raise SearchError("No re-ranking backend available. Install sentence-transformers or mlx.")
 
     def _load_model(self):
         """Lazy-load the model."""
@@ -108,6 +113,7 @@ class CrossEncoderReranker:
         # so we use a custom implementation or fallback
         try:
             from mlx_lm import load
+
             model, tokenizer = load(self.model_name)
             return {"model": model, "tokenizer": tokenizer}
         except Exception as e:
@@ -118,6 +124,7 @@ class CrossEncoderReranker:
     def _load_transformers_model(self):
         """Load model using sentence-transformers."""
         from sentence_transformers import CrossEncoder
+
         model = CrossEncoder(self.model_name, max_length=self.max_length)
         return model
 
@@ -126,7 +133,7 @@ class CrossEncoderReranker:
         query: str,
         candidates: List[dict],
         top_k: int = 5,
-        score_threshold: Optional[float] = None
+        score_threshold: Optional[float] = None,
     ) -> List[RerankResult]:
         """
         Re-rank candidates using cross-encoder.
@@ -147,7 +154,7 @@ class CrossEncoderReranker:
         start_time = time.time()
 
         # Prepare pairs
-        pairs = [(query, c["content"][:self.max_length * 4]) for c in candidates]
+        pairs = [(query, c["content"][: self.max_length * 4]) for c in candidates]
 
         # Score with cross-encoder
         if self._backend == "mlx":
@@ -161,16 +168,18 @@ class CrossEncoderReranker:
             if score_threshold is not None and score < score_threshold:
                 continue
 
-            results.append(RerankResult(
-                id=candidate["id"],
-                content=candidate["content"],
-                document_id=candidate["document_id"],
-                original_score=candidate.get("score", 0),
-                rerank_score=score,
-                original_rank=i + 1,
-                final_rank=0,  # Set after sorting
-                metadata=candidate.get("metadata", {})
-            ))
+            results.append(
+                RerankResult(
+                    id=candidate["id"],
+                    content=candidate["content"],
+                    document_id=candidate["document_id"],
+                    original_score=candidate.get("score", 0),
+                    rerank_score=score,
+                    original_rank=i + 1,
+                    final_rank=0,  # Set after sorting
+                    metadata=candidate.get("metadata", {}),
+                )
+            )
 
         # Sort by rerank score
         results.sort(key=lambda x: x.rerank_score, reverse=True)
@@ -195,7 +204,6 @@ class CrossEncoderReranker:
         # MLX cross-encoder scoring
         # This is a placeholder - real implementation depends on model architecture
         import mlx.core as mx
-        import numpy as np
 
         model = self._model["model"]
         tokenizer = self._model["tokenizer"]
@@ -209,7 +217,7 @@ class CrossEncoderReranker:
                 padding=True,
                 truncation=True,
                 max_length=self.max_length,
-                return_tensors="np"
+                return_tensors="np",
             )
 
             # Convert to MLX arrays
@@ -238,7 +246,7 @@ class RerankerPipeline:
     def __init__(
         self,
         retriever,  # HybridSearcher or ParentChildRetriever
-        reranker: Optional[CrossEncoderReranker] = None
+        reranker: Optional[CrossEncoderReranker] = None,
     ):
         self.retriever = retriever
         self.reranker = reranker or CrossEncoderReranker()
@@ -250,7 +258,7 @@ class RerankerPipeline:
         k: int = 5,
         rerank_candidates: int = 50,
         use_reranker: bool = True,
-        **retriever_kwargs
+        **retriever_kwargs,
     ) -> List[RerankResult]:
         """
         Search with optional re-ranking.
@@ -271,7 +279,7 @@ class RerankerPipeline:
             query=query,
             query_vector=query_vector,
             k=rerank_candidates if use_reranker else k,
-            **retriever_kwargs
+            **retriever_kwargs,
         )
 
         if not use_reranker:
@@ -285,7 +293,7 @@ class RerankerPipeline:
                     rerank_score=c.get("score", c.get("rrf_score", 0)),
                     original_rank=i + 1,
                     final_rank=i + 1,
-                    metadata=c.get("metadata", {})
+                    metadata=c.get("metadata", {}),
                 )
                 for i, c in enumerate(candidates[:k])
             ]
@@ -299,19 +307,16 @@ class RerankerPipeline:
                     "content": c["content"],
                     "document_id": c["document_id"],
                     "score": c.get("score", c.get("rrf_score", 0)),
-                    "metadata": c.get("metadata", {})
+                    "metadata": c.get("metadata", {}),
                 }
                 for c in candidates
             ],
-            top_k=k
+            top_k=k,
         )
 
 
 # Convenience function
-def create_reranker(
-    model: str = "auto",
-    backend: str = "auto"
-) -> CrossEncoderReranker:
+def create_reranker(model: str = "auto", backend: str = "auto") -> CrossEncoderReranker:
     """
     Create a re-ranker with sensible defaults for M4 Max.
 
@@ -323,9 +328,4 @@ def create_reranker(
         # Default to fast English model
         model = "mixedbread-ai/mxbai-rerank-base-v1"
 
-    return CrossEncoderReranker(
-        model_name=model,
-        backend=backend,
-        batch_size=32,
-        max_length=512
-    )
+    return CrossEncoderReranker(model_name=model, backend=backend, batch_size=32, max_length=512)

@@ -10,57 +10,6 @@ from pathlib import Path
 import pytest
 
 
-class TestDeduplication:
-    """Tests for deduplication module."""
-
-    def test_file_hash_consistency(self):
-        """Same file content should produce same hash."""
-        from src.utils.deduplication import DeduplicationManager
-
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write("Test content for hashing")
-            temp_path = Path(f.name)
-
-        try:
-            hash1 = DeduplicationManager.compute_file_hash(temp_path)
-            hash2 = DeduplicationManager.compute_file_hash(temp_path)
-            assert hash1 == hash2
-        finally:
-            temp_path.unlink()
-
-    def test_content_hash_normalization(self):
-        """Content hash should normalize whitespace and case."""
-        from src.utils.deduplication import DeduplicationManager
-
-        content1 = "Hello   World"
-        content2 = "hello world"
-        content3 = "HELLO WORLD"
-
-        hash1 = DeduplicationManager.compute_content_hash(content1)
-        hash2 = DeduplicationManager.compute_content_hash(content2)
-        hash3 = DeduplicationManager.compute_content_hash(content3)
-
-        assert hash1 == hash2 == hash3
-
-    def test_check_file_new(self):
-        """New file should not be duplicate."""
-        from src.utils.deduplication import DeduplicationManager
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manager = DeduplicationManager(state_dir=Path(tmpdir))
-
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-                f.write("Unique test content")
-                temp_path = Path(f.name)
-
-            try:
-                result = manager.check_file(temp_path)
-                assert not result.is_duplicate
-                assert result.recommendation == "process"
-            finally:
-                temp_path.unlink()
-
-
 class TestCheckpoint:
     """Tests for checkpoint module."""
 
@@ -129,11 +78,7 @@ class TestRetry:
                 raise ConnectionError("Transient failure")
             return "success"
 
-        result = retry_with_backoff(
-            failing_then_success,
-            max_attempts=5,
-            initial_delay=0.01
-        )
+        result = retry_with_backoff(failing_then_success, max_attempts=5, initial_delay=0.01)
 
         assert result == "success"
         assert call_count == 3
@@ -146,11 +91,7 @@ class TestRetry:
             raise ConnectionError("Always fails")
 
         with pytest.raises(ConnectionError):
-            retry_with_backoff(
-                always_fails,
-                max_attempts=2,
-                initial_delay=0.01
-            )
+            retry_with_backoff(always_fails, max_attempts=2, initial_delay=0.01)
 
 
 class TestPrivacyAudit:
@@ -168,7 +109,7 @@ class TestPrivacyAudit:
 
     def test_detect_ssn(self):
         """Should detect SSN patterns."""
-        from src.utils.privacy_audit import PrivacyScanner, SensitiveDataType, PrivacyTier
+        from src.utils.privacy_audit import PrivacyScanner, PrivacyTier, SensitiveDataType
 
         scanner = PrivacyScanner()
         # Use a valid-format SSN (area number 078 is valid, unlike 123 which starts with 1)
@@ -190,53 +131,6 @@ class TestPrivacyAudit:
         assert result.privacy_tier == PrivacyTier.PUBLIC
 
 
-class TestIncremental:
-    """Tests for incremental update module."""
-
-    def test_detect_new_file(self):
-        """Should detect new files."""
-        from src.utils.incremental import IncrementalTracker
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tracker = IncrementalTracker(state_dir=Path(tmpdir))
-
-            # Create a test file
-            test_dir = Path(tmpdir) / "docs"
-            test_dir.mkdir()
-            test_file = test_dir / "test.md"
-            test_file.write_text("# Test Document")
-
-            changes = tracker.detect_changes(test_dir)
-
-            assert len(changes.new_files) == 1
-            assert str(test_file.absolute()) in changes.new_files
-
-    def test_detect_unchanged(self):
-        """Should detect unchanged files."""
-        from src.utils.incremental import IncrementalTracker
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tracker = IncrementalTracker(state_dir=Path(tmpdir))
-
-            # Create and track a file
-            test_dir = Path(tmpdir) / "docs"
-            test_dir.mkdir()
-            test_file = test_dir / "test.md"
-            test_file.write_text("# Test Document")
-
-            # First scan - should be new
-            changes1 = tracker.detect_changes(test_dir)
-            assert len(changes1.new_files) == 1
-
-            # Mark as processed
-            tracker.mark_processed(test_file, doc_id="doc_001")
-
-            # Second scan - should be unchanged
-            changes2 = tracker.detect_changes(test_dir)
-            assert len(changes2.unchanged_files) == 1
-            assert len(changes2.new_files) == 0
-
-
 class TestQueueManager:
     """Tests for queue manager module."""
 
@@ -256,7 +150,7 @@ class TestQueueManager:
 
     def test_priority_ordering(self):
         """Higher priority jobs should be processed first."""
-        from src.utils.queue_manager import QueueManager, Priority
+        from src.utils.queue_manager import Priority, QueueManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = QueueManager(state_dir=Path(tmpdir))

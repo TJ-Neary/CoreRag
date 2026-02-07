@@ -7,12 +7,17 @@ then passes them to VLM for captioning to enable semantic video search.
 Optimized for Apple Silicon M4 Max with Metal acceleration.
 """
 
+from __future__ import annotations
+
+import json
 import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
-import json
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from src.multimodal.vlm_captioner import VLMCaptioner
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +26,7 @@ CV2_AVAILABLE = False
 try:
     import cv2
     import numpy as np
+
     CV2_AVAILABLE = True
 except ImportError:
     logger.warning("OpenCV not installed. Install with: pip install opencv-python")
@@ -29,6 +35,7 @@ except ImportError:
 @dataclass
 class Keyframe:
     """A single keyframe extracted from video."""
+
     frame_number: int
     timestamp_seconds: float
     image_path: Path
@@ -40,6 +47,7 @@ class Keyframe:
 @dataclass
 class VideoAnalysis:
     """Complete analysis of a video file."""
+
     source_path: str
     duration_seconds: float
     fps: float
@@ -58,7 +66,9 @@ class VideoAnalysis:
         if self.keyframes:
             parts.append("\nVisual Scenes:")
             for i, kf in enumerate(self.keyframes, 1):
-                timestamp = f"{int(kf.timestamp_seconds // 60)}:{int(kf.timestamp_seconds % 60):02d}"
+                timestamp = (
+                    f"{int(kf.timestamp_seconds // 60)}:{int(kf.timestamp_seconds % 60):02d}"
+                )
                 if kf.caption:
                     parts.append(f"  [{timestamp}] {kf.caption}")
 
@@ -133,7 +143,7 @@ class SceneDetector:
 
         # Extract keyframes
         keyframes = self._detect_scenes(cap, video_path.stem)
-        analysis.keyframes = keyframes[:self.max_keyframes]
+        analysis.keyframes = keyframes[: self.max_keyframes]
 
         cap.release()
 
@@ -141,11 +151,7 @@ class SceneDetector:
 
         return analysis
 
-    def _detect_scenes(
-        self,
-        cap: "cv2.VideoCapture",
-        video_name: str
-    ) -> List[Keyframe]:
+    def _detect_scenes(self, cap: "cv2.VideoCapture", video_name: str) -> List[Keyframe]:
         """Detect scene changes and extract keyframes."""
         keyframes = []
         prev_hist = None
@@ -157,9 +163,7 @@ class SceneDetector:
         # Always capture first frame
         ret, frame = cap.read()
         if ret:
-            keyframe = self._save_keyframe(
-                frame, frame_number, 0.0, 1.0, video_name
-            )
+            keyframe = self._save_keyframe(frame, frame_number, 0.0, 1.0, video_name)
             keyframes.append(keyframe)
             prev_hist = self._compute_histogram(frame)
             last_keyframe_time = 0.0
@@ -186,9 +190,7 @@ class SceneDetector:
 
                 # Scene change detected
                 if diff > self.threshold:
-                    keyframe = self._save_keyframe(
-                        frame, frame_number, timestamp, diff, video_name
-                    )
+                    keyframe = self._save_keyframe(frame, frame_number, timestamp, diff, video_name)
                     keyframes.append(keyframe)
                     last_keyframe_time = timestamp
 
@@ -206,9 +208,7 @@ class SceneDetector:
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         # Compute histogram
-        hist = cv2.calcHist(
-            [hsv], [0, 1], None, [50, 60], [0, 180, 0, 256]
-        )
+        hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
 
         # Normalize
         cv2.normalize(hist, hist)
@@ -265,7 +265,9 @@ class VideoProcessor:
             whisper_transcriber: Whisper for audio transcription
             output_dir: Directory for outputs
         """
-        self.output_dir = output_dir or Path.home() / ".corerag" / "video_cache"
+        from src.config import STATE_DIR
+
+        self.output_dir = output_dir or STATE_DIR / "video_cache"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.scene_detector = scene_detector or SceneDetector(
@@ -305,7 +307,7 @@ class VideoProcessor:
                     result = self.vlm_captioner.caption_image(
                         keyframe.image_path,
                         prompt="Describe what is happening in this video frame. "
-                               "Focus on people, actions, text, and important objects."
+                        "Focus on people, actions, text, and important objects.",
                     )
                     keyframe.caption = result.caption
                 except Exception as e:
@@ -334,12 +336,24 @@ class VideoProcessor:
             audio_path = self.output_dir / f"{video_path.stem}.wav"
 
             # Use ffmpeg to extract audio
-            subprocess.run([
-                "ffmpeg", "-i", str(video_path),
-                "-vn", "-acodec", "pcm_s16le",
-                "-ar", "16000", "-ac", "1",
-                str(audio_path), "-y"
-            ], capture_output=True, check=True)
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-i",
+                    str(video_path),
+                    "-vn",
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    str(audio_path),
+                    "-y",
+                ],
+                capture_output=True,
+                check=True,
+            )
 
             return audio_path
 

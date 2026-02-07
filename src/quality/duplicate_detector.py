@@ -16,12 +16,12 @@ import hashlib
 import json
 import logging
 import re
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Any
-import threading
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DuplicateMatch:
     """A detected duplicate pair."""
+
     file1: str
     file2: str
     similarity: float
@@ -39,6 +40,7 @@ class DuplicateMatch:
 @dataclass
 class DuplicateReport:
     """Report of duplicate detection."""
+
     timestamp: str
     total_files: int
     exact_duplicates: int
@@ -88,11 +90,11 @@ class ContentHasher:
     def _normalize(self, content: str) -> str:
         """Normalize content for hashing."""
         # Remove extra whitespace
-        content = re.sub(r'\s+', ' ', content)
+        content = re.sub(r"\s+", " ", content)
         # Lowercase
         content = content.lower()
         # Remove punctuation at boundaries
-        content = re.sub(r'^\W+|\W+$', '', content)
+        content = re.sub(r"^\W+|\W+$", "", content)
         return content.strip()
 
 
@@ -116,6 +118,7 @@ class MinHasher:
 
         # Generate hash coefficients
         import random
+
         random.seed(42)
         self._a = [random.randint(1, 2**31 - 1) for _ in range(num_hashes)]
         self._b = [random.randint(0, 2**31 - 1) for _ in range(num_hashes)]
@@ -131,7 +134,7 @@ class MinHasher:
         # Compute signature
         signature = []
         for i in range(self.num_hashes):
-            min_hash = float('inf')
+            min_hash = float("inf")
             for shingle in shingles:
                 h = (self._a[i] * hash(shingle) + self._b[i]) % self._prime
                 min_hash = min(min_hash, h)
@@ -153,7 +156,7 @@ class MinHasher:
         shingles = set()
 
         for i in range(len(words) - self.shingle_size + 1):
-            shingle = " ".join(words[i:i + self.shingle_size])
+            shingle = " ".join(words[i : i + self.shingle_size])
             shingles.add(shingle)
 
         return shingles
@@ -183,7 +186,9 @@ class DuplicateDetector:
             state_dir: Directory for state persistence
         """
         self.embedding_service = embedding_service
-        self.state_dir = state_dir or Path.home() / ".corerag" / "duplicates"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "duplicates"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._hasher = ContentHasher()
@@ -219,10 +224,9 @@ class DuplicateDetector:
         # Collect files
         pattern = "**/*" if recursive else "*"
         files = [
-            f for f in directory.glob(pattern)
-            if f.is_file() and (
-                file_types is None or f.suffix.lower() in file_types
-            )
+            f
+            for f in directory.glob(pattern)
+            if f.is_file() and (file_types is None or f.suffix.lower() in file_types)
         ]
 
         logger.info(f"Scanning {len(files)} files for duplicates...")
@@ -285,12 +289,14 @@ class DuplicateDetector:
             # Check for exact match
             for existing_path, existing_hash in self._content_hashes.items():
                 if existing_hash == content_hash and existing_path != str(file_path):
-                    matches.append(DuplicateMatch(
-                        file1=existing_path,
-                        file2=str(file_path),
-                        similarity=1.0,
-                        match_type="exact",
-                    ))
+                    matches.append(
+                        DuplicateMatch(
+                            file1=existing_path,
+                            file2=str(file_path),
+                            similarity=1.0,
+                            match_type="exact",
+                        )
+                    )
                     return matches  # Exact match found, no need for more
 
             # Check for near match
@@ -303,12 +309,14 @@ class DuplicateDetector:
                     if existing_path != str(file_path):
                         similarity = self._minhasher.estimate_similarity(sig, existing_sig)
                         if similarity >= self.NEAR_DUPLICATE_THRESHOLD:
-                            matches.append(DuplicateMatch(
-                                file1=existing_path,
-                                file2=str(file_path),
-                                similarity=similarity,
-                                match_type="near",
-                            ))
+                            matches.append(
+                                DuplicateMatch(
+                                    file1=existing_path,
+                                    file2=str(file_path),
+                                    similarity=similarity,
+                                    match_type="near",
+                                )
+                            )
 
             except Exception as e:
                 logger.warning(f"Error checking file {file_path}: {e}")
@@ -361,13 +369,15 @@ class DuplicateDetector:
                 # First file is the "original", rest are duplicates
                 original = file_list[0]
                 for duplicate in file_list[1:]:
-                    matches.append(DuplicateMatch(
-                        file1=original,
-                        file2=duplicate,
-                        similarity=1.0,
-                        match_type="exact",
-                        details={"hash": content_hash},
-                    ))
+                    matches.append(
+                        DuplicateMatch(
+                            file1=original,
+                            file2=duplicate,
+                            similarity=1.0,
+                            match_type="exact",
+                            details={"hash": content_hash},
+                        )
+                    )
 
         return matches
 
@@ -393,7 +403,7 @@ class DuplicateDetector:
         # Compare all pairs (could be optimized with LSH)
         file_list = list(signatures.keys())
         for i, file1 in enumerate(file_list):
-            for file2 in file_list[i + 1:]:
+            for file2 in file_list[i + 1 :]:
                 similarity = self._minhasher.estimate_similarity(
                     signatures[file1], signatures[file2]
                 )
@@ -401,12 +411,14 @@ class DuplicateDetector:
                 if similarity >= self.NEAR_DUPLICATE_THRESHOLD:
                     # Avoid reporting if already exact match
                     if self._content_hashes.get(file1) != self._content_hashes.get(file2):
-                        matches.append(DuplicateMatch(
-                            file1=file1,
-                            file2=file2,
-                            similarity=similarity,
-                            match_type="near",
-                        ))
+                        matches.append(
+                            DuplicateMatch(
+                                file1=file1,
+                                file2=file2,
+                                similarity=similarity,
+                                match_type="near",
+                            )
+                        )
 
         return matches
 
@@ -437,26 +449,26 @@ class DuplicateDetector:
         # Compare pairs
         file_list = list(embeddings.keys())
         for i, file1 in enumerate(file_list):
-            for file2 in file_list[i + 1:]:
-                similarity = self._cosine_similarity(
-                    embeddings[file1], embeddings[file2]
-                )
+            for file2 in file_list[i + 1 :]:
+                similarity = self._cosine_similarity(embeddings[file1], embeddings[file2])
 
                 if similarity >= self.SEMANTIC_DUPLICATE_THRESHOLD:
                     # Avoid if already matched as exact or near
                     if (
                         self._content_hashes.get(file1) != self._content_hashes.get(file2)
                         and self._minhasher.estimate_similarity(
-                            self._minhash_sigs.get(file1, []),
-                            self._minhash_sigs.get(file2, [])
-                        ) < self.NEAR_DUPLICATE_THRESHOLD
+                            self._minhash_sigs.get(file1, []), self._minhash_sigs.get(file2, [])
+                        )
+                        < self.NEAR_DUPLICATE_THRESHOLD
                     ):
-                        matches.append(DuplicateMatch(
-                            file1=file1,
-                            file2=file2,
-                            similarity=similarity,
-                            match_type="semantic",
-                        ))
+                        matches.append(
+                            DuplicateMatch(
+                                file1=file1,
+                                file2=file2,
+                                similarity=similarity,
+                                match_type="semantic",
+                            )
+                        )
 
         return matches
 
@@ -492,9 +504,12 @@ class DuplicateDetector:
 
         try:
             with open(state_file, "w") as f:
-                json.dump({
-                    "hashes": self._content_hashes,
-                    "signatures": self._minhash_sigs,
-                }, f)
+                json.dump(
+                    {
+                        "hashes": self._content_hashes,
+                        "signatures": self._minhash_sigs,
+                    },
+                    f,
+                )
         except Exception as e:
             logger.warning(f"Failed to save duplicate state: {e}")

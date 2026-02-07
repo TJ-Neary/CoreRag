@@ -6,20 +6,20 @@ Provides system monitoring, diagnostics, and status reporting.
 
 import json
 import logging
-import os
 import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class HealthStatus(Enum):
     """Component health status."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -29,6 +29,7 @@ class HealthStatus(Enum):
 @dataclass
 class HealthCheck:
     """Result of a health check."""
+
     name: str
     status: HealthStatus
     message: str
@@ -40,6 +41,7 @@ class HealthCheck:
 @dataclass
 class SystemStatus:
     """Overall system status."""
+
     status: HealthStatus
     checks: List[HealthCheck]
     uptime_seconds: float
@@ -56,13 +58,13 @@ class SystemStatus:
                     "status": c.status.value,
                     "message": c.message,
                     "latency_ms": c.latency_ms,
-                    "details": c.details
+                    "details": c.details,
                 }
                 for c in self.checks
             ],
             "uptime_seconds": self.uptime_seconds,
             "version": self.version,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
         }
 
 
@@ -81,11 +83,7 @@ class HealthChecker:
 
     VERSION = "0.1.0"
 
-    def __init__(
-        self,
-        data_dir: Optional[Path] = None,
-        state_dir: Optional[Path] = None
-    ):
+    def __init__(self, data_dir: Optional[Path] = None, state_dir: Optional[Path] = None):
         """
         Initialize health checker.
 
@@ -93,8 +91,10 @@ class HealthChecker:
             data_dir: Data directory to check
             state_dir: State directory for health logs
         """
-        self.data_dir = data_dir or Path.home() / ".corerag" / "data"
-        self.state_dir = state_dir or Path.home() / ".corerag" / "health"
+        from src.config import HEALTH_DIR, STATE_DIR
+
+        self.data_dir = data_dir or STATE_DIR
+        self.state_dir = state_dir or HEALTH_DIR
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self._start_time = time.time()
@@ -103,11 +103,7 @@ class HealthChecker:
         # Register default checks
         self._register_default_checks()
 
-    def register_check(
-        self,
-        name: str,
-        check_func: Callable[[], HealthCheck]
-    ) -> None:
+    def register_check(self, name: str, check_func: Callable[[], HealthCheck]) -> None:
         """Register a custom health check."""
         self._check_registry[name] = check_func
 
@@ -124,23 +120,28 @@ class HealthChecker:
                 # Update overall status
                 if result.status == HealthStatus.UNHEALTHY:
                     overall_status = HealthStatus.UNHEALTHY
-                elif result.status == HealthStatus.DEGRADED and overall_status == HealthStatus.HEALTHY:
+                elif (
+                    result.status == HealthStatus.DEGRADED
+                    and overall_status == HealthStatus.HEALTHY
+                ):
                     overall_status = HealthStatus.DEGRADED
 
             except Exception as e:
-                checks.append(HealthCheck(
-                    name=name,
-                    status=HealthStatus.UNHEALTHY,
-                    message=f"Check failed: {str(e)}",
-                    latency_ms=0
-                ))
+                checks.append(
+                    HealthCheck(
+                        name=name,
+                        status=HealthStatus.UNHEALTHY,
+                        message=f"Check failed: {str(e)}",
+                        latency_ms=0,
+                    )
+                )
                 overall_status = HealthStatus.UNHEALTHY
 
         status = SystemStatus(
             status=overall_status,
             checks=checks,
             uptime_seconds=time.time() - self._start_time,
-            version=self.VERSION
+            version=self.VERSION,
         )
 
         # Log status
@@ -155,7 +156,7 @@ class HealthChecker:
                 name=name,
                 status=HealthStatus.UNKNOWN,
                 message=f"Check '{name}' not found",
-                latency_ms=0
+                latency_ms=0,
             )
 
         return self._check_registry[name]()
@@ -169,7 +170,7 @@ class HealthChecker:
             f"Version: {status.version}",
             f"Uptime: {self._format_uptime(status.uptime_seconds)}",
             "",
-            "Component Status:"
+            "Component Status:",
         ]
 
         for check in status.checks:
@@ -177,7 +178,7 @@ class HealthChecker:
                 HealthStatus.HEALTHY: "✅",
                 HealthStatus.DEGRADED: "⚠️",
                 HealthStatus.UNHEALTHY: "❌",
-                HealthStatus.UNKNOWN: "❓"
+                HealthStatus.UNKNOWN: "❓",
             }[check.status]
 
             lines.append(f"  {icon} {check.name}: {check.message} ({check.latency_ms:.0f}ms)")
@@ -206,7 +207,7 @@ class HealthChecker:
                     name="database",
                     status=HealthStatus.DEGRADED,
                     message="Database not initialized",
-                    latency_ms=(time.time() - start) * 1000
+                    latency_ms=(time.time() - start) * 1000,
                 )
 
             db = lancedb.connect(str(db_path))
@@ -217,7 +218,7 @@ class HealthChecker:
                 status=HealthStatus.HEALTHY,
                 message=f"Connected, {len(tables)} tables",
                 latency_ms=(time.time() - start) * 1000,
-                details={"tables": tables}
+                details={"tables": tables},
             )
 
         except ImportError:
@@ -225,14 +226,14 @@ class HealthChecker:
                 name="database",
                 status=HealthStatus.UNHEALTHY,
                 message="LanceDB not installed",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
         except Exception as e:
             return HealthCheck(
                 name="database",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Connection failed: {str(e)}",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _check_storage(self) -> HealthCheck:
@@ -241,7 +242,7 @@ class HealthChecker:
 
         try:
             total, used, free = shutil.disk_usage(self.data_dir)
-            free_gb = free / (1024 ** 3)
+            free_gb = free / (1024**3)
             used_percent = (used / total) * 100
 
             if free_gb < 5:
@@ -260,11 +261,11 @@ class HealthChecker:
                 message=message,
                 latency_ms=(time.time() - start) * 1000,
                 details={
-                    "total_gb": total / (1024 ** 3),
-                    "used_gb": used / (1024 ** 3),
+                    "total_gb": total / (1024**3),
+                    "used_gb": used / (1024**3),
                     "free_gb": free_gb,
-                    "used_percent": used_percent
-                }
+                    "used_percent": used_percent,
+                },
             )
 
         except Exception as e:
@@ -272,7 +273,7 @@ class HealthChecker:
                 name="storage",
                 status=HealthStatus.UNKNOWN,
                 message=f"Check failed: {str(e)}",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _check_memory(self) -> HealthCheck:
@@ -283,7 +284,7 @@ class HealthChecker:
             import psutil
 
             memory = psutil.virtual_memory()
-            available_gb = memory.available / (1024 ** 3)
+            available_gb = memory.available / (1024**3)
             used_percent = memory.percent
 
             if available_gb < 4:
@@ -302,10 +303,10 @@ class HealthChecker:
                 message=message,
                 latency_ms=(time.time() - start) * 1000,
                 details={
-                    "total_gb": memory.total / (1024 ** 3),
+                    "total_gb": memory.total / (1024**3),
                     "available_gb": available_gb,
-                    "used_percent": used_percent
-                }
+                    "used_percent": used_percent,
+                },
             )
 
         except ImportError:
@@ -313,7 +314,7 @@ class HealthChecker:
                 name="memory",
                 status=HealthStatus.UNKNOWN,
                 message="psutil not installed",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _check_embedding_model(self) -> HealthCheck:
@@ -331,14 +332,14 @@ class HealthChecker:
                     status=HealthStatus.HEALTHY,
                     message="Model cached locally",
                     latency_ms=(time.time() - start) * 1000,
-                    details={"model_paths": [str(d) for d in nomic_dirs[:3]]}
+                    details={"model_paths": [str(d) for d in nomic_dirs[:3]]},
                 )
             else:
                 return HealthCheck(
                     name="embedding_model",
                     status=HealthStatus.DEGRADED,
                     message="Model not cached, will download on first use",
-                    latency_ms=(time.time() - start) * 1000
+                    latency_ms=(time.time() - start) * 1000,
                 )
 
         except Exception as e:
@@ -346,7 +347,7 @@ class HealthChecker:
                 name="embedding_model",
                 status=HealthStatus.UNKNOWN,
                 message=f"Check failed: {str(e)}",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _check_file_access(self) -> HealthCheck:
@@ -363,7 +364,7 @@ class HealthChecker:
                 name="file_access",
                 status=HealthStatus.HEALTHY,
                 message="Read/write access OK",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
         except PermissionError:
@@ -371,14 +372,14 @@ class HealthChecker:
                 name="file_access",
                 status=HealthStatus.UNHEALTHY,
                 message="Permission denied",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
         except Exception as e:
             return HealthCheck(
                 name="file_access",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Access failed: {str(e)}",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _check_background_jobs(self) -> HealthCheck:
@@ -393,7 +394,7 @@ class HealthChecker:
                     name="background_jobs",
                     status=HealthStatus.HEALTHY,
                     message="No active jobs",
-                    latency_ms=(time.time() - start) * 1000
+                    latency_ms=(time.time() - start) * 1000,
                 )
 
             active_jobs = list(checkpoint_dir.glob("*.json"))
@@ -408,7 +409,8 @@ class HealthChecker:
                         updated = datetime.fromisoformat(job_data.get("updated_at", ""))
                         if datetime.now() - updated > timedelta(hours=1):
                             stuck_jobs.append(job_file.stem)
-                except:
+                except (json.JSONDecodeError, KeyError, ValueError, OSError):
+                    # Skip unreadable or malformed job files
                     pass
 
             if stuck_jobs:
@@ -417,14 +419,14 @@ class HealthChecker:
                     status=HealthStatus.DEGRADED,
                     message=f"{len(stuck_jobs)} stuck jobs",
                     latency_ms=(time.time() - start) * 1000,
-                    details={"stuck_jobs": stuck_jobs}
+                    details={"stuck_jobs": stuck_jobs},
                 )
 
             return HealthCheck(
                 name="background_jobs",
                 status=HealthStatus.HEALTHY,
                 message=f"{len(active_jobs)} active jobs",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
         except Exception as e:
@@ -432,7 +434,7 @@ class HealthChecker:
                 name="background_jobs",
                 status=HealthStatus.UNKNOWN,
                 message=f"Check failed: {str(e)}",
-                latency_ms=(time.time() - start) * 1000
+                latency_ms=(time.time() - start) * 1000,
             )
 
     def _log_status(self, status: SystemStatus) -> None:
@@ -443,9 +445,7 @@ class HealthChecker:
             "timestamp": status.timestamp,
             "status": status.status.value,
             "uptime_seconds": status.uptime_seconds,
-            "checks": {
-                c.name: c.status.value for c in status.checks
-            }
+            "checks": {c.name: c.status.value for c in status.checks},
         }
 
         with open(log_file, "a") as f:
@@ -473,21 +473,18 @@ class MetricsCollector:
 
     def __init__(self, state_dir: Optional[Path] = None):
         """Initialize metrics collector."""
-        self.state_dir = state_dir or Path.home() / ".corerag" / "metrics"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "metrics"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
-    def record_metric(
-        self,
-        name: str,
-        value: float,
-        tags: Optional[Dict[str, str]] = None
-    ) -> None:
+    def record_metric(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
         """Record a metric value."""
         metric = {
             "timestamp": datetime.now().isoformat(),
             "name": name,
             "value": value,
-            "tags": tags or {}
+            "tags": tags or {},
         }
 
         # Append to daily file
@@ -498,10 +495,7 @@ class MetricsCollector:
             f.write(json.dumps(metric) + "\n")
 
     def get_metrics(
-        self,
-        name: str,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None
+        self, name: str, since: Optional[datetime] = None, until: Optional[datetime] = None
     ) -> List[Dict]:
         """Retrieve metrics for a given name."""
         metrics = []
@@ -521,7 +515,8 @@ class MetricsCollector:
                             metric = json.loads(line)
                             if metric["name"] == name:
                                 metrics.append(metric)
-                        except:
+                        except (json.JSONDecodeError, KeyError, TypeError):
+                            # Skip malformed metric entries
                             pass
 
             current += timedelta(days=1)
@@ -545,5 +540,5 @@ class MetricsCollector:
             "min": min(values),
             "max": max(values),
             "avg": sum(values) / len(values),
-            "latest": values[-1] if values else None
+            "latest": values[-1] if values else None,
         }

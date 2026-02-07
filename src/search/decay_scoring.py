@@ -12,9 +12,8 @@ Formula: Final_Score = Vector_Score * (1 / (1 + decay_rate * age_in_years))
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import List, Optional, Callable
-import math
+from datetime import datetime
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +21,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecayConfig:
     """Configuration for time-weighted scoring."""
-    decay_rate: float = 0.1      # Higher = faster decay
-    max_age_years: float = 10.0   # Documents older than this get minimum score
-    min_multiplier: float = 0.1   # Minimum score multiplier
+
+    decay_rate: float = 0.1  # Higher = faster decay
+    max_age_years: float = 10.0  # Documents older than this get minimum score
+    min_multiplier: float = 0.1  # Minimum score multiplier
     reference_date: Optional[datetime] = None  # None = use current time
     use_modification_date: bool = True  # vs creation date
 
 
-def calculate_decay_multiplier(
-    doc_date: datetime,
-    config: DecayConfig
-) -> float:
+def calculate_decay_multiplier(doc_date: datetime, config: DecayConfig) -> float:
     """
     Calculate decay multiplier for a document date.
 
@@ -61,9 +58,7 @@ def calculate_decay_multiplier(
 
 
 def apply_decay_to_results(
-    results: List[dict],
-    config: Optional[DecayConfig] = None,
-    date_field: str = "modified_at"
+    results: List[dict], config: Optional[DecayConfig] = None, date_field: str = "modified_at"
 ) -> List[dict]:
     """
     Apply time-based decay to search results.
@@ -83,6 +78,7 @@ def apply_decay_to_results(
         metadata = result.get("metadata", {})
         if isinstance(metadata, str):
             import json
+
             metadata = json.loads(metadata)
 
         date_str = metadata.get(date_field)
@@ -93,8 +89,8 @@ def apply_decay_to_results(
                     doc_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
                 else:
                     doc_date = date_str
-            except:
-                doc_date = datetime.now()  # Fallback to now (no decay)
+            except (ValueError, TypeError, AttributeError):
+                doc_date = datetime.now()  # Fallback to now (no decay) if date unparseable
         else:
             doc_date = datetime.now()
 
@@ -131,10 +127,7 @@ class AdaptiveDecay:
         return self.category_decay_rates.get(category, self.default_decay_rate)
 
     def record_preference(
-        self,
-        category: str,
-        selected_age_years: float,
-        alternatives_ages: List[float]
+        self, category: str, selected_age_years: float, alternatives_ages: List[float]
     ):
         """
         Record user preference to adjust decay rates.
@@ -173,15 +166,13 @@ class SeasonalBoost:
 
     def __init__(self):
         self.seasonal_patterns = {
-            "tax": [(3, 4)],      # March-April
+            "tax": [(3, 4)],  # March-April
             "review": [(12, 1)],  # December-January (annual reviews)
             "budget": [(1, 2), (10, 11)],  # Q1 and Q4 planning
         }
 
     def get_seasonal_boost(
-        self,
-        keywords: List[str],
-        current_date: Optional[datetime] = None
+        self, keywords: List[str], current_date: Optional[datetime] = None
     ) -> float:
         """
         Calculate seasonal boost multiplier.
@@ -204,8 +195,9 @@ class SeasonalBoost:
                     for month_range in months:
                         if isinstance(month_range, tuple):
                             start, end = month_range
-                            if start <= current_month <= end or \
-                               (start > end and (current_month >= start or current_month <= end)):
+                            if start <= current_month <= end or (
+                                start > end and (current_month >= start or current_month <= end)
+                            ):
                                 max_boost = max(max_boost, 1.3)
                         elif current_month == month_range:
                             max_boost = max(max_boost, 1.3)
@@ -214,9 +206,7 @@ class SeasonalBoost:
 
 
 def combined_temporal_scoring(
-    results: List[dict],
-    decay_config: Optional[DecayConfig] = None,
-    apply_seasonal: bool = True
+    results: List[dict], decay_config: Optional[DecayConfig] = None, apply_seasonal: bool = True
 ) -> List[dict]:
     """
     Apply combined temporal scoring: decay + seasonal boost.
@@ -240,6 +230,7 @@ def combined_temporal_scoring(
             metadata = result.get("metadata", {})
             if isinstance(metadata, str):
                 import json
+
                 metadata = json.loads(metadata)
 
             keywords = metadata.get("keywords", [])

@@ -129,14 +129,23 @@ architecture/CoreRag_Design_Personal_Context.md
 # LaunchAgent plist contains hardcoded user paths
 scripts/com.user.corerag.plist
 
-# Project session logs contain personal name, document references, hardware info
-_project/progress.md
-_project/project_memory.md
-_project/task_plan.md
-_project/findings.md
-_project/KENDRA_INTEGRATION.md
+# Project session logs and planning files (moved to _project/Archive/ on 2026-02-02)
+# _project/Archive/ pattern below covers all archived files
 
 # =============================================================================
-# Project Internal (archived planning docs from scaffold phase)
+# Project Internal (archived planning docs - contains personal paths/notes)
 # =============================================================================
 _project/Archive/
+
+# ============================================================================
+# Privacy Protection - Prevent accidental context leaks
+# ============================================================================
+**/session_*.md
+**/internal_context*
+**/*_private*
+**/*persona*.md
+
+claude.md
+claude.yml
+gemini.md
+chatgpt.md

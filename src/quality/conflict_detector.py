@@ -10,36 +10,39 @@ Detect contradictions and inconsistencies across documents:
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class ConflictType(Enum):
     """Types of conflicts detected."""
-    CONTRADICTION = "contradiction"        # Direct semantic contradiction
+
+    CONTRADICTION = "contradiction"  # Direct semantic contradiction
     NUMERIC_MISMATCH = "numeric_mismatch"  # Different numbers for same thing
-    DATE_MISMATCH = "date_mismatch"        # Different dates for same event
+    DATE_MISMATCH = "date_mismatch"  # Different dates for same event
     VERSION_CONFLICT = "version_conflict"  # Different version numbers
-    OUTDATED = "outdated"                  # Newer info supersedes older
-    AMBIGUOUS = "ambiguous"                # Unclear which is correct
+    OUTDATED = "outdated"  # Newer info supersedes older
+    AMBIGUOUS = "ambiguous"  # Unclear which is correct
 
 
 class ConflictSeverity(Enum):
     """Severity of detected conflict."""
-    LOW = "low"          # Minor inconsistency
-    MEDIUM = "medium"    # Notable conflict
-    HIGH = "high"        # Serious contradiction
+
+    LOW = "low"  # Minor inconsistency
+    MEDIUM = "medium"  # Notable conflict
+    HIGH = "high"  # Serious contradiction
     CRITICAL = "critical"  # Dangerous misinformation
 
 
 @dataclass
 class ConflictEvidence:
     """Evidence supporting a conflict."""
+
     file_path: str
     content: str
     line_number: Optional[int] = None
@@ -50,6 +53,7 @@ class ConflictEvidence:
 @dataclass
 class Conflict:
     """A detected conflict between documents."""
+
     conflict_type: ConflictType
     severity: ConflictSeverity
     description: str
@@ -63,6 +67,7 @@ class Conflict:
 @dataclass
 class ConflictReport:
     """Report of all detected conflicts."""
+
     scan_timestamp: datetime
     documents_analyzed: int
     conflicts_found: int
@@ -77,7 +82,8 @@ class ConflictReport:
     def get_high_priority(self) -> List[Conflict]:
         """Get high priority conflicts (critical + high)."""
         return [
-            c for c in self.conflicts
+            c
+            for c in self.conflicts
             if c.severity in {ConflictSeverity.CRITICAL, ConflictSeverity.HIGH}
         ]
 
@@ -90,21 +96,19 @@ class NumericExtractor:
         # Version numbers
         (r"version\s+(\d+(?:\.\d+)+)", "version"),
         (r"v(\d+(?:\.\d+)+)", "version"),
-
         # Dates
         (r"(\d{4}-\d{2}-\d{2})", "date"),
         (r"(\d{1,2}/\d{1,2}/\d{4})", "date"),
-        (r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}", "date"),
-
+        (
+            r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}",
+            "date",
+        ),
         # Percentages
         (r"(\d+(?:\.\d+)?)\s*%", "percentage"),
-
         # Counts/quantities
         (r"(\d+(?:,\d{3})*)\s+(users?|items?|files?|documents?|records?)", "count"),
-
         # Prices
         (r"\$(\d+(?:,\d{3})*(?:\.\d{2})?)", "price"),
-
         # Times
         (r"(\d+)\s*(seconds?|minutes?|hours?|days?|weeks?|months?|years?)", "duration"),
     ]
@@ -124,13 +128,15 @@ class NumericExtractor:
 
         for pattern, fact_type in cls.PATTERNS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                facts.append({
-                    "type": fact_type,
-                    "value": match.group(1) if match.groups() else match.group(0),
-                    "full_match": match.group(0),
-                    "position": match.start(),
-                    "context": text[max(0, match.start() - 50):match.end() + 50],
-                })
+                facts.append(
+                    {
+                        "type": fact_type,
+                        "value": match.group(1) if match.groups() else match.group(0),
+                        "full_match": match.group(0),
+                        "position": match.start(),
+                        "context": text[max(0, match.start() - 50) : match.end() + 50],
+                    }
+                )
 
         return facts
 
@@ -187,7 +193,7 @@ class SemanticConflictDetector:
         # Compare pairs
         passage_list = list(passages)
         for i, p1 in enumerate(passage_list):
-            for p2 in passage_list[i + 1:]:
+            for p2 in passage_list[i + 1 :]:
                 # Check similarity
                 sim = self._cosine_similarity(
                     embeddings[p1.get("source_path", id(p1))],
@@ -216,6 +222,7 @@ class SemanticConflictDetector:
     def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
         """Compute cosine similarity."""
         import math
+
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = math.sqrt(sum(x * x for x in a))
         norm_b = math.sqrt(sum(x * x for x in b))
@@ -226,7 +233,18 @@ class SemanticConflictDetector:
     def _heuristic_contradiction(self, text1: str, text2: str) -> bool:
         """Simple heuristic for contradiction detection."""
         # Check for negation patterns
-        negation_words = {"not", "never", "no", "none", "cannot", "don't", "doesn't", "won't", "isn't", "aren't"}
+        negation_words = {
+            "not",
+            "never",
+            "no",
+            "none",
+            "cannot",
+            "don't",
+            "doesn't",
+            "won't",
+            "isn't",
+            "aren't",
+        }
 
         words1 = set(text1.lower().split())
         words2 = set(text2.lower().split())
@@ -237,7 +255,9 @@ class SemanticConflictDetector:
 
         if neg_in_1 != neg_in_2:
             # Check for shared content words
-            content_words = (words1 & words2) - negation_words - {"the", "a", "is", "are", "was", "were"}
+            content_words = (
+                (words1 & words2) - negation_words - {"the", "a", "is", "are", "was", "were"}
+            )
             if len(content_words) > 3:
                 return True
 
@@ -268,12 +288,12 @@ class ConflictDetector:
             state_dir: Directory for state persistence
         """
         self.embedder = embedder
-        self.state_dir = state_dir or Path.home() / ".corerag" / "conflicts"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "conflicts"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
-        self.semantic_detector = (
-            SemanticConflictDetector(embedder) if embedder else None
-        )
+        self.semantic_detector = SemanticConflictDetector(embedder) if embedder else None
 
     def scan_documents(
         self,
@@ -305,20 +325,24 @@ class ConflictDetector:
         if self.semantic_detector:
             semantic_conflicts = self.semantic_detector.find_contradictions(documents)
             for p1, p2, confidence in semantic_conflicts:
-                conflicts.append(Conflict(
-                    conflict_type=ConflictType.CONTRADICTION,
-                    severity=ConflictSeverity.HIGH if confidence > 0.8 else ConflictSeverity.MEDIUM,
-                    description="Semantic contradiction detected between passages",
-                    evidence_a=ConflictEvidence(
-                        file_path=p1.get("source_path", ""),
-                        content=p1.get("text", "")[:200],
-                    ),
-                    evidence_b=ConflictEvidence(
-                        file_path=p2.get("source_path", ""),
-                        content=p2.get("text", "")[:200],
-                    ),
-                    confidence=confidence,
-                ))
+                conflicts.append(
+                    Conflict(
+                        conflict_type=ConflictType.CONTRADICTION,
+                        severity=(
+                            ConflictSeverity.HIGH if confidence > 0.8 else ConflictSeverity.MEDIUM
+                        ),
+                        description="Semantic contradiction detected between passages",
+                        evidence_a=ConflictEvidence(
+                            file_path=p1.get("source_path", ""),
+                            content=p1.get("text", "")[:200],
+                        ),
+                        evidence_b=ConflictEvidence(
+                            file_path=p2.get("source_path", ""),
+                            content=p2.get("text", "")[:200],
+                        ),
+                        confidence=confidence,
+                    )
+                )
 
         # Build report
         by_type = {}
@@ -366,11 +390,13 @@ class ConflictDetector:
                 if ext in file_types:
                     try:
                         content = file_path.read_text(encoding="utf-8", errors="ignore")
-                        documents.append({
-                            "text": content,
-                            "source_path": str(file_path),
-                            "modified_at": datetime.fromtimestamp(file_path.stat().st_mtime),
-                        })
+                        documents.append(
+                            {
+                                "text": content,
+                                "source_path": str(file_path),
+                                "modified_at": datetime.fromtimestamp(file_path.stat().st_mtime),
+                            }
+                        )
                     except Exception as e:
                         logger.warning(f"Error reading {file_path}: {e}")
 
@@ -422,24 +448,26 @@ class ConflictDetector:
                 item1 = items[0]
                 item2 = items[1]
 
-                conflicts.append(Conflict(
-                    conflict_type=conflict_type,
-                    severity=severity,
-                    description=f"{fact_type.title()} mismatch: '{item1[1]['value']}' vs '{item2[1]['value']}'",
-                    evidence_a=ConflictEvidence(
-                        file_path=item1[0],
-                        content=item1[1]["full_match"],
-                        context=item1[1].get("context"),
-                    ),
-                    evidence_b=ConflictEvidence(
-                        file_path=item2[0],
-                        content=item2[1]["full_match"],
-                        context=item2[1].get("context"),
-                    ),
-                    topic=group_key.split(":")[1][:50] if ":" in group_key else None,
-                    resolution_suggestion=self._suggest_resolution(fact_type, items),
-                    confidence=0.8,
-                ))
+                conflicts.append(
+                    Conflict(
+                        conflict_type=conflict_type,
+                        severity=severity,
+                        description=f"{fact_type.title()} mismatch: '{item1[1]['value']}' vs '{item2[1]['value']}'",
+                        evidence_a=ConflictEvidence(
+                            file_path=item1[0],
+                            content=item1[1]["full_match"],
+                            context=item1[1].get("context"),
+                        ),
+                        evidence_b=ConflictEvidence(
+                            file_path=item2[0],
+                            content=item2[1]["full_match"],
+                            context=item2[1].get("context"),
+                        ),
+                        topic=group_key.split(":")[1][:50] if ":" in group_key else None,
+                        resolution_suggestion=self._suggest_resolution(fact_type, items),
+                        confidence=0.8,
+                    )
+                )
 
         return conflicts
 
@@ -482,10 +510,12 @@ def format_conflict_report(report: ConflictReport) -> str:
         return "\n".join(lines)
 
     # Summary by severity
-    lines.extend([
-        "## Summary by Severity",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Summary by Severity",
+            "",
+        ]
+    )
     for severity, count in sorted(report.by_severity.items()):
         icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(severity, "⚪")
         lines.append(f"- {icon} {severity.title()}: {count}")
@@ -493,10 +523,12 @@ def format_conflict_report(report: ConflictReport) -> str:
     lines.append("")
 
     # Conflicts by type
-    lines.extend([
-        "## Summary by Type",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Summary by Type",
+            "",
+        ]
+    )
     for ctype, count in report.by_type.items():
         lines.append(f"- {ctype.replace('_', ' ').title()}: {count}")
 
@@ -505,28 +537,32 @@ def format_conflict_report(report: ConflictReport) -> str:
     # High priority conflicts
     high_priority = report.get_high_priority()
     if high_priority:
-        lines.extend([
-            "## High Priority Conflicts",
-            "",
-        ])
+        lines.extend(
+            [
+                "## High Priority Conflicts",
+                "",
+            ]
+        )
 
         for i, conflict in enumerate(high_priority[:10], 1):
-            lines.extend([
-                f"### {i}. {conflict.description}",
-                "",
-                f"**Type:** {conflict.conflict_type.value}",
-                f"**Severity:** {conflict.severity.value}",
-                f"**Confidence:** {conflict.confidence:.0%}",
-                "",
-                "**Evidence A:**",
-                f"- File: `{Path(conflict.evidence_a.file_path).name}`",
-                f"- Content: {conflict.evidence_a.content[:100]}...",
-                "",
-                "**Evidence B:**",
-                f"- File: `{Path(conflict.evidence_b.file_path).name}`",
-                f"- Content: {conflict.evidence_b.content[:100]}...",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"### {i}. {conflict.description}",
+                    "",
+                    f"**Type:** {conflict.conflict_type.value}",
+                    f"**Severity:** {conflict.severity.value}",
+                    f"**Confidence:** {conflict.confidence:.0%}",
+                    "",
+                    "**Evidence A:**",
+                    f"- File: `{Path(conflict.evidence_a.file_path).name}`",
+                    f"- Content: {conflict.evidence_a.content[:100]}...",
+                    "",
+                    "**Evidence B:**",
+                    f"- File: `{Path(conflict.evidence_b.file_path).name}`",
+                    f"- Content: {conflict.evidence_b.content[:100]}...",
+                    "",
+                ]
+            )
 
             if conflict.resolution_suggestion:
                 lines.append(f"**Suggested Resolution:** {conflict.resolution_suggestion}")

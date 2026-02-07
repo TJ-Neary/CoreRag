@@ -10,9 +10,11 @@ Handle complex questions by decomposing into sub-queries:
 
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+
+from src.utils.retry import RetryStrategies, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SubQuery:
     """A decomposed sub-query."""
+
     query: str
     query_type: str  # "factual", "conceptual", "procedural", "comparison"
     focus: Optional[str] = None  # Key concept to find
@@ -29,6 +32,7 @@ class SubQuery:
 @dataclass
 class FusedResult:
     """A result from multi-query fusion."""
+
     content: str
     source_path: str
     fused_score: float
@@ -40,6 +44,7 @@ class FusedResult:
 @dataclass
 class MultiQueryResult:
     """Result of multi-query search."""
+
     original_query: str
     sub_queries: List[SubQuery]
     results: List[FusedResult]
@@ -124,17 +129,21 @@ class QueryDecomposer:
             if match:
                 parts = [g for g in match.groups() if g]
                 for part in parts:
-                    sub_queries.append(SubQuery(
-                        query=part.strip(),
-                        query_type="entity",
-                        focus=part.strip(),
-                    ))
+                    sub_queries.append(
+                        SubQuery(
+                            query=part.strip(),
+                            query_type="entity",
+                            focus=part.strip(),
+                        )
+                    )
                 # Add comparison query
-                sub_queries.append(SubQuery(
-                    query=query,
-                    query_type="comparison",
-                    weight=1.2,  # Higher weight for original
-                ))
+                sub_queries.append(
+                    SubQuery(
+                        query=query,
+                        query_type="comparison",
+                        weight=1.2,  # Higher weight for original
+                    )
+                )
                 return sub_queries
 
         # Check compound patterns
@@ -143,11 +152,13 @@ class QueryDecomposer:
             if match:
                 parts = [g for g in match.groups() if g]
                 for part in parts:
-                    sub_queries.append(SubQuery(
-                        query=part.strip(),
-                        query_type="factual",
-                        focus=self._extract_focus(part),
-                    ))
+                    sub_queries.append(
+                        SubQuery(
+                            query=part.strip(),
+                            query_type="factual",
+                            focus=self._extract_focus(part),
+                        )
+                    )
                 return sub_queries
 
         # Check multi-aspect patterns
@@ -156,19 +167,23 @@ class QueryDecomposer:
             if match:
                 parts = [g for g in match.groups() if g]
                 for i, part in enumerate(parts):
-                    sub_queries.append(SubQuery(
-                        query=f"what is {part}" if i == 0 else f"how {part}",
-                        query_type="conceptual" if i == 0 else "procedural",
-                        focus=part.strip(),
-                    ))
+                    sub_queries.append(
+                        SubQuery(
+                            query=f"what is {part}" if i == 0 else f"how {part}",
+                            query_type="conceptual" if i == 0 else "procedural",
+                            focus=part.strip(),
+                        )
+                    )
                 return sub_queries
 
         # No decomposition needed - return original
-        return [SubQuery(
-            query=query,
-            query_type=self._classify_query(query),
-            focus=self._extract_focus(query),
-        )]
+        return [
+            SubQuery(
+                query=query,
+                query_type=self._classify_query(query),
+                focus=self._extract_focus(query),
+            )
+        ]
 
     def _llm_decompose(self, query: str) -> List[SubQuery]:
         """LLM-based query decomposition."""
@@ -281,14 +296,16 @@ class ReciprocalRankFusion:
         fused_results = []
         for doc_id, score in sorted_docs:
             data = doc_data[doc_id]
-            fused_results.append(FusedResult(
-                content=data.get("text", ""),
-                source_path=doc_id,
-                fused_score=score,
-                contributing_queries=doc_queries[doc_id],
-                original_ranks=doc_ranks[doc_id],
-                metadata={k: v for k, v in data.items() if k not in {"text", id_key}},
-            ))
+            fused_results.append(
+                FusedResult(
+                    content=data.get("text", ""),
+                    source_path=doc_id,
+                    fused_score=score,
+                    contributing_queries=doc_queries[doc_id],
+                    original_ranks=doc_ranks[doc_id],
+                    metadata={k: v for k, v in data.items() if k not in {"text", id_key}},
+                )
+            )
 
         return fused_results
 
@@ -360,8 +377,7 @@ class MultiQuerySearcher:
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {
-                executor.submit(self.searcher, sq.query, per_query_k): sq
-                for sq in sub_queries
+                executor.submit(self.searcher, sq.query, per_query_k): sq for sq in sub_queries
             }
 
             for future in as_completed(futures):
@@ -379,11 +395,8 @@ class MultiQuerySearcher:
         # Apply query weights (boost results matching weighted queries)
         weight_map = {sq.query: sq.weight for sq in sub_queries}
         for result in fused:
-            boost = sum(
-                weight_map.get(q, 1.0) - 1.0
-                for q in result.contributing_queries
-            )
-            result.fused_score *= (1 + boost * 0.1)
+            boost = sum(weight_map.get(q, 1.0) - 1.0 for q in result.contributing_queries)
+            result.fused_score *= 1 + boost * 0.1
 
         # Re-sort after weighting
         fused.sort(key=lambda x: x.fused_score, reverse=True)
@@ -403,19 +416,23 @@ class MultiQuerySearcher:
         # Add focused version
         focus = self.decomposer._extract_focus(query)
         if focus and focus != query:
-            variations.append(SubQuery(
-                query=focus,
-                query_type="focused",
-                weight=0.8,
-            ))
+            variations.append(
+                SubQuery(
+                    query=focus,
+                    query_type="focused",
+                    weight=0.8,
+                )
+            )
 
         # Add question-form if not already
         if not query.endswith("?"):
-            variations.append(SubQuery(
-                query=f"{query}?",
-                query_type="question",
-                weight=0.9,
-            ))
+            variations.append(
+                SubQuery(
+                    query=f"{query}?",
+                    query_type="question",
+                    weight=0.9,
+                )
+            )
 
         return variations
 
@@ -466,6 +483,7 @@ Sub-questions:"""
     if backend == "ollama":
         import requests
 
+        @with_retry(**RetryStrategies.ollama_call())
         def decompose(query: str) -> List[str]:
             response = requests.post(
                 "http://localhost:11434/api/generate",
@@ -486,7 +504,7 @@ Sub-questions:"""
                 for line in text.strip().split("\n")
                 if line.strip() and not line.strip().startswith("Sub-question")
             ]
-            return [l for l in lines if len(l) > 10][:4]
+            return [line for line in lines if len(line) > 10][:4]
 
         return decompose
 

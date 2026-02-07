@@ -16,12 +16,15 @@ This dramatically improves retrieval for:
 - How-to questions (matches procedural content)
 """
 
-import logging
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Callable
 import hashlib
 import json
+import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+from src.exceptions import SearchError
+from src.utils.retry import RetryStrategies, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HyDEResult:
     """Result of HyDE query expansion."""
+
     original_query: str
     hypothetical_document: str
     embedding: Optional[List[float]] = None
@@ -38,6 +42,7 @@ class HyDEResult:
 @dataclass
 class HyDEConfig:
     """Configuration for HyDE generation."""
+
     # Generation parameters
     max_tokens: int = 150
     temperature: float = 0.7
@@ -176,7 +181,7 @@ class HyDEExpander:
 
             # Validate response
             if len(response) < 20:
-                logger.warning(f"HyDE generated short response, using original query")
+                logger.warning("HyDE generated short response, using original query")
                 return query
 
             logger.debug(f"HyDE generated: {response[:100]}...")
@@ -339,8 +344,11 @@ def create_hyde_expander(
         Configured HyDEExpander
     """
     if backend == "ollama":
+
+        @with_retry(**RetryStrategies.ollama_call())
         def ollama_generator(prompt: str) -> str:
             import requests
+
             response = requests.post(
                 "http://localhost:11434/api/generate",
                 json={
@@ -350,7 +358,7 @@ def create_hyde_expander(
                     "options": {
                         "num_predict": kwargs.get("max_tokens", 150),
                         "temperature": kwargs.get("temperature", 0.7),
-                    }
+                    },
                 },
                 timeout=30,
             )
@@ -367,10 +375,13 @@ def create_hyde_expander(
         # MLX-LM for Apple Silicon
         def mlx_generator(prompt: str) -> str:
             try:
-                from mlx_lm import load, generate
+                from mlx_lm import generate, load
+
                 mlx_model, tokenizer = load(model)
                 response = generate(
-                    mlx_model, tokenizer, prompt=prompt,
+                    mlx_model,
+                    tokenizer,
+                    prompt=prompt,
                     max_tokens=kwargs.get("max_tokens", 150),
                     temp=kwargs.get("temperature", 0.7),
                 )
@@ -385,7 +396,7 @@ def create_hyde_expander(
         )
 
     else:
-        raise ValueError(f"Unknown backend: {backend}")
+        raise SearchError(f"Unknown HyDE backend: {backend}")
 
 
 # Convenience function

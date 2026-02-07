@@ -20,22 +20,28 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
 # Check for Presidio availability
 PRESIDIO_AVAILABLE = False
 try:
-    from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
-    from presidio_analyzer.nlp_engine import NlpEngineProvider
-    PRESIDIO_AVAILABLE = True
+    import importlib.util
+
+    if importlib.util.find_spec("presidio_analyzer"):
+        PRESIDIO_AVAILABLE = True
+    else:
+        raise ImportError("presidio_analyzer not found")
 except ImportError:
-    logger.info("Presidio not installed. Using regex-only mode. Install with: pip install presidio-analyzer")
+    logger.info(
+        "Presidio not installed. Using regex-only mode. Install with: pip install presidio-analyzer"
+    )
 
 
 class PrivacyTier(Enum):
     """Privacy classification levels."""
+
     PUBLIC = "public"  # Safe to share anywhere
     INTERNAL = "internal"  # Work-related, not public
     PRIVATE = "private"  # Personal, not for sharing
@@ -45,6 +51,7 @@ class PrivacyTier(Enum):
 
 class SensitiveDataType(Enum):
     """Types of sensitive data."""
+
     EMAIL = "email"
     PHONE = "phone"
     SSN = "ssn"
@@ -66,6 +73,7 @@ class SensitiveDataType(Enum):
 @dataclass
 class SensitiveMatch:
     """A detected sensitive data match."""
+
     data_type: SensitiveDataType
     matched_text: str
     start_pos: int
@@ -77,6 +85,7 @@ class SensitiveMatch:
 @dataclass
 class AuditResult:
     """Result of a privacy audit."""
+
     file_path: Optional[str]
     timestamp: str
     privacy_tier: PrivacyTier
@@ -97,7 +106,7 @@ class AuditResult:
             SensitiveDataType.SSN,
             SensitiveDataType.CREDIT_CARD,
             SensitiveDataType.API_KEY,
-            SensitiveDataType.PASSWORD
+            SensitiveDataType.PASSWORD,
         }
         if any(m.data_type in high_risk for m in self.matches):
             return "high"
@@ -143,57 +152,86 @@ class PrivacyScanner:
     TECHNICAL_PATTERNS = {
         SensitiveDataType.SSN: [
             # SSN with dashes: XXX-XX-XXXX (Presidio's US_SSN recognizer is unreliable)
-            (r'\b\d{3}-\d{2}-\d{4}\b', 0.90),
+            (r"\b\d{3}-\d{2}-\d{4}\b", 0.90),
             # SSN without dashes: XXXXXXXXX (9 digits)
-            (r'\b(?:ssn|social\s*security)[:\s]*(\d{9})\b', 0.85),
+            (r"\b(?:ssn|social\s*security)[:\s]*(\d{9})\b", 0.85),
         ],
         SensitiveDataType.API_KEY: [
             # Generic API key patterns
-            (r'(?:api[_-]?key|apikey|secret[_-]?key|access[_-]?token)["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_\-]{20,})', 0.90),
+            (
+                r'(?:api[_-]?key|apikey|secret[_-]?key|access[_-]?token)["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_\-]{20,})',
+                0.90,
+            ),
             # AWS Access Key ID
-            (r'AKIA[0-9A-Z]{16}', 0.95),
+            (r"AKIA[0-9A-Z]{16}", 0.95),
             # AWS Secret Access Key
-            (r'(?:aws)?_?(?:secret)?_?(?:access)?_?key["\']?\s*[:=]\s*["\']?([A-Za-z0-9/+=]{40})', 0.95),
+            (
+                r'(?:aws)?_?(?:secret)?_?(?:access)?_?key["\']?\s*[:=]\s*["\']?([A-Za-z0-9/+=]{40})',
+                0.95,
+            ),
             # GitHub Token
-            (r'gh[pousr]_[A-Za-z0-9_]{36,}', 0.98),
+            (r"gh[pousr]_[A-Za-z0-9_]{36,}", 0.98),
             # Generic Bearer Token
-            (r'Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+', 0.90),
+            (r"Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", 0.90),
             # Slack Token
-            (r'xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*', 0.95),
+            (r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*", 0.95),
             # Google API Key
-            (r'AIza[0-9A-Za-z\-_]{35}', 0.95),
+            (r"AIza[0-9A-Za-z\-_]{35}", 0.95),
             # Stripe API Key
-            (r'(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{24,}', 0.98),
+            (r"(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{24,}", 0.98),
             # OpenAI API Key
-            (r'sk-[A-Za-z0-9]{48}', 0.98),
+            (r"sk-[A-Za-z0-9]{48}", 0.98),
             # Anthropic API Key
-            (r'sk-ant-[A-Za-z0-9\-]{40,}', 0.98),
+            (r"sk-ant-[A-Za-z0-9\-]{40,}", 0.98),
         ],
         SensitiveDataType.PASSWORD: [
             # Password in config files
             (r'(?:password|passwd|pwd|secret)["\']?\s*[:=]\s*["\']?([^\s\'"]{4,})', 0.85),
             # Database connection strings
-            (r'(?:mysql|postgres|mongodb)://[^:]+:([^@]+)@', 0.90),
+            (r"(?:mysql|postgres|mongodb)://[^:]+:([^@]+)@", 0.90),
             # Private key markers
-            (r'-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----', 0.99),
+            (r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", 0.99),
         ],
     }
 
     # Keywords that suggest sensitive content (kept for context detection)
     SENSITIVE_KEYWORDS = {
         SensitiveDataType.MEDICAL: {
-            'diagnosis', 'prescription', 'patient', 'medication',
-            'symptoms', 'treatment', 'medical', 'health', 'doctor',
-            'hospital', 'clinic', 'pharmacy'
+            "diagnosis",
+            "prescription",
+            "patient",
+            "medication",
+            "symptoms",
+            "treatment",
+            "medical",
+            "health",
+            "doctor",
+            "hospital",
+            "clinic",
+            "pharmacy",
         },
         SensitiveDataType.FINANCIAL: {
-            'bank account', 'routing number', 'balance', 'transaction',
-            'salary', 'income', 'tax', 'irs', 'investment', 'portfolio'
+            "bank account",
+            "routing number",
+            "balance",
+            "transaction",
+            "salary",
+            "income",
+            "tax",
+            "irs",
+            "investment",
+            "portfolio",
         },
         SensitiveDataType.ADDRESS: {
-            'street', 'avenue', 'boulevard', 'apartment', 'apt',
-            'suite', 'zip code', 'postal'
-        }
+            "street",
+            "avenue",
+            "boulevard",
+            "apartment",
+            "apt",
+            "suite",
+            "zip code",
+            "postal",
+        },
     }
 
     def __init__(
@@ -223,8 +261,7 @@ class PrivacyScanner:
         self._compiled_technical = {}
         for dtype, patterns in self.TECHNICAL_PATTERNS.items():
             self._compiled_technical[dtype] = [
-                (re.compile(pattern, re.IGNORECASE), confidence)
-                for pattern, confidence in patterns
+                (re.compile(pattern, re.IGNORECASE), confidence) for pattern, confidence in patterns
             ]
 
         # Add any custom patterns
@@ -251,15 +288,23 @@ class PrivacyScanner:
                 Pattern(name="github_token", regex=r"gh[pousr]_[A-Za-z0-9_]{36,}", score=0.98),
                 Pattern(name="openai_key", regex=r"sk-[A-Za-z0-9]{48}", score=0.98),
                 Pattern(name="anthropic_key", regex=r"sk-ant-[A-Za-z0-9\-]{40,}", score=0.98),
-                Pattern(name="stripe_key", regex=r"(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{24,}", score=0.98),
+                Pattern(
+                    name="stripe_key", regex=r"(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{24,}", score=0.98
+                ),
                 Pattern(name="google_api_key", regex=r"AIza[0-9A-Za-z\-_]{35}", score=0.95),
-                Pattern(name="slack_token", regex=r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*", score=0.95),
-                Pattern(name="generic_api_key", regex=r"(?:api[_-]?key|secret[_-]?key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{20,})", score=0.85),
+                Pattern(
+                    name="slack_token",
+                    regex=r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
+                    score=0.95,
+                ),
+                Pattern(
+                    name="generic_api_key",
+                    regex=r"(?:api[_-]?key|secret[_-]?key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{20,})",
+                    score=0.85,
+                ),
             ]
             api_recognizer = PatternRecognizer(
-                supported_entity="API_KEY",
-                patterns=api_key_patterns,
-                name="api_key_recognizer"
+                supported_entity="API_KEY", patterns=api_key_patterns, name="api_key_recognizer"
             )
             self._analyzer.registry.add_recognizer(api_recognizer)
 
@@ -267,12 +312,12 @@ class PrivacyScanner:
             private_key_pattern = Pattern(
                 name="private_key",
                 regex=r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
-                score=0.99
+                score=0.99,
             )
             pk_recognizer = PatternRecognizer(
                 supported_entity="CRYPTO_PRIVATE_KEY",
                 patterns=[private_key_pattern],
-                name="private_key_recognizer"
+                name="private_key_recognizer",
             )
             self._analyzer.registry.add_recognizer(pk_recognizer)
 
@@ -284,10 +329,7 @@ class PrivacyScanner:
             self._analyzer = None
 
     def scan(
-        self,
-        content: str,
-        file_path: Optional[str] = None,
-        context_chars: int = 50
+        self, content: str, file_path: Optional[str] = None, context_chars: int = 50
     ) -> AuditResult:
         """
         Scan content for sensitive information using hybrid approach.
@@ -332,14 +374,10 @@ class PrivacyScanner:
             timestamp=datetime.now().isoformat(),
             privacy_tier=privacy_tier,
             matches=matches,
-            recommendations=recommendations
+            recommendations=recommendations,
         )
 
-    def _scan_with_presidio(
-        self,
-        content: str,
-        context_chars: int
-    ) -> List[SensitiveMatch]:
+    def _scan_with_presidio(self, content: str, context_chars: int) -> List[SensitiveMatch]:
         """Use Presidio for NER-based PII detection."""
         matches = []
 
@@ -349,10 +387,18 @@ class PrivacyScanner:
                 text=content,
                 language="en",
                 entities=[
-                    "PERSON", "LOCATION", "CREDIT_CARD", "US_SSN",
-                    "PHONE_NUMBER", "EMAIL_ADDRESS", "US_BANK_NUMBER",
-                    "IBAN_CODE", "IP_ADDRESS", "API_KEY", "CRYPTO_PRIVATE_KEY"
-                ]
+                    "PERSON",
+                    "LOCATION",
+                    "CREDIT_CARD",
+                    "US_SSN",
+                    "PHONE_NUMBER",
+                    "EMAIL_ADDRESS",
+                    "US_BANK_NUMBER",
+                    "IBAN_CODE",
+                    "IP_ADDRESS",
+                    "API_KEY",
+                    "CRYPTO_PRIVATE_KEY",
+                ],
             )
 
             for result in results:
@@ -366,8 +412,7 @@ class PrivacyScanner:
                     dtype = SensitiveDataType.PASSWORD
                 else:
                     dtype = self.PRESIDIO_ENTITY_MAP.get(
-                        result.entity_type,
-                        SensitiveDataType.NAME  # Default fallback
+                        result.entity_type, SensitiveDataType.NAME  # Default fallback
                     )
 
                 # Get context
@@ -375,25 +420,23 @@ class PrivacyScanner:
                 ctx_end = min(len(content), end + context_chars)
                 context = content[ctx_start:ctx_end]
 
-                matches.append(SensitiveMatch(
-                    data_type=dtype,
-                    matched_text=self._redact(matched_text, dtype),
-                    start_pos=start,
-                    end_pos=end,
-                    confidence=result.score,
-                    context=self._redact_context(context, matched_text)
-                ))
+                matches.append(
+                    SensitiveMatch(
+                        data_type=dtype,
+                        matched_text=self._redact(matched_text, dtype),
+                        start_pos=start,
+                        end_pos=end,
+                        confidence=result.score,
+                        context=self._redact_context(context, matched_text),
+                    )
+                )
 
         except Exception as e:
             logger.warning(f"Presidio scan failed: {e}")
 
         return matches
 
-    def _scan_technical_secrets(
-        self,
-        content: str,
-        context_chars: int
-    ) -> List[SensitiveMatch]:
+    def _scan_technical_secrets(self, content: str, context_chars: int) -> List[SensitiveMatch]:
         """Scan for technical secrets using regex patterns."""
         matches = []
 
@@ -407,22 +450,20 @@ class PrivacyScanner:
                     ctx_end = min(len(content), end + context_chars)
                     context = content[ctx_start:ctx_end]
 
-                    matches.append(SensitiveMatch(
-                        data_type=dtype,
-                        matched_text=self._redact(match.group(), dtype),
-                        start_pos=start,
-                        end_pos=end,
-                        confidence=confidence,
-                        context=self._redact_context(context, match.group())
-                    ))
+                    matches.append(
+                        SensitiveMatch(
+                            data_type=dtype,
+                            matched_text=self._redact(match.group(), dtype),
+                            start_pos=start,
+                            end_pos=end,
+                            confidence=confidence,
+                            context=self._redact_context(context, match.group()),
+                        )
+                    )
 
         return matches
 
-    def _scan_keywords(
-        self,
-        content: str,
-        context_chars: int
-    ) -> List[SensitiveMatch]:
+    def _scan_keywords(self, content: str, context_chars: int) -> List[SensitiveMatch]:
         """Scan for sensitive keywords (medical, financial, etc.)."""
         matches = []
         content_lower = content.lower()
@@ -435,21 +476,20 @@ class PrivacyScanner:
                     ctx_start = max(0, pos - context_chars)
                     ctx_end = min(len(content), pos + len(keyword) + context_chars)
 
-                    matches.append(SensitiveMatch(
-                        data_type=dtype,
-                        matched_text=f"[{dtype.value} keyword: {keyword}]",
-                        start_pos=pos,
-                        end_pos=pos + len(keyword),
-                        confidence=0.60,  # Lower confidence for keywords
-                        context=content[ctx_start:ctx_end]
-                    ))
+                    matches.append(
+                        SensitiveMatch(
+                            data_type=dtype,
+                            matched_text=f"[{dtype.value} keyword: {keyword}]",
+                            start_pos=pos,
+                            end_pos=pos + len(keyword),
+                            confidence=0.60,  # Lower confidence for keywords
+                            context=content[ctx_start:ctx_end],
+                        )
+                    )
 
         return matches
 
-    def _deduplicate_matches(
-        self,
-        matches: List[SensitiveMatch]
-    ) -> List[SensitiveMatch]:
+    def _deduplicate_matches(self, matches: List[SensitiveMatch]) -> List[SensitiveMatch]:
         """Remove duplicate matches at the same position."""
         seen_positions: Set[Tuple[int, int]] = set()
         unique_matches = []
@@ -470,7 +510,7 @@ class PrivacyScanner:
         if dtype in {SensitiveDataType.SSN, SensitiveDataType.CREDIT_CARD}:
             return f"***{text[-4:]}"
         elif dtype == SensitiveDataType.EMAIL:
-            parts = text.split('@')
+            parts = text.split("@")
             if len(parts) == 2:
                 return f"{parts[0][:2]}***@{parts[1]}"
         elif dtype in {SensitiveDataType.API_KEY, SensitiveDataType.PASSWORD}:
@@ -494,13 +534,10 @@ class PrivacyScanner:
             SensitiveDataType.SSN,
             SensitiveDataType.CREDIT_CARD,
             SensitiveDataType.API_KEY,
-            SensitiveDataType.PASSWORD
+            SensitiveDataType.PASSWORD,
         }
 
-        medium_risk_types = {
-            SensitiveDataType.MEDICAL,
-            SensitiveDataType.FINANCIAL
-        }
+        medium_risk_types = {SensitiveDataType.MEDICAL, SensitiveDataType.FINANCIAL}
 
         dtypes = {m.data_type for m in matches}
 
@@ -514,9 +551,7 @@ class PrivacyScanner:
         return PrivacyTier.INTERNAL
 
     def _generate_recommendations(
-        self,
-        matches: List[SensitiveMatch],
-        tier: PrivacyTier
+        self, matches: List[SensitiveMatch], tier: PrivacyTier
     ) -> List[str]:
         """Generate actionable recommendations."""
         recommendations = []
@@ -548,9 +583,7 @@ class PrivacyScanner:
             )
 
         if tier in {PrivacyTier.SENSITIVE, PrivacyTier.RESTRICTED}:
-            recommendations.append(
-                "Consider applying content encryption and access controls."
-            )
+            recommendations.append("Consider applying content encryption and access controls.")
 
         return recommendations
 
@@ -562,11 +595,7 @@ class PrivacyAuditManager:
     Tracks audit history, enforces policies, and generates reports.
     """
 
-    def __init__(
-        self,
-        state_dir: Optional[Path] = None,
-        auto_block_restricted: bool = True
-    ):
+    def __init__(self, state_dir: Optional[Path] = None, auto_block_restricted: bool = True):
         """
         Initialize audit manager.
 
@@ -574,7 +603,9 @@ class PrivacyAuditManager:
             state_dir: Directory for audit logs
             auto_block_restricted: Block processing of restricted content
         """
-        self.state_dir = state_dir or Path.home() / ".corerag" / "privacy"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "privacy"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.scanner = PrivacyScanner()
@@ -596,7 +627,7 @@ class PrivacyAuditManager:
             AuditResult
         """
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except Exception as e:
             logger.error(f"Could not read file for audit: {e}")
@@ -604,7 +635,7 @@ class PrivacyAuditManager:
                 file_path=str(file_path),
                 timestamp=datetime.now().isoformat(),
                 privacy_tier=PrivacyTier.RESTRICTED,
-                recommendations=["Could not read file for audit"]
+                recommendations=["Could not read file for audit"],
             )
 
         result = self.scanner.scan(content, str(file_path))
@@ -621,11 +652,7 @@ class PrivacyAuditManager:
 
         return result
 
-    def audit_content(
-        self,
-        content: str,
-        source_id: Optional[str] = None
-    ) -> AuditResult:
+    def audit_content(self, content: str, source_id: Optional[str] = None) -> AuditResult:
         """
         Audit content string.
 
@@ -664,9 +691,7 @@ class PrivacyAuditManager:
         return False
 
     def get_audit_report(
-        self,
-        since: Optional[datetime] = None,
-        tier: Optional[PrivacyTier] = None
+        self, since: Optional[datetime] = None, tier: Optional[PrivacyTier] = None
     ) -> Dict:
         """
         Generate audit report.
@@ -681,10 +706,7 @@ class PrivacyAuditManager:
         audits = self._audit_log
 
         if since:
-            audits = [
-                a for a in audits
-                if datetime.fromisoformat(a.timestamp) >= since
-            ]
+            audits = [a for a in audits if datetime.fromisoformat(a.timestamp) >= since]
 
         if tier:
             audits = [a for a in audits if a.privacy_tier == tier]
@@ -706,22 +728,24 @@ class PrivacyAuditManager:
             "by_tier": tier_counts,
             "by_data_type": type_counts,
             "high_risk_count": sum(1 for a in audits if a.risk_level == "high"),
-            "generated_at": datetime.now().isoformat()
+            "generated_at": datetime.now().isoformat(),
         }
 
     def export_audit_log(self, output_path: Path) -> None:
         """Export audit log to JSON."""
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             log_data = []
             for audit in self._audit_log:
-                log_data.append({
-                    "file_path": audit.file_path,
-                    "timestamp": audit.timestamp,
-                    "privacy_tier": audit.privacy_tier.value,
-                    "risk_level": audit.risk_level,
-                    "match_count": len(audit.matches),
-                    "recommendations": audit.recommendations
-                })
+                log_data.append(
+                    {
+                        "file_path": audit.file_path,
+                        "timestamp": audit.timestamp,
+                        "privacy_tier": audit.privacy_tier.value,
+                        "risk_level": audit.risk_level,
+                        "match_count": len(audit.matches),
+                        "recommendations": audit.recommendations,
+                    }
+                )
             json.dump(log_data, f, indent=2)
 
     def _load_state(self) -> None:
@@ -737,7 +761,7 @@ class PrivacyAuditManager:
     def _save_state(self) -> None:
         """Save state to disk."""
         blocked_file = self.state_dir / "blocked_files.json"
-        with open(blocked_file, 'w') as f:
+        with open(blocked_file, "w") as f:
             json.dump(list(self._blocked_files), f, indent=2)
 
 
@@ -771,13 +795,16 @@ def load_custom_pii_terms(path: Optional[Path] = None) -> list[dict]:
         the file doesn't exist or can't be parsed.
     """
     if path is None:
-        path = Path.home() / ".corerag" / "pii_terms.yaml"
+        from src.config import STATE_DIR
+
+        path = STATE_DIR / "pii_terms.yaml"
 
     if not path.exists():
         return []
 
     try:
         import yaml
+
         with open(path, "r") as f:
             data = yaml.safe_load(f)
 
@@ -842,14 +869,16 @@ def scan_custom_terms(
             # Redact the value in matched_text and context
             redacted_value = f"***{value[-4:]}" if len(value) > 4 else "***"
 
-            matches.append(SensitiveMatch(
-                data_type=dtype,
-                matched_text=redacted_value,
-                start_pos=pos,
-                end_pos=end_pos,
-                confidence=1.0,
-                context=context.replace(value, redacted_value),
-            ))
+            matches.append(
+                SensitiveMatch(
+                    data_type=dtype,
+                    matched_text=redacted_value,
+                    start_pos=pos,
+                    end_pos=end_pos,
+                    confidence=1.0,
+                    context=context.replace(value, redacted_value),
+                )
+            )
 
             start = end_pos  # Move past this match
 

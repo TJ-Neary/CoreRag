@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class Priority(Enum):
     """Job priority levels."""
+
     CRITICAL = 0  # Process immediately
     HIGH = 1
     NORMAL = 2
@@ -30,6 +31,7 @@ class Priority(Enum):
 
 class JobState(Enum):
     """Job execution state."""
+
     PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
@@ -42,6 +44,7 @@ class JobState(Enum):
 @dataclass(order=True)
 class QueuedJob:
     """A job in the queue."""
+
     priority: int
     created_at: float = field(compare=False)
     job_id: str = field(compare=False)
@@ -64,9 +67,7 @@ class RateLimiter:
     """
 
     def __init__(
-        self,
-        rate: float = 10.0,  # tokens per second
-        burst: int = 20  # maximum burst size
+        self, rate: float = 10.0, burst: int = 20  # tokens per second  # maximum burst size
     ):
         """
         Initialize rate limiter.
@@ -154,10 +155,7 @@ class QueueManager:
     """
 
     def __init__(
-        self,
-        state_dir: Optional[Path] = None,
-        rate_limit: float = 10.0,
-        burst_limit: int = 20
+        self, state_dir: Optional[Path] = None, rate_limit: float = 10.0, burst_limit: int = 20
     ):
         """
         Initialize queue manager.
@@ -167,8 +165,9 @@ class QueueManager:
             rate_limit: Jobs per second
             burst_limit: Maximum burst size
         """
-        self.state_dir = state_dir or Path.home() / ".corerag" / "queue"
-        self.state_dir.mkdir(parents=True, exist_ok=True)
+        from src.config import QUEUE_DIR
+
+        self.state_dir = state_dir or QUEUE_DIR
 
         self._queue: List[QueuedJob] = []
         self._jobs: Dict[str, QueuedJob] = {}
@@ -183,20 +182,11 @@ class QueueManager:
         self.rate_limiter = RateLimiter(rate_limit, burst_limit)
 
         # Statistics
-        self._stats = {
-            "total_jobs": 0,
-            "completed_jobs": 0,
-            "failed_jobs": 0,
-            "total_retries": 0
-        }
+        self._stats = {"total_jobs": 0, "completed_jobs": 0, "failed_jobs": 0, "total_retries": 0}
 
         self._load_state()
 
-    def register_handler(
-        self,
-        job_type: str,
-        handler: Callable[[Dict[str, Any]], Any]
-    ) -> None:
+    def register_handler(self, job_type: str, handler: Callable[[Dict[str, Any]], Any]) -> None:
         """
         Register a handler for a job type.
 
@@ -213,7 +203,7 @@ class QueueManager:
         payload: Dict[str, Any],
         priority: Priority = Priority.NORMAL,
         max_attempts: int = 3,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
     ) -> str:
         """
         Add a job to the queue.
@@ -236,7 +226,7 @@ class QueueManager:
             job_id=job_id,
             job_type=job_type,
             payload=payload,
-            max_attempts=max_attempts
+            max_attempts=max_attempts,
         )
 
         with self._condition:
@@ -251,10 +241,7 @@ class QueueManager:
         return job_id
 
     def add_batch(
-        self,
-        job_type: str,
-        payloads: List[Dict[str, Any]],
-        priority: Priority = Priority.NORMAL
+        self, job_type: str, payloads: List[Dict[str, Any]], priority: Priority = Priority.NORMAL
     ) -> List[str]:
         """
         Add multiple jobs efficiently.
@@ -277,7 +264,7 @@ class QueueManager:
                     created_at=time.time(),
                     job_id=job_id,
                     job_type=job_type,
-                    payload=payload
+                    payload=payload,
                 )
                 heapq.heappush(self._queue, job)
                 self._jobs[job_id] = job
@@ -320,9 +307,7 @@ class QueueManager:
 
         for i in range(workers):
             worker = threading.Thread(
-                target=self._worker_loop,
-                name=f"QueueWorker-{i}",
-                daemon=True
+                target=self._worker_loop, name=f"QueueWorker-{i}", daemon=True
             )
             worker.start()
             self._workers.append(worker)
@@ -374,7 +359,7 @@ class QueueManager:
                 "running_jobs": running,
                 "queue_size": len(self._queue),
                 "active_workers": sum(1 for w in self._workers if w.is_alive()),
-                "paused": self._paused
+                "paused": self._paused,
             }
 
     def get_pending_jobs(self, job_type: Optional[str] = None) -> List[QueuedJob]:
@@ -389,7 +374,8 @@ class QueueManager:
         """Remove completed jobs from memory."""
         with self._lock:
             to_remove = [
-                jid for jid, job in self._jobs.items()
+                jid
+                for jid, job in self._jobs.items()
                 if job.state in (JobState.COMPLETED, JobState.CANCELLED)
             ]
             for jid in to_remove:
@@ -500,7 +486,7 @@ class QueueManager:
                         payload=job_data["payload"],
                         state=JobState.QUEUED,
                         attempts=job_data.get("attempts", 0),
-                        max_attempts=job_data.get("max_attempts", 3)
+                        max_attempts=job_data.get("max_attempts", 3),
                     )
                     heapq.heappush(self._queue, job)
                     self._jobs[job.job_id] = job
@@ -521,21 +507,23 @@ class QueueManager:
             jobs_to_save = []
             for job in self._jobs.values():
                 if job.state in (JobState.QUEUED, JobState.RUNNING):
-                    jobs_to_save.append({
-                        "priority": job.priority,
-                        "created_at": job.created_at,
-                        "job_id": job.job_id,
-                        "job_type": job.job_type,
-                        "payload": job.payload,
-                        "state": job.state.value,
-                        "attempts": job.attempts,
-                        "max_attempts": job.max_attempts
-                    })
+                    jobs_to_save.append(
+                        {
+                            "priority": job.priority,
+                            "created_at": job.created_at,
+                            "job_id": job.job_id,
+                            "job_type": job.job_type,
+                            "payload": job.payload,
+                            "state": job.state.value,
+                            "attempts": job.attempts,
+                            "max_attempts": job.max_attempts,
+                        }
+                    )
 
             data = {
                 "jobs": jobs_to_save,
                 "stats": self._stats,
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now().isoformat(),
             }
 
             with open(state_file, "w") as f:
@@ -547,10 +535,7 @@ class QueueManager:
 
 # Convenience function for quick job processing
 def process_batch(
-    items: List[Any],
-    processor: Callable[[Any], Any],
-    workers: int = 4,
-    rate_limit: float = 10.0
+    items: List[Any], processor: Callable[[Any], Any], workers: int = 4, rate_limit: float = 10.0
 ) -> List[Any]:
     """
     Process a batch of items with rate limiting.

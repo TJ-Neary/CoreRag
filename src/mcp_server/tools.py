@@ -5,15 +5,18 @@ Provides tools for Claude/Antigravity agents to interact with the CoreRag system
 Includes debug mode for observability when tuning retrieval.
 """
 
+import json
 import logging
-from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
+from typing import Any, Dict, List, Optional
 
+from src.config import STATE_DIR
+from src.exceptions import CoreRagError
 from src.search.decay_scoring import apply_decay_to_results
 from src.search.multi_query import QueryDecomposer, ReciprocalRankFusion
+from src.utils.query_sanitize import build_eq_clause
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +24,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DebugContext:
     """Debug information for search results."""
-    raw_chunks: List[str]           # First 500 chars of each chunk
-    vector_scores: List[float]      # Similarity scores
+
+    raw_chunks: List[str]  # First 500 chars of each chunk
+    vector_scores: List[float]  # Similarity scores
     fts_scores: List[Optional[float]]  # Keyword match scores
     rerank_applied: bool
     rerank_scores: List[Optional[float]]
@@ -36,6 +40,7 @@ class DebugContext:
 @dataclass
 class SearchResultWithDebug:
     """Search result with optional debug context."""
+
     content: str
     document_id: str
     source_path: str
@@ -80,7 +85,11 @@ class CoreRagTools:
         """Convert a dataclass or dict result to a plain dict."""
         if isinstance(obj, dict):
             return obj
-        return {k: getattr(obj, k) for k in obj.__dataclass_fields__} if hasattr(obj, "__dataclass_fields__") else vars(obj)
+        return (
+            {k: getattr(obj, k) for k in obj.__dataclass_fields__}
+            if hasattr(obj, "__dataclass_fields__")
+            else vars(obj)
+        )
 
     async def search_knowledge(
         self,
@@ -110,6 +119,7 @@ class CoreRagTools:
             Dict with 'results' list and optional '_debug' context
         """
         import time
+
         start_time = time.time()
 
         # Merge tags into filters dict
@@ -127,8 +137,12 @@ class CoreRagTools:
         # Multi-query: decompose, run sub-queries, fuse with RRF
         if use_multi_query:
             return await self._multi_query_search(
-                query=query, k=k, filters=filters,
-                use_reranker=use_reranker, use_hyde=use_hyde, debug=debug,
+                query=query,
+                k=k,
+                filters=filters,
+                use_reranker=use_reranker,
+                use_hyde=use_hyde,
+                debug=debug,
             )
 
         search_query = query
@@ -277,6 +291,7 @@ class CoreRagTools:
             # Enrich with freshness indicator if file is accessible
             try:
                 from src.quality.freshness import FreshnessIndicator
+
                 source = Path(source_path) if source_path else None
                 if source and source.exists():
                     fi = FreshnessIndicator()
@@ -386,14 +401,16 @@ class CoreRagTools:
         # Convert FusedResult dataclasses to response format
         results = []
         for fr in fused[:k]:
-            results.append({
-                "content": fr.content,
-                "document_id": fr.metadata.get("document_id", ""),
-                "source_path": fr.source_path,
-                "section_title": fr.metadata.get("section_title"),
-                "score": float(fr.fused_score),
-                "citation": f"[{Path(fr.source_path).name}]({fr.source_path})",
-            })
+            results.append(
+                {
+                    "content": fr.content,
+                    "document_id": fr.metadata.get("document_id", ""),
+                    "source_path": fr.source_path,
+                    "section_title": fr.metadata.get("section_title"),
+                    "score": float(fr.fused_score),
+                    "citation": f"[{Path(fr.source_path).name}]({fr.source_path})",
+                }
+            )
 
         response = {"results": results}
 
@@ -401,19 +418,13 @@ class CoreRagTools:
             response["_debug"] = {
                 "multi_query": True,
                 "sub_queries": [sq.query for sq in sub_queries],
-                "results_per_sub_query": {
-                    sq: len(res) for sq, res in query_results.items()
-                },
+                "results_per_sub_query": {sq: len(res) for sq, res in query_results.items()},
                 "fusion_method": "reciprocal_rank_fusion",
             }
 
         return response
 
-    async def get_document(
-        self,
-        document_id: str,
-        include_chunks: bool = False
-    ) -> Dict[str, Any]:
+    async def get_document(self, document_id: str, include_chunks: bool = False) -> Dict[str, Any]:
         """
         Get a specific document by ID.
 
@@ -427,9 +438,7 @@ class CoreRagTools:
         try:
             # Query parent chunks table
             table = self.db.open_table("parent_chunks")
-            results = table.search().where(
-                f"document_id = '{document_id}'"
-            ).to_list()
+            results = table.search().where(build_eq_clause("document_id", document_id)).to_list()
 
             if not results:
                 return {"error": f"Document not found: {document_id}"}
@@ -441,7 +450,7 @@ class CoreRagTools:
             response = {
                 "document_id": document_id,
                 "content": full_content,
-                "metadata": json.loads(chunks[0].get("metadata", "{}"))
+                "metadata": json.loads(chunks[0].get("metadata", "{}")),
             }
 
             if include_chunks:
@@ -451,13 +460,16 @@ class CoreRagTools:
                         "content": c["content"],
                         "section_title": c.get("section_title"),
                         "start_char": c.get("start_char"),
-                        "end_char": c.get("end_char")
+                        "end_char": c.get("end_char"),
                     }
                     for c in chunks
                 ]
 
             return response
 
+        except CoreRagError as e:
+            logger.error(f"Error getting document {document_id}: {e}")
+            return {"error": str(e)}
         except Exception as e:
             logger.error(f"Error getting document {document_id}: {e}")
             return {"error": str(e)}
@@ -483,9 +495,7 @@ class CoreRagTools:
         """
         cutoff = datetime.now() - timedelta(days=days)
         recent_files = []
-        allowed_extensions = (
-            {f".{t.lstrip('.')}" for t in file_types} if file_types else None
-        )
+        allowed_extensions = {f".{t.lstrip('.')}" for t in file_types} if file_types else None
 
         try:
             for path in self.vault_root.rglob("*"):
@@ -496,26 +506,27 @@ class CoreRagTools:
                     mtime = datetime.fromtimestamp(stat.st_mtime)
 
                     if mtime >= cutoff:
-                        recent_files.append({
-                            "path": str(path.relative_to(self.vault_root)),
-                            "name": path.name,
-                            "modified": mtime.isoformat(),
-                            "size_bytes": stat.st_size,
-                            "type": path.suffix.lower(),
-                        })
+                        recent_files.append(
+                            {
+                                "path": str(path.relative_to(self.vault_root)),
+                                "name": path.name,
+                                "modified": mtime.isoformat(),
+                                "size_bytes": stat.st_size,
+                                "type": path.suffix.lower(),
+                            }
+                        )
 
             recent_files.sort(key=lambda x: x["modified"], reverse=True)
             return recent_files[:limit]
 
+        except CoreRagError as e:
+            logger.error(f"Error listing recent files: {e}")
+            return []
         except Exception as e:
             logger.error(f"Error listing recent files: {e}")
             return []
 
-    async def get_folder_structure(
-        self,
-        path: str = "",
-        max_depth: int = 3
-    ) -> Dict[str, Any]:
+    async def get_folder_structure(self, path: str = "", max_depth: int = 3) -> Dict[str, Any]:
         """
         Get folder structure for navigation.
 
@@ -541,7 +552,7 @@ class CoreRagTools:
             result = {
                 "name": current.name or str(self.vault_root),
                 "type": "directory",
-                "children": []
+                "children": [],
             }
 
             try:
@@ -552,11 +563,9 @@ class CoreRagTools:
                     if item.is_dir():
                         result["children"].append(build_tree(item, depth + 1))
                     else:
-                        result["children"].append({
-                            "name": item.name,
-                            "type": "file",
-                            "extension": item.suffix.lower()
-                        })
+                        result["children"].append(
+                            {"name": item.name, "type": "file", "extension": item.suffix.lower()}
+                        )
 
             except PermissionError:
                 result["_permission_denied"] = True
@@ -565,11 +574,7 @@ class CoreRagTools:
 
         return build_tree(target, 0)
 
-    async def get_related_documents(
-        self,
-        document_id: str,
-        k: int = 5
-    ) -> List[Dict[str, Any]]:
+    async def get_related_documents(self, document_id: str, k: int = 5) -> List[Dict[str, Any]]:
         """
         Find documents related to a given document.
 
@@ -585,15 +590,19 @@ class CoreRagTools:
         try:
             # Get document embedding (average of chunk embeddings)
             child_table = self.db.open_table("child_chunks")
-            chunks = child_table.search().where(
-                f"document_id = '{document_id}'"
-            ).limit(100).to_list()
+            chunks = (
+                child_table.search()
+                .where(build_eq_clause("document_id", document_id))
+                .limit(100)
+                .to_list()
+            )
 
             if not chunks:
                 return []
 
             # Average the embeddings
             import numpy as np
+
             embeddings = [c["vector"] for c in chunks if "vector" in c]
             if not embeddings:
                 return []
@@ -604,7 +613,7 @@ class CoreRagTools:
             results = await self.retriever.search(
                 query="",  # Empty query, using vector directly
                 query_vector=avg_embedding,
-                k=k + 1  # +1 because source doc might be in results
+                k=k + 1,  # +1 because source doc might be in results
             )
 
             # Filter out the source document
@@ -613,7 +622,7 @@ class CoreRagTools:
                     "document_id": r.get("document_id"),
                     "source_path": r.get("metadata", {}).get("source_path"),
                     "score": r.get("score", 0),
-                    "snippet": r.get("content", "")[:200]
+                    "snippet": r.get("content", "")[:200],
                 }
                 for r in results
                 if r.get("document_id") != document_id
@@ -621,15 +630,14 @@ class CoreRagTools:
 
             return related
 
+        except CoreRagError as e:
+            logger.error(f"Error finding related documents: {e}")
+            return []
         except Exception as e:
             logger.error(f"Error finding related documents: {e}")
             return []
 
-    async def get_context_for_topic(
-        self,
-        topic: str,
-        max_tokens: int = 4000
-    ) -> Dict[str, Any]:
+    async def get_context_for_topic(self, topic: str, max_tokens: int = 4000) -> Dict[str, Any]:
         """
         Get comprehensive context for a topic.
 
@@ -644,11 +652,7 @@ class CoreRagTools:
             Aggregated context with citations
         """
         # Search with higher k
-        results = await self.search_knowledge(
-            query=topic,
-            k=20,
-            use_reranker=True
-        )
+        results = await self.search_knowledge(query=topic, k=20, use_reranker=True)
 
         # Aggregate until token limit
         context_parts = []
@@ -714,12 +718,14 @@ class CoreRagTools:
             rel = n["relationship"]
             if rel not in by_relationship:
                 by_relationship[rel] = []
-            by_relationship[rel].append({
-                "entity": n["entity"],
-                "direction": n["direction"],
-                "document_id": n["document_id"],
-                "confidence": n["confidence"],
-            })
+            by_relationship[rel].append(
+                {
+                    "entity": n["entity"],
+                    "direction": n["direction"],
+                    "document_id": n["document_id"],
+                    "confidence": n["confidence"],
+                }
+            )
 
         stats = self._knowledge_graph.get_stats()
 
@@ -741,7 +747,8 @@ class CoreRagTools:
         """Lazily initialize memory manager and load user profile."""
         if self._memory_manager is None:
             from src.memory.episodic_memory import EpisodicMemoryManager
-            storage_path = Path.home() / ".corerag" / "profiles"
+
+            storage_path = STATE_DIR / "profiles"
             self._memory_manager = EpisodicMemoryManager(storage_path)
             self._user_profile = self._memory_manager.load_or_create("default")
 
@@ -755,6 +762,7 @@ class CoreRagTools:
         correction_summary = {}
         try:
             from src.correction_log import _load_corrections
+
             corrections = _load_corrections()
             if corrections:
                 # Aggregate correction patterns
@@ -796,8 +804,9 @@ class CoreRagTools:
         """Add a fact about the user to episodic memory."""
         self._ensure_memory()
 
-        from src.memory.episodic_memory import UserFact, FactCategory
         from datetime import datetime
+
+        from src.memory.episodic_memory import FactCategory, UserFact
 
         # Map string category to FactCategory enum
         category_map = {
@@ -897,8 +906,21 @@ class CoreRagTools:
 
             # Collect indexable files
             supported_exts = {
-                ".md", ".txt", ".pdf", ".docx", ".json", ".yaml", ".csv", ".log",
-                ".png", ".jpg", ".jpeg", ".tiff", ".webp", ".bmp", ".heic",
+                ".md",
+                ".txt",
+                ".pdf",
+                ".docx",
+                ".json",
+                ".yaml",
+                ".csv",
+                ".log",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".tiff",
+                ".webp",
+                ".bmp",
+                ".heic",
             }
             files = []
             if scan_path.is_file():
@@ -909,13 +931,23 @@ class CoreRagTools:
                         files.append(f)
 
             if not files:
-                return {"status": "no_files", "path": str(scan_path), "message": "No indexable files found"}
+                return {
+                    "status": "no_files",
+                    "path": str(scan_path),
+                    "message": "No indexable files found",
+                }
 
             # If not forcing, filter to files not already indexed
             if not force and self.db:
                 try:
                     child_table = self.db.open_table("child_chunks")
-                    indexed = {r["source_path"] for r in child_table.search().select(["source_path"]).limit(100000).to_list()}
+                    indexed = {
+                        r["source_path"]
+                        for r in child_table.search()
+                        .select(["source_path"])
+                        .limit(100000)
+                        .to_list()
+                    }
                     files = [f for f in files if f.name not in indexed]
                 except Exception:
                     pass  # Table may not exist yet

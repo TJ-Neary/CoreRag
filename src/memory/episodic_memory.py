@@ -13,32 +13,34 @@ This module:
 3. Injects them into system prompts for continuity
 """
 
-import logging
 import json
-from dataclasses import dataclass, field, asdict
+import logging
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class FactCategory(str, Enum):
     """Categories of user facts."""
-    PERSONAL = "personal"        # Name, location, etc.
-    PREFERENCE = "preference"    # Likes, dislikes, styles
-    LIFE_EVENT = "life_event"   # Moving, job change, etc.
-    PROJECT = "project"         # Current projects, goals
+
+    PERSONAL = "personal"  # Name, location, etc.
+    PREFERENCE = "preference"  # Likes, dislikes, styles
+    LIFE_EVENT = "life_event"  # Moving, job change, etc.
+    PROJECT = "project"  # Current projects, goals
     RELATIONSHIP = "relationship"  # People they mention
-    TECHNICAL = "technical"     # Skills, tools, stack
-    HEALTH = "health"           # If explicitly shared
-    WORK = "work"               # Job, company, role
+    TECHNICAL = "technical"  # Skills, tools, stack
+    HEALTH = "health"  # If explicitly shared
+    WORK = "work"  # Job, company, role
 
 
 @dataclass
 class UserFact:
     """A single fact about the user."""
+
     content: str
     category: FactCategory
     confidence: float
@@ -52,6 +54,7 @@ class UserFact:
 @dataclass
 class UserProfile:
     """Complete user profile with facts and preferences."""
+
     user_id: str
     name: Optional[str] = None
     facts: List[UserFact] = field(default_factory=list)
@@ -64,7 +67,7 @@ class UserProfile:
             "name": self.name,
             "facts": [asdict(f) for f in self.facts],
             "preferences": self.preferences,
-            "context_window_priority": self.context_window_priority
+            "context_window_priority": self.context_window_priority,
         }
 
     @classmethod
@@ -78,7 +81,7 @@ class UserProfile:
                 created_at=f["created_at"],
                 updated_at=f["updated_at"],
                 expires_at=f.get("expires_at"),
-                context=f.get("context")
+                context=f.get("context"),
             )
             for f in data.get("facts", [])
         ]
@@ -87,7 +90,7 @@ class UserProfile:
             name=data.get("name"),
             facts=facts,
             preferences=data.get("preferences", {}),
-            context_window_priority=data.get("context_window_priority", [])
+            context_window_priority=data.get("context_window_priority", []),
         )
 
 
@@ -125,9 +128,7 @@ JSON:"""
         self.llm = llm
 
     async def extract_facts(
-        self,
-        conversation: str,
-        existing_facts: List[UserFact]
+        self, conversation: str, existing_facts: List[UserFact]
     ) -> List[UserFact]:
         """
         Extract new facts from a conversation.
@@ -151,7 +152,8 @@ JSON:"""
 
             # Parse JSON
             import re
-            json_match = re.search(r'\{[\s\S]*\}', response)
+
+            json_match = re.search(r"\{[\s\S]*\}", response)
             if not json_match:
                 return []
 
@@ -163,14 +165,16 @@ JSON:"""
             for f in data.get("facts", []):
                 # Check if this is actually new
                 if not self._is_duplicate(f["content"], existing_facts):
-                    new_facts.append(UserFact(
-                        content=f["content"],
-                        category=FactCategory(f.get("category", "personal")),
-                        confidence=f.get("confidence", 0.8),
-                        source="conversation",
-                        created_at=now,
-                        updated_at=now
-                    ))
+                    new_facts.append(
+                        UserFact(
+                            content=f["content"],
+                            category=FactCategory(f.get("category", "personal")),
+                            confidence=f.get("confidence", 0.8),
+                            source="conversation",
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
 
             return new_facts
 
@@ -196,14 +200,16 @@ JSON:"""
 
         for pattern, category in patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                facts.append(UserFact(
-                    content=match.group(0),
-                    category=category,
-                    confidence=0.7,
-                    source="pattern",
-                    created_at=now,
-                    updated_at=now
-                ))
+                facts.append(
+                    UserFact(
+                        content=match.group(0),
+                        category=category,
+                        confidence=0.7,
+                        source="pattern",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
 
         return facts
 
@@ -291,7 +297,8 @@ class EpisodicMemoryManager:
         """Remove facts that have expired."""
         now = datetime.now()
         profile.facts = [
-            f for f in profile.facts
+            f
+            for f in profile.facts
             if not f.expires_at or datetime.fromisoformat(f.expires_at) > now
         ]
         self.save(profile)
@@ -300,7 +307,7 @@ class EpisodicMemoryManager:
         self,
         profile: UserProfile,
         max_facts: int = 10,
-        categories: Optional[List[FactCategory]] = None
+        categories: Optional[List[FactCategory]] = None,
     ) -> str:
         """
         Generate context string for system prompt injection.
@@ -320,20 +327,13 @@ class EpisodicMemoryManager:
             facts = [f for f in facts if f.category in categories]
 
         # Sort by confidence and recency
-        facts = sorted(
-            facts,
-            key=lambda f: (f.confidence, f.updated_at),
-            reverse=True
-        )[:max_facts]
+        facts = sorted(facts, key=lambda f: (f.confidence, f.updated_at), reverse=True)[:max_facts]
 
         if not facts:
             return ""
 
         # Format for injection
-        lines = [
-            "## About the User",
-            ""
-        ]
+        lines = ["## About the User", ""]
 
         if profile.name:
             lines.append(f"Name: {profile.name}")
@@ -354,18 +354,17 @@ class EpisodicMemoryManager:
 
     def get_as_json(self, profile: UserProfile) -> str:
         """Get profile as JSON for structured injection."""
-        return json.dumps({
-            "user_name": profile.name,
-            "facts": [
-                {
-                    "fact": f.content,
-                    "category": f.category.value,
-                    "confidence": f.confidence
-                }
-                for f in profile.facts[:20]
-            ],
-            "preferences": profile.preferences
-        }, indent=2)
+        return json.dumps(
+            {
+                "user_name": profile.name,
+                "facts": [
+                    {"fact": f.content, "category": f.category.value, "confidence": f.confidence}
+                    for f in profile.facts[:20]
+                ],
+                "preferences": profile.preferences,
+            },
+            indent=2,
+        )
 
 
 # Integration with conversation loop
@@ -383,11 +382,7 @@ class EpisodicMemoryMiddleware:
         await middleware.process_conversation(user_id, messages)
     """
 
-    def __init__(
-        self,
-        manager: EpisodicMemoryManager,
-        extractor: FactExtractor
-    ):
+    def __init__(self, manager: EpisodicMemoryManager, extractor: FactExtractor):
         self.manager = manager
         self.extractor = extractor
 
@@ -396,11 +391,7 @@ class EpisodicMemoryMiddleware:
         profile = self.manager.load_or_create(user_id)
         return self.manager.get_context_injection(profile)
 
-    async def process_conversation(
-        self,
-        user_id: str,
-        messages: List[Dict[str, str]]
-    ):
+    async def process_conversation(self, user_id: str, messages: List[Dict[str, str]]):
         """
         Process conversation to extract new facts.
 
@@ -414,10 +405,7 @@ class EpisodicMemoryMiddleware:
         user_messages = [m["content"] for m in messages if m["role"] == "user"]
         conversation = "\n".join(user_messages[-5:])  # Last 5 messages
 
-        new_facts = await self.extractor.extract_facts(
-            conversation,
-            profile.facts
-        )
+        new_facts = await self.extractor.extract_facts(conversation, profile.facts)
 
         for fact in new_facts:
             self.manager.add_fact(profile, fact)
@@ -430,6 +418,7 @@ class EpisodicMemoryMiddleware:
 @dataclass
 class SessionEvent:
     """A single event in a session."""
+
     timestamp: str
     event_type: str  # "tool_call", "search", "chat", "ingestion"
     tool_name: str
@@ -441,6 +430,7 @@ class SessionEvent:
 @dataclass
 class Session:
     """A user session with event history."""
+
     session_id: str
     started_at: str
     events: List[SessionEvent] = field(default_factory=list)
@@ -456,7 +446,9 @@ class SessionTracker:
     """
 
     def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".corerag" / "sessions"
+        from src.config import STATE_DIR
+
+        self.storage_dir = storage_dir or STATE_DIR / "sessions"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self._current: Optional[Session] = None
@@ -465,6 +457,7 @@ class SessionTracker:
     def _start_session(self):
         """Start a new session."""
         import uuid
+
         self._current = Session(
             session_id=str(uuid.uuid4())[:8],
             started_at=datetime.now().isoformat(),
@@ -514,11 +507,13 @@ class SessionTracker:
             try:
                 with open(path) as f:
                     data = json.load(f)
-                sessions.append({
-                    "session_id": data.get("session_id", ""),
-                    "started_at": data.get("started_at", ""),
-                    "event_count": len(data.get("events", [])),
-                })
+                sessions.append(
+                    {
+                        "session_id": data.get("session_id", ""),
+                        "started_at": data.get("started_at", ""),
+                        "event_count": len(data.get("events", [])),
+                    }
+                )
             except Exception:
                 continue
         return sessions
@@ -526,6 +521,7 @@ class SessionTracker:
     def get_popular_queries(self, limit: int = 10) -> List[Dict]:
         """Aggregate most common search queries across sessions."""
         from collections import Counter
+
         queries = Counter()
 
         # Current session

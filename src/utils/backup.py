@@ -4,15 +4,14 @@ Database backup and restore system for CoreRag.
 Provides automated backups and point-in-time recovery.
 """
 
-import gzip
 import json
 import logging
 import shutil
+import tarfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
-import tarfile
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BackupInfo:
     """Information about a backup."""
+
     name: str
     timestamp: str
     size_bytes: int
@@ -49,12 +49,7 @@ class BackupManager:
         backup.cleanup_old_backups(keep_count=7)
     """
 
-    def __init__(
-        self,
-        data_dir: Path,
-        backup_dir: Optional[Path] = None,
-        max_backups: int = 10
-    ):
+    def __init__(self, data_dir: Path, backup_dir: Optional[Path] = None, max_backups: int = 10):
         """
         Initialize backup manager.
 
@@ -64,7 +59,9 @@ class BackupManager:
             max_backups: Maximum number of backups to retain
         """
         self.data_dir = Path(data_dir)
-        self.backup_dir = backup_dir or (Path.home() / ".corerag" / "backups")
+        from src.config import STATE_DIR
+
+        self.backup_dir = backup_dir or (STATE_DIR / "backups")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.max_backups = max_backups
 
@@ -79,7 +76,7 @@ class BackupManager:
         self,
         backup_name: Optional[str] = None,
         backup_type: str = "full",
-        components: Optional[List[str]] = None
+        components: Optional[List[str]] = None,
     ) -> BackupInfo:
         """
         Create a new backup.
@@ -119,7 +116,7 @@ class BackupManager:
                 "backup_type": backup_type,
                 "components": components,
                 "data_dir": str(self.data_dir),
-                "checksum": self._compute_checksum(backup_path)
+                "checksum": self._compute_checksum(backup_path),
             }
 
             with open(metadata_path, "w") as f:
@@ -132,13 +129,10 @@ class BackupManager:
                 path=str(backup_path),
                 backup_type=backup_type,
                 components=components,
-                metadata=metadata
+                metadata=metadata,
             )
 
-            logger.info(
-                f"Backup complete: {name} "
-                f"({self._format_size(stat.st_size)})"
-            )
+            logger.info(f"Backup complete: {name} " f"({self._format_size(stat.st_size)})")
 
             # Cleanup old backups
             self.cleanup_old_backups()
@@ -157,7 +151,7 @@ class BackupManager:
         backup_name: str,
         target_dir: Optional[Path] = None,
         components: Optional[List[str]] = None,
-        verify_checksum: bool = True
+        verify_checksum: bool = True,
     ) -> bool:
         """
         Restore from a backup.
@@ -198,7 +192,10 @@ class BackupManager:
 
             # Create backup of current state before restore
             if target_dir.exists():
-                pre_restore_backup = target_dir.parent / f"{target_dir.name}_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                pre_restore_backup = (
+                    target_dir.parent
+                    / f"{target_dir.name}_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
                 logger.info(f"Creating pre-restore backup: {pre_restore_backup}")
                 shutil.copytree(target_dir, pre_restore_backup)
 
@@ -207,10 +204,7 @@ class BackupManager:
                 # Filter to requested components
                 members = tar.getmembers()
                 if components:
-                    members = [
-                        m for m in members
-                        if any(m.name.startswith(c) for c in components)
-                    ]
+                    members = [m for m in members if any(m.name.startswith(c) for c in components)]
 
                 for member in members:
                     logger.info(f"  Restoring: {member.name}")
@@ -235,15 +229,17 @@ class BackupManager:
 
                 backup_path = self.backup_dir / f"{metadata['name']}.tar.gz"
                 if backup_path.exists():
-                    backups.append(BackupInfo(
-                        name=metadata["name"],
-                        timestamp=metadata["timestamp"],
-                        size_bytes=metadata["size_bytes"],
-                        path=str(backup_path),
-                        backup_type=metadata.get("backup_type", "full"),
-                        components=metadata.get("components", []),
-                        metadata=metadata
-                    ))
+                    backups.append(
+                        BackupInfo(
+                            name=metadata["name"],
+                            timestamp=metadata["timestamp"],
+                            size_bytes=metadata["size_bytes"],
+                            path=str(backup_path),
+                            backup_type=metadata.get("backup_type", "full"),
+                            components=metadata.get("components", []),
+                            metadata=metadata,
+                        )
+                    )
             except Exception as e:
                 logger.warning(f"Could not read backup metadata: {metadata_path}: {e}")
 
@@ -269,7 +265,7 @@ class BackupManager:
                     path=str(backup_path),
                     backup_type=metadata.get("backup_type", "full"),
                     components=metadata.get("components", []),
-                    metadata=metadata
+                    metadata=metadata,
                 )
         except Exception as e:
             logger.warning(f"Could not read backup: {e}")
@@ -336,7 +332,7 @@ class BackupManager:
         for backup in backups[keep_count:]:
             try:
                 backup_path = Path(backup.path)
-                metadata_path = backup_path.with_suffix('.json')
+                metadata_path = backup_path.with_suffix(".json")
 
                 if backup_path.exists():
                     backup_path.unlink()
@@ -371,6 +367,7 @@ class BackupManager:
     def _compute_checksum(file_path: Path) -> str:
         """Compute SHA-256 checksum of a file."""
         import hashlib
+
         sha256 = hashlib.sha256()
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
@@ -380,7 +377,7 @@ class BackupManager:
     @staticmethod
     def _format_size(size_bytes: int) -> str:
         """Format size in human-readable form."""
-        for unit in ['B', 'KB', 'MB', 'GB']:
+        for unit in ["B", "KB", "MB", "GB"]:
             if size_bytes < 1024:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024
@@ -394,11 +391,7 @@ class AutoBackup:
     Runs backups on a schedule in the background.
     """
 
-    def __init__(
-        self,
-        backup_manager: BackupManager,
-        interval_hours: float = 24
-    ):
+    def __init__(self, backup_manager: BackupManager, interval_hours: float = 24):
         """
         Initialize auto-backup.
 

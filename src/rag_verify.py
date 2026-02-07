@@ -5,9 +5,10 @@ stored in LanceDB to verify completeness and fidelity.
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Optional
+
+from src.utils.query_sanitize import build_eq_clause
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,9 @@ def _get_rag_text(file_name: str) -> Optional[str]:
     try:
         import lancedb
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        db = lancedb.connect(db_path)
+        from src.config import DB_PATH
+
+        db = lancedb.connect(DB_PATH)
 
         try:
             parent_table = db.open_table("parent_chunks")
@@ -26,9 +28,12 @@ def _get_rag_text(file_name: str) -> Optional[str]:
             logger.warning("parent_chunks table not found")
             return None
 
-        results = parent_table.search().where(
-            f"source_path = '{file_name}'", prefilter=True
-        ).limit(1000).to_list()
+        results = (
+            parent_table.search()
+            .where(build_eq_clause("source_path", file_name), prefilter=True)
+            .limit(1000)
+            .to_list()
+        )
 
         if not results:
             return None
@@ -47,8 +52,9 @@ def _get_rag_file_list() -> list[str]:
     try:
         import lancedb
 
-        db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-        db = lancedb.connect(db_path)
+        from src.config import DB_PATH
+
+        db = lancedb.connect(DB_PATH)
 
         try:
             parent_table = db.open_table("parent_chunks")
@@ -193,7 +199,9 @@ def verify_all(archive_path: Optional[str] = None) -> list[dict]:
         List of per-file verification results
     """
     if not archive_path:
-        archive_path = os.getenv("ARCHIVE_PATH", str(Path.home() / "Documents"))
+        from src.config import ARCHIVE_PATH
+
+        archive_path = str(ARCHIVE_PATH)
 
     file_names = _get_rag_file_list()
     if not file_names:

@@ -10,14 +10,13 @@ Handles database hygiene to prevent fragmentation and latency creep:
 Designed to run as a scheduled weekly job.
 """
 
+import json
 import logging
-import os
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import json
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +24,7 @@ logger = logging.getLogger(__name__)
 LANCEDB_AVAILABLE = False
 try:
     import lancedb
+
     LANCEDB_AVAILABLE = True
 except ImportError:
     logger.warning("LanceDB not installed. Install with: pip install lancedb")
@@ -33,6 +33,7 @@ except ImportError:
 @dataclass
 class OptimizationResult:
     """Result of a database optimization run."""
+
     table_name: str
     timestamp: str
     success: bool
@@ -49,6 +50,7 @@ class OptimizationResult:
 @dataclass
 class HealthReport:
     """Database health report."""
+
     db_path: str
     timestamp: str
     total_size_mb: float
@@ -85,9 +87,11 @@ class LanceDBOptimizer:
         if not LANCEDB_AVAILABLE:
             raise ImportError("LanceDB required. Install: pip install lancedb")
 
-        self.db_path = db_path or Path.home() / ".corerag" / "lancedb"
+        from src.config import DB_PATH, STATE_DIR
+
+        self.db_path = db_path or DB_PATH
         self.backup_before_optimize = backup_before_optimize
-        self.backup_dir = backup_dir or Path.home() / ".corerag" / "backups"
+        self.backup_dir = backup_dir or STATE_DIR / "backups"
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
         self._db: Optional[lancedb.DBConnection] = None
@@ -133,7 +137,7 @@ class LanceDBOptimizer:
                     duration_seconds=0,
                     rows_before=0,
                     rows_after=0,
-                    error=f"Table '{table_name}' not found"
+                    error=f"Table '{table_name}' not found",
                 )
 
             # Get original stats
@@ -141,7 +145,9 @@ class LanceDBOptimizer:
             rows_before = table.count_rows()
             original_size = self._get_table_size(table_name)
 
-            logger.info(f"Optimizing table '{table_name}': {rows_before} rows, {original_size:.2f} MB")
+            logger.info(
+                f"Optimizing table '{table_name}': {rows_before} rows, {original_size:.2f} MB"
+            )
 
             # Create backup if enabled
             if self.backup_before_optimize:
@@ -187,7 +193,7 @@ class LanceDBOptimizer:
                 duration_seconds=time.time() - start_time,
                 rows_before=0,
                 rows_after=0,
-                error=str(e)
+                error=str(e),
             )
 
     def optimize_all(self) -> List[OptimizationResult]:
@@ -251,10 +257,7 @@ class LanceDBOptimizer:
                 )
 
         # Overall fragmentation
-        avg_fragmentation = (
-            sum(t["fragmentation"] for t in tables) / len(tables)
-            if tables else 0
-        )
+        avg_fragmentation = sum(t["fragmentation"] for t in tables) / len(tables) if tables else 0
 
         if avg_fragmentation > 0.2:
             recommendations.insert(0, "Database fragmentation is elevated. Run optimize_all().")
@@ -272,18 +275,14 @@ class LanceDBOptimizer:
         """Get size of a table in MB."""
         table_path = self.db_path / table_name
         if table_path.exists():
-            total = sum(
-                f.stat().st_size for f in table_path.rglob("*") if f.is_file()
-            )
+            total = sum(f.stat().st_size for f in table_path.rglob("*") if f.is_file())
             return total / (1024 * 1024)
         return 0.0
 
     def _get_db_size(self) -> float:
         """Get total database size in MB."""
         if self.db_path.exists():
-            total = sum(
-                f.stat().st_size for f in self.db_path.rglob("*") if f.is_file()
-            )
+            total = sum(f.stat().st_size for f in self.db_path.rglob("*") if f.is_file())
             return total / (1024 * 1024)
         return 0.0
 
@@ -378,7 +377,9 @@ class MaintenanceScheduler:
             state_file: File to track last run times
         """
         self.optimizer = optimizer or LanceDBOptimizer()
-        self.state_file = state_file or Path.home() / ".corerag" / "maintenance_state.json"
+        from src.config import STATE_DIR
+
+        self.state_file = state_file or STATE_DIR / "maintenance_state.json"
 
     def should_run_optimization(self, min_hours_between: int = 168) -> bool:
         """Check if enough time has passed since last optimization."""
@@ -389,6 +390,7 @@ class MaintenanceScheduler:
             return True
 
         from datetime import datetime, timedelta
+
         last_dt = datetime.fromisoformat(last_run)
         return datetime.now() - last_dt > timedelta(hours=min_hours_between)
 

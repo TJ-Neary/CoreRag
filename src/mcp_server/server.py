@@ -19,13 +19,13 @@ import lancedb
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
-from src.mcp_server.tools import CoreRagTools
-from src.embeddings.embedding_service import EmbeddingService
-from src.search.hybrid_search import HybridSearcher
-from src.search.reranker import CrossEncoderReranker
-from src.search.hyde import create_hyde_expander
-from src.utils.safe_processor import SafeProcessor, get_ingestion_controller
 from src.analytics.query_analytics import QueryAnalytics
+from src.embeddings.embedding_service import EmbeddingService
+from src.mcp_server.tools import CoreRagTools
+from src.search.hybrid_search import HybridSearcher
+from src.search.hyde import create_hyde_expander
+from src.search.reranker import CrossEncoderReranker
+from src.utils.safe_processor import SafeProcessor, get_ingestion_controller
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ _session_tracker = None
 
 def get_config() -> dict:
     """Load configuration from central config module."""
-    from src.config import DB_PATH, VAULT_PATH, EMBEDDING_MODEL, RERANKER_MODEL, STATE_DIR
+    from src.config import DB_PATH, EMBEDDING_MODEL, RERANKER_MODEL, STATE_DIR, VAULT_PATH
+
     return {
         "db_path": str(DB_PATH),
         "vault_path": str(VAULT_PATH),
@@ -89,12 +90,11 @@ async def _startup():
 
     # Initialize query analytics
     if config["enable_analytics"]:
-        _query_analytics = QueryAnalytics(
-            state_dir=Path(config["state_dir"]) / "analytics"
-        )
+        _query_analytics = QueryAnalytics(state_dir=Path(config["state_dir"]) / "analytics")
 
     # Initialize semantic cache for search result deduplication
     from src.analytics.query_analytics import SemanticCache
+
     semantic_cache = None
     if config["enable_cache"]:
         semantic_cache = SemanticCache(
@@ -125,6 +125,7 @@ async def _startup():
 
     # Initialize knowledge graph
     from src.graph.knowledge_graph import KnowledgeGraph
+
     graph_db_path = Path(config["state_dir"]) / "knowledge_graph.db"
     knowledge_graph = KnowledgeGraph(graph_db_path)
     graph_stats = knowledge_graph.get_stats()
@@ -135,6 +136,7 @@ async def _startup():
 
     # Initialize conflict detector (semantic + numeric contradiction detection)
     from src.quality.conflict_detector import ConflictDetector
+
     conflict_detector = ConflictDetector(
         embedder=_embedding_service.embed_query,
         state_dir=Path(config["state_dir"]) / "conflicts",
@@ -157,6 +159,7 @@ async def _startup():
     # Initialize session tracker
     global _session_tracker
     from src.memory.episodic_memory import SessionTracker
+
     _session_tracker = SessionTracker()
     logger.info(f"Session tracker started: {_session_tracker._current.session_id}")
 
@@ -201,6 +204,7 @@ mcp = FastMCP(
 
 # === SEARCH TOOLS ===
 
+
 @mcp.tool()
 async def search_knowledge(
     query: str,
@@ -232,6 +236,7 @@ async def search_knowledge(
         return {"error": "CoreRag tools not initialized"}
 
     import time as _time
+
     _search_start = _time.time()
 
     result = await _corerag_tools.search_knowledge(
@@ -286,6 +291,7 @@ async def search_by_entity(
 
 
 # === METACOGNITION TOOLS ===
+
 
 @mcp.tool()
 async def list_recent_files(
@@ -354,6 +360,7 @@ async def get_user_context() -> dict:
 
 # === SYSTEM TOOLS ===
 
+
 @mcp.tool()
 async def get_system_status() -> dict:
     """
@@ -400,6 +407,7 @@ async def add_user_fact(
 
 # === INGESTION TOOLS ===
 
+
 @mcp.tool()
 async def trigger_reindex(
     path: Optional[str] = None,
@@ -437,6 +445,7 @@ async def get_ingestion_queue() -> dict:
 
 # === QUALITY TOOLS ===
 
+
 @mcp.tool()
 async def check_stale_content(
     path: Optional[str] = None,
@@ -454,10 +463,9 @@ async def check_stale_content(
     """
     try:
         from src.quality.freshness import FreshnessIndicator
+
         fi = FreshnessIndicator(stale_days=days)
-        check_path = Path(path) if path else (
-            Path(os.getenv("VAULT_PATH", str(Path.home() / "Documents/ObsidianVault")))
-        )
+        check_path = Path(path) if path else (Path(get_config()["vault_path"]))
         stale = fi.get_stale_content(check_path, recursive=True)
         return {
             "path": str(check_path),
@@ -492,9 +500,8 @@ async def check_links(
     """
     try:
         from src.quality.link_checker import check_links as _check_links
-        check_path = Path(path) if path else (
-            Path(os.getenv("VAULT_PATH", str(Path.home() / "Documents/ObsidianVault")))
-        )
+
+        check_path = Path(path) if path else (Path(get_config()["vault_path"]))
         report = await _check_links(check_path, recursive=True)
         return {
             "path": str(check_path),
@@ -503,10 +510,14 @@ async def check_links(
             "broken_links": report.broken_links,
             "redirect_links": report.redirect_links,
             "overall_health": report.overall_health,
-            "broken_details": [
-                {"url": d["url"], "status": d["status"], "file": d.get("file", "")}
-                for d in report.broken_details[:20]
-            ] if hasattr(report, "broken_details") and report.broken_details else [],
+            "broken_details": (
+                [
+                    {"url": d["url"], "status": d["status"], "file": d.get("file", "")}
+                    for d in report.broken_details[:20]
+                ]
+                if hasattr(report, "broken_details") and report.broken_details
+                else []
+            ),
         }
     except Exception as e:
         return {"error": str(e)}
@@ -535,6 +546,7 @@ async def detect_conflicts(
 
 # === BACKUP TOOLS ===
 
+
 @mcp.tool()
 async def create_backup(
     name: Optional[str] = None,
@@ -552,6 +564,7 @@ async def create_backup(
     """
     try:
         from src.utils.backup import BackupManager
+
         config = get_config()
         bm = BackupManager(data_dir=Path(config["state_dir"]))
         info = bm.create_backup(backup_name=name, backup_type=backup_type)
@@ -577,6 +590,7 @@ async def list_backups() -> dict:
     """
     try:
         from src.utils.backup import BackupManager
+
         config = get_config()
         bm = BackupManager(data_dir=Path(config["state_dir"]))
         backups = bm.list_backups()
@@ -598,6 +612,7 @@ async def list_backups() -> dict:
 
 
 # === QUALITY TOOLS ===
+
 
 @mcp.tool()
 async def find_duplicates(
@@ -646,6 +661,7 @@ async def find_duplicates(
 
 
 # === MAINTENANCE TOOLS ===
+
 
 @mcp.tool()
 async def get_database_health() -> dict:
@@ -715,6 +731,7 @@ async def optimize_database() -> dict:
 
 
 # === TAG TOOLS ===
+
 
 @mcp.tool()
 async def list_tags(limit: int = 50) -> dict:
@@ -791,7 +808,12 @@ async def manage_tags(
             if not tag_name or not target_tag:
                 return {"error": "tag_name and target_tag required for merge"}
             affected = tm.merge_tags(tag_name, target_tag)
-            return {"success": True, "merged": tag_name, "into": target_tag, "documents_affected": affected}
+            return {
+                "success": True,
+                "merged": tag_name,
+                "into": target_tag,
+                "documents_affected": affected,
+            }
 
         elif action == "get_tree":
             tree = tm.get_tag_tree()
@@ -805,6 +827,7 @@ async def manage_tags(
 
 
 # === RESOURCE ENDPOINTS ===
+
 
 @mcp.resource("corerag://status")
 async def get_status_resource() -> str:
@@ -822,6 +845,7 @@ async def get_recent_resource(days: int = 7) -> str:
 
 # === SERVER ENTRY POINT ===
 
+
 def create_app():
     """Create the FastMCP application."""
     return mcp
@@ -829,9 +853,8 @@ def create_app():
 
 # For direct running (Claude Desktop uses stdio transport)
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    from src.utils.logging_config import setup_logging
+
+    setup_logging(json_logs=True)
 
     mcp.run(transport="stdio")

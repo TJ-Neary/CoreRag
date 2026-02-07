@@ -3,10 +3,12 @@ import logging
 import os
 import re
 
-import requests
+import httpx
 
 from src.config import GOOGLE_API_KEY, OLLAMA_HOST, OLLAMA_MODEL
 from src.correction_log import get_recent_examples
+from src.exceptions import ProcessingError
+from src.utils.retry import RetryStrategies, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +31,30 @@ else:
 
 # ── Ollama Helper ─────────────────────────────────────────────────────────────
 
-def _ollama_generate(prompt: str) -> str:
+
+@with_retry(**RetryStrategies.ollama_call())
+async def _ollama_generate(prompt: str) -> str:
     """Send a prompt to Ollama and return the response text."""
-    resp = requests.post(
-        f"{OLLAMA_HOST}/api/generate",
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "num_ctx": OLLAMA_NUM_CTX,
-                "num_predict": OLLAMA_NUM_PREDICT,
-                "temperature": OLLAMA_TEMPERATURE,
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
+        resp = await client.post(
+            f"{OLLAMA_HOST}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "num_ctx": OLLAMA_NUM_CTX,
+                    "num_predict": OLLAMA_NUM_PREDICT,
+                    "temperature": OLLAMA_TEMPERATURE,
+                },
             },
-        },
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json().get("response", "")
+        )
+        resp.raise_for_status()
+        return resp.json().get("response", "")
 
 
 # ── Text Sampling ─────────────────────────────────────────────────────────────
+
 
 def _sample_text(text: str, max_chars: int = 12000) -> str:
     """Build a representative sample of the document for LLM classification.
@@ -63,11 +68,7 @@ def _sample_text(text: str, max_chars: int = 12000) -> str:
 
     head = max_chars - 3000
     tail = 3000
-    return (
-        text[:head]
-        + "\n\n[... middle of document omitted for brevity ...]\n\n"
-        + text[-tail:]
-    )
+    return text[:head] + "\n\n[... middle of document omitted for brevity ...]\n\n" + text[-tail:]
 
 
 # ── Core Analysis Prompt ──────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ JSON format:
 {{"category": "Work", "year": "2024", "type": "Guide", "suggested_name": "descriptive_filename", "summary": "A concise summary of the document content.", "pii_observations": ""}}"""
 
 
-def analyze_document(text: str):
+async def analyze_document(text: str):
     """Analyzes text to extract metadata.
 
     Uses Gemini API if GOOGLE_API_KEY is set, otherwise falls back to Ollama.
@@ -124,7 +125,7 @@ def analyze_document(text: str):
             response = model.generate_content(prompt)
             raw = response.text
         else:
-            raw = _ollama_generate(prompt)
+            raw = await _ollama_generate(prompt)
 
         cleaned = _clean_json_markdown(raw)
         repaired = _repair_json(cleaned)
@@ -153,21 +154,17 @@ def analyze_document(text: str):
         # Return the original text — PII redaction is done at commit time by Presidio
         return metadata, text
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.error(f"Intelligence analysis failed ({_provider}): {e}")
-        return {
-            "category": "Error",
-            "year": "Unknown",
-            "type": "Error",
-            "summary": "Analysis failed.",
-            "suggested_name": "unknown_file",
-            "pii_observations": "",
-        }, text
+        raise ProcessingError(f"Intelligence analysis failed ({_provider}): {e}") from e
 
 
 # ── Folder Suggestion ─────────────────────────────────────────────────────────
 
-def suggest_folder_structure(
+
+async def suggest_folder_structure(
     documents: list[dict], existing_structure: dict | None = None
 ) -> dict:
     """Suggests a folder taxonomy and per-document folder assignments."""
@@ -220,17 +217,16 @@ Rules:
             response = model.generate_content(prompt)
             raw = response.text
         else:
-            raw = _ollama_generate(prompt)
+            raw = await _ollama_generate(prompt)
 
         cleaned = _clean_json_markdown(raw)
         return json.loads(cleaned)
 
+    except ProcessingError:
+        raise
     except Exception as e:
         logger.error(f"Folder suggestion failed ({_provider}): {e}")
-        assignments = {
-            doc["id"]: doc.get("category", "Unsorted") for doc in documents
-        }
-        return {"folders": {}, "assignments": assignments}
+        raise ProcessingError(f"Folder suggestion failed ({_provider}): {e}") from e
 
 
 def _clean_json_markdown(text: str) -> str:
@@ -260,7 +256,7 @@ def _repair_json(text: str) -> str:
         if escaped:
             escaped = False
             continue
-        if ch == '\\':
+        if ch == "\\":
             escaped = True
             continue
         if ch == '"':
@@ -270,10 +266,10 @@ def _repair_json(text: str) -> str:
         s += '..."'
 
     # Close unmatched braces/brackets
-    open_braces = s.count('{') - s.count('}')
-    open_brackets = s.count('[') - s.count(']')
-    s += ']' * max(0, open_brackets)
-    s += '}' * max(0, open_braces)
+    open_braces = s.count("{") - s.count("}")
+    open_brackets = s.count("[") - s.count("]")
+    s += "]" * max(0, open_brackets)
+    s += "}" * max(0, open_braces)
 
     try:
         json.loads(s)

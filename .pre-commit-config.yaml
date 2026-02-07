@@ -1,0 +1,33 @@
+# Pre-commit hooks for CoreRag
+# Install: pre-commit install
+# Run all: pre-commit run --all-files
+# Run on staged: triggers automatically on git commit
+
+repos:
+  - repo: local
+    hooks:
+      - id: security-scan
+        name: Security Scan
+        entry: ./scripts/security_scan.sh --staged
+        language: script
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: black
+        name: Black (formatter)
+        entry: ./venv/bin/black
+        language: system
+        types: [python]
+        args: [--check, --quiet]
+
+      - id: ruff
+        name: Ruff (linter)
+        entry: ./venv/bin/ruff check
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: MyPy (type checker - warn only)
+        entry: bash -c './venv/bin/mypy --ignore-missing-imports "$@" || true'
+        language: system
+        types: [python]

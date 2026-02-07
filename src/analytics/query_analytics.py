@@ -11,15 +11,15 @@ Tracks and analyzes search queries to:
 All data is stored locally - no external services.
 """
 
+import hashlib
 import json
 import logging
+import threading
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-import hashlib
-import threading
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryEvent:
     """A single query event."""
+
     query: str
     timestamp: str
     results_count: int
@@ -42,6 +43,7 @@ class QueryEvent:
 @dataclass
 class QueryPattern:
     """A detected query pattern."""
+
     pattern: str
     frequency: int
     avg_results: float
@@ -53,6 +55,7 @@ class QueryPattern:
 @dataclass
 class AnalyticsSummary:
     """Summary of query analytics."""
+
     total_queries: int
     unique_queries: int
     avg_latency_ms: float
@@ -93,7 +96,9 @@ class QueryAnalytics:
             max_events: Maximum events to keep in memory
             enable_patterns: Enable pattern detection
         """
-        self.state_dir = state_dir or Path.home() / ".corerag" / "analytics"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "analytics"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.max_events = max_events
         self.enable_patterns = enable_patterns
@@ -150,7 +155,7 @@ class QueryAnalytics:
 
             # Trim if over limit
             if len(self._events) > self.max_events:
-                self._events = self._events[-self.max_events:]
+                self._events = self._events[-self.max_events :]
 
         # Update patterns
         if self.enable_patterns:
@@ -184,10 +189,7 @@ class QueryAnalytics:
         cutoff = datetime.now() - timedelta(days=days)
 
         with self._lock:
-            recent = [
-                e for e in self._events
-                if datetime.fromisoformat(e.timestamp) >= cutoff
-            ]
+            recent = [e for e in self._events if datetime.fromisoformat(e.timestamp) >= cutoff]
 
         if not recent:
             return AnalyticsSummary(
@@ -208,7 +210,8 @@ class QueryAnalytics:
         avg_score = sum(e.top_result_score for e in recent) / len(recent)
 
         failed = sum(
-            1 for e in recent
+            1
+            for e in recent
             if e.results_count < self.MIN_RESULTS_THRESHOLD
             or e.top_result_score < self.FAILED_QUERY_SCORE_THRESHOLD
         )
@@ -249,7 +252,8 @@ class QueryAnalytics:
         """Get queries that had poor results (candidates for Golden Set)."""
         with self._lock:
             failed = [
-                e for e in self._events
+                e
+                for e in self._events
                 if e.results_count < self.MIN_RESULTS_THRESHOLD
                 or e.top_result_score < self.FAILED_QUERY_SCORE_THRESHOLD
             ]
@@ -269,22 +273,23 @@ class QueryAnalytics:
         """
         with self._lock:
             # Group by normalized query
-            query_stats: Dict[str, Dict] = defaultdict(lambda: {
-                "count": 0,
-                "avg_score": 0.0,
-                "best_file": None,
-                "best_score": 0.0,
-                "example": "",
-            })
+            query_stats: Dict[str, Dict] = defaultdict(
+                lambda: {
+                    "count": 0,
+                    "avg_score": 0.0,
+                    "best_file": None,
+                    "best_score": 0.0,
+                    "example": "",
+                }
+            )
 
             for e in self._events:
                 norm = self._normalize_query(e.query)
                 stats = query_stats[norm]
                 stats["count"] += 1
                 stats["avg_score"] = (
-                    (stats["avg_score"] * (stats["count"] - 1) + e.top_result_score)
-                    / stats["count"]
-                )
+                    stats["avg_score"] * (stats["count"] - 1) + e.top_result_score
+                ) / stats["count"]
                 if e.top_result_score > stats["best_score"]:
                     stats["best_score"] = e.top_result_score
                     stats["best_file"] = e.top_result_file
@@ -294,12 +299,14 @@ class QueryAnalytics:
         suggestions = []
         for norm, stats in query_stats.items():
             if stats["count"] >= 3 and stats["avg_score"] >= 0.5 and stats["best_file"]:
-                suggestions.append({
-                    "query": stats["example"],
-                    "expected_file": stats["best_file"],
-                    "frequency": stats["count"],
-                    "avg_score": stats["avg_score"],
-                })
+                suggestions.append(
+                    {
+                        "query": stats["example"],
+                        "expected_file": stats["best_file"],
+                        "frequency": stats["count"],
+                        "avg_score": stats["avg_score"],
+                    }
+                )
 
         # Sort by frequency
         suggestions.sort(key=lambda x: -x["frequency"])
@@ -339,13 +346,11 @@ class QueryAnalytics:
                 p = self._patterns[pattern_key]
                 p.frequency += 1
                 p.avg_results = (
-                    (p.avg_results * (p.frequency - 1) + event.results_count)
-                    / p.frequency
-                )
+                    p.avg_results * (p.frequency - 1) + event.results_count
+                ) / p.frequency
                 p.avg_score = (
-                    (p.avg_score * (p.frequency - 1) + event.top_result_score)
-                    / p.frequency
-                )
+                    p.avg_score * (p.frequency - 1) + event.top_result_score
+                ) / p.frequency
                 p.last_seen = event.timestamp
 
                 if event.query not in p.example_queries:
@@ -372,10 +377,14 @@ class QueryAnalytics:
 
         try:
             with open(events_file, "w") as f:
-                json.dump({
-                    "events": [asdict(e) for e in self._events],
-                    "counts": dict(self._query_counts),
-                }, f, indent=2)
+                json.dump(
+                    {
+                        "events": [asdict(e) for e in self._events],
+                        "counts": dict(self._query_counts),
+                    },
+                    f,
+                    indent=2,
+                )
         except Exception as e:
             logger.warning(f"Failed to save analytics state: {e}")
 

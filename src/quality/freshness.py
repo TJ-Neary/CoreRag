@@ -11,27 +11,28 @@ Tracks content freshness and provides staleness warnings:
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import os
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class FreshnessLevel(Enum):
     """Content freshness levels."""
-    FRESH = "fresh"       # Modified recently (< 7 days)
-    CURRENT = "current"   # Relatively recent (< 30 days)
-    AGING = "aging"       # Getting old (< 90 days)
-    STALE = "stale"       # Old (< 1 year)
-    ARCHIVE = "archive"   # Very old (> 1 year)
+
+    FRESH = "fresh"  # Modified recently (< 7 days)
+    CURRENT = "current"  # Relatively recent (< 30 days)
+    AGING = "aging"  # Getting old (< 90 days)
+    STALE = "stale"  # Old (< 1 year)
+    ARCHIVE = "archive"  # Very old (> 1 year)
 
 
 @dataclass
 class FreshnessInfo:
     """Freshness information for a document."""
+
     file_path: str
     modified_at: datetime
     accessed_at: Optional[datetime]
@@ -82,7 +83,9 @@ class FreshnessIndicator:
         self.aging_days = aging_days
         self.stale_days = stale_days
 
-        self.state_dir = state_dir or Path.home() / ".corerag" / "freshness"
+        from src.config import STATE_DIR
+
+        self.state_dir = state_dir or STATE_DIR / "freshness"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # Access tracking
@@ -247,19 +250,18 @@ class FreshnessIndicator:
             "avg_age_days": total_age / file_count if file_count > 0 else 0,
             "stale_count": counts.get("stale", 0) + counts.get("archive", 0),
             "fresh_percentage": (
-                counts.get("fresh", 0) / file_count * 100
-                if file_count > 0 else 0
+                counts.get("fresh", 0) / file_count * 100 if file_count > 0 else 0
             ),
         }
 
     def _get_indicator(self, freshness: FreshnessInfo) -> str:
         """Get visual indicator for freshness level."""
         indicators = {
-            FreshnessLevel.FRESH: "🟢",      # Green
-            FreshnessLevel.CURRENT: "🔵",    # Blue
-            FreshnessLevel.AGING: "🟡",      # Yellow
-            FreshnessLevel.STALE: "🟠",      # Orange
-            FreshnessLevel.ARCHIVE: "🔴",    # Red
+            FreshnessLevel.FRESH: "🟢",  # Green
+            FreshnessLevel.CURRENT: "🔵",  # Blue
+            FreshnessLevel.AGING: "🟡",  # Yellow
+            FreshnessLevel.STALE: "🟠",  # Orange
+            FreshnessLevel.ARCHIVE: "🔴",  # Red
         }
         return indicators.get(freshness.freshness_level, "⚪")
 
@@ -270,10 +272,7 @@ class FreshnessIndicator:
             try:
                 with open(log_file) as f:
                     data = json.load(f)
-                    self._access_log = {
-                        k: datetime.fromisoformat(v)
-                        for k, v in data.items()
-                    }
+                    self._access_log = {k: datetime.fromisoformat(v) for k, v in data.items()}
             except Exception as e:
                 logger.warning(f"Failed to load access log: {e}")
 
@@ -283,9 +282,6 @@ class FreshnessIndicator:
 
         try:
             with open(log_file, "w") as f:
-                json.dump({
-                    k: v.isoformat()
-                    for k, v in self._access_log.items()
-                }, f)
+                json.dump({k: v.isoformat() for k, v in self._access_log.items()}, f)
         except Exception as e:
             logger.warning(f"Failed to save access log: {e}")
