@@ -161,17 +161,27 @@ async def process_document(file_path: Path):
         # metadata dict stores the full analysis results (LLM + PII scan)
         # proposed dict stores the human-editable fields shown on the dashboard
         # redacted_text stores the full extracted text (redaction happens at commit time)
+        proposed = {
+            "filename": base_name,
+            "category": metadata.get("category", "Unsorted"),
+            "year": metadata.get("year", "Unknown"),
+            "type": metadata.get("type", "Document"),
+            "tags": metadata.get("tags", []),
+        }
+
+        # Apply learned rule hints from user correction patterns
+        if metadata.get("_learned_folder"):
+            proposed["target_folder"] = metadata["_learned_folder"]
+            logging.info(f"Learned rule applied: folder -> {metadata['_learned_folder']}")
+        if metadata.get("_learned_sensitivity") is not None:
+            metadata["is_sensitive"] = metadata["_learned_sensitivity"]
+            logging.info(f"Learned rule applied: sensitivity -> {metadata['_learned_sensitivity']}")
+
         update_data = {
             "status": "pending",
             "metadata": metadata,
             "redacted_text": full_text,
-            "proposed": {
-                "filename": base_name,
-                "category": metadata.get("category", "Unsorted"),
-                "year": metadata.get("year", "Unknown"),
-                "type": metadata.get("type", "Document"),
-                "tags": metadata.get("tags", []),
-            },
+            "proposed": proposed,
         }
         if duplicate_info:
             update_data["duplicate"] = duplicate_info

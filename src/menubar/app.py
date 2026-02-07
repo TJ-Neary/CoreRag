@@ -62,7 +62,7 @@ class CoreRagApp(rumps.App):
             import urllib.request
 
             req = urllib.request.Request(START_BATCH_URL, method="POST")
-            with urllib.request.urlopen(req, timeout=5):
+            with urllib.request.urlopen(req, timeout=5):  # nosec B310
                 pass
             rumps.notification(
                 title="CoreRag",
@@ -88,7 +88,7 @@ class CoreRagApp(rumps.App):
 
             # Check batch processing status
             req = urllib.request.Request(STATUS_URL, method="GET")
-            with urllib.request.urlopen(req, timeout=2) as resp:
+            with urllib.request.urlopen(req, timeout=2) as resp:  # nosec B310
                 data = json.loads(resp.read())
 
             status = data.get("status", "idle")
@@ -114,7 +114,7 @@ class CoreRagApp(rumps.App):
                 # Also check commit status
                 try:
                     req2 = urllib.request.Request(COMMIT_STATUS_URL, method="GET")
-                    with urllib.request.urlopen(req2, timeout=2) as resp2:
+                    with urllib.request.urlopen(req2, timeout=2) as resp2:  # nosec B310
                         commit_data = json.loads(resp2.read())
                     commit_status = commit_data.get("status", "idle")
                     if commit_status in ("running", "paused"):

@@ -36,7 +36,7 @@ from src.folder_manager import (
     save_folder_structure,
 )
 from src.intelligence import suggest_folder_structure
-from src.staging import get_item, get_pending_items, update_item
+from src.staging import get_item, get_pending_items, load_manifest, update_item
 from src.utils.query_sanitize import build_eq_clause
 from src.utils.tagging import TagManager
 
@@ -231,6 +231,44 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         update_item(item_id, {"status": "approved"})
         background_tasks.add_task(execute_approved_item, item_id)
         return {"status": "approved", "message": "Processing started"}
+
+    # ── Bulk Operations ─────────────────────────────────────────────────
+
+    @router.post("/api/bulk-approve")
+    async def bulk_approve(request: Request, background_tasks: BackgroundTasks) -> dict:
+        body = await request.json()
+        item_ids = body.get("item_ids", [])
+        if not item_ids:
+            return {"status": "error", "message": "No items specified"}
+        approved = []
+        for item_id in item_ids:
+            item = get_item(item_id)
+            if item and item.get("status") == "pending":
+                target_folder = item.get("proposed", {}).get("target_folder", "")
+                if target_folder:
+                    ensure_folder_in_structure(target_folder)
+                update_item(item_id, {"status": "approved"})
+                background_tasks.add_task(execute_approved_item, item_id)
+                approved.append(item_id)
+        return {"status": "ok", "approved": len(approved), "items": approved}
+
+    @router.post("/api/apply-to-similar")
+    async def apply_to_similar(request: Request) -> dict:
+        body = await request.json()
+        target_folder = body.get("target_folder")
+        category = body.get("category")
+        if not target_folder:
+            return {"status": "error", "message": "target_folder required"}
+        manifest = load_manifest()
+        updated = 0
+        for item_id, item in manifest.items():
+            if item.get("status") != "pending":
+                continue
+            if category and item.get("proposed", {}).get("category") != category:
+                continue
+            update_item(item_id, {"proposed": {"target_folder": target_folder}})
+            updated += 1
+        return {"status": "ok", "updated": updated, "target_folder": target_folder}
 
     # ── Batch Analysis Routes ─────────────────────────────────────────────
 

@@ -14,6 +14,7 @@ Fallback:
 """
 
 import logging
+import os
 import platform
 import subprocess
 import tempfile
@@ -247,7 +248,9 @@ class VisionOCR:
                 # Render at 2x for better OCR quality
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
 
-                img_path = Path(tempfile.mktemp(suffix=".png"))
+                fd, tmp_name = tempfile.mkstemp(suffix=".png")
+                os.close(fd)
+                img_path = Path(tmp_name)
                 pix.save(img_path)
                 images.append(img_path)
 

@@ -133,6 +133,7 @@ class TestExecutionFlow:
             patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
             patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
             patch("src.exporter.VAULT_PATH", VAULT),
+            patch("src.exporter.VAULT_PATHS", {"default": VAULT}),
         ):
 
             item_id = src.staging.add_to_staging(
@@ -175,6 +176,7 @@ class TestExecutionFlow:
             patch("src.staging.STAGING_MANIFEST_PATH", MANIFEST),
             patch("src.archiver.ARCHIVE_PATH", ARCHIVE),
             patch("src.exporter.VAULT_PATH", VAULT),
+            patch("src.exporter.VAULT_PATHS", {"default": VAULT}),
         ):
 
             item_id = src.staging.add_to_staging(

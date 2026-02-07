@@ -144,6 +144,17 @@ class VersionManager:
 
         return version
 
+    def is_changed(self, document_id: str, content: str) -> bool:
+        """Check if content differs from the latest version.
+
+        Returns True if the content is new or different from the latest version.
+        """
+        latest = self.get_latest_version(document_id)
+        if not latest:
+            return True  # No previous version = new document
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+        return content_hash != latest.content_hash
+
     def get_versions(self, document_id: str) -> List[DocumentVersion]:
         """Get all versions of a document."""
         return self._versions.get(document_id, [])

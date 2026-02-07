@@ -320,7 +320,18 @@ def execute_approved_item(item_id: str):
 
         # Index in RAG vector database (unless user opted out)
         if not item.get("skip_rag"):
-            _index_in_rag(export_text, current_path.name, final_metadata)
+            # Check if document content has changed since last indexing
+            doc_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
+            try:
+                from src.utils.versioning import VersionManager
+
+                _vm_check = VersionManager()
+                if not _vm_check.is_changed(doc_id, export_text):
+                    logger.info(f"Content unchanged for {current_path.name}, skipping RAG re-index")
+                else:
+                    _index_in_rag(export_text, current_path.name, final_metadata)
+            except Exception:
+                _index_in_rag(export_text, current_path.name, final_metadata)
             # Extract entities for knowledge graph
             _extract_entities(export_text, current_path.name)
         else:

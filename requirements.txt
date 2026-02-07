@@ -15,8 +15,8 @@ python-docx>=1.1.0
 # OCR (Apple Vision.framework on macOS, PyMuPDF for PDF→image)
 PyMuPDF>=1.26.0
 Pillow>=12.0.0
-pyobjc-framework-Vision>=12.0
-pyobjc-framework-Quartz>=12.0
+pyobjc-framework-Vision>=12.0; sys_platform == "darwin"
+pyobjc-framework-Quartz>=12.0; sys_platform == "darwin"
 
 # Intelligence / LLM
 google-generativeai>=0.3.1
@@ -42,7 +42,7 @@ fastmcp>=2.14.4
 
 # Multimodal (optional — audio/video processing)
 opencv-python-headless>=4.10.0  # Video scene detection
-mlx-whisper>=0.4.0              # Audio transcription (Apple Silicon)
+mlx-whisper>=0.4.0; sys_platform == "darwin"  # Audio transcription (Apple Silicon)
 
 # HTTP client (for Ollama chat integration)
 httpx>=0.28.0
@@ -51,4 +51,4 @@ httpx>=0.28.0
 slowapi>=0.1.9
 
 # macOS menu bar app
-rumps>=0.4.0
+rumps>=0.4.0; sys_platform == "darwin"

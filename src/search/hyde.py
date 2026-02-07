@@ -210,7 +210,7 @@ class HyDEExpander:
     def _cache_key(self, query: str) -> str:
         """Generate cache key for query."""
         normalized = query.lower().strip()
-        return hashlib.md5(normalized.encode()).hexdigest()
+        return hashlib.md5(normalized.encode(), usedforsecurity=False).hexdigest()
 
     def _load_cache(self) -> None:
         """Load cache from disk."""

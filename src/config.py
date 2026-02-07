@@ -40,6 +40,17 @@ INBOX_PATH = get_path_var("INBOX_PATH")
 VAULT_PATH = get_path_var("VAULT_PATH")
 ARCHIVE_PATH = get_path_var("ARCHIVE_PATH")
 
+# ── Multi-Vault Support ──────────────────────────────────────────────────────
+# Format: "Work=/path/one,Personal=/path/two"
+_vault_paths_raw = os.getenv("CORERAG_VAULT_PATHS", "")
+VAULT_PATHS: dict[str, Path] = {"default": VAULT_PATH}
+if _vault_paths_raw:
+    for entry in _vault_paths_raw.split(","):
+        entry = entry.strip()
+        if "=" in entry:
+            name, path_str = entry.split("=", 1)
+            VAULT_PATHS[name.strip()] = Path(path_str.strip()).expanduser().resolve()
+
 # ── CoreRag Data Paths ────────────────────────────────────────────────────────
 
 STATE_DIR = Path(os.getenv("CORERAG_STATE_DIR", str(Path.home() / ".corerag")))

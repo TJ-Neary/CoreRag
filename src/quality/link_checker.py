@@ -164,7 +164,7 @@ class LinkExtractor:
                 return False
 
             # Skip localhost
-            if parsed.netloc in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            if parsed.netloc in {"localhost", "127.0.0.1", "0.0.0.0"}:  # nosec B104
                 return False
 
             # Skip internal anchors
@@ -236,7 +236,7 @@ class LinkCache:
 
     def _url_key(self, url: str) -> str:
         """Generate cache key for URL."""
-        return hashlib.md5(url.encode()).hexdigest()
+        return hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
 
     def _load_cache(self) -> None:
         """Load cache from disk."""

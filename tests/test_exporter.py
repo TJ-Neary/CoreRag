@@ -30,7 +30,10 @@ class TestExporter:
     def test_export_creates_markdown(self):
         vault = TEMP_ROOT / "vault"
         vault.mkdir()
-        with patch("src.exporter.VAULT_PATH", vault):
+        with (
+            patch("src.exporter.VAULT_PATH", vault),
+            patch("src.exporter.VAULT_PATHS", {"default": vault}),
+        ):
             from src.exporter import export_to_vault
 
             export_to_vault(
@@ -46,7 +49,10 @@ class TestExporter:
     def test_export_has_frontmatter(self):
         vault = TEMP_ROOT / "vault"
         vault.mkdir()
-        with patch("src.exporter.VAULT_PATH", vault):
+        with (
+            patch("src.exporter.VAULT_PATH", vault),
+            patch("src.exporter.VAULT_PATHS", {"default": vault}),
+        ):
             from src.exporter import export_to_vault
 
             export_to_vault(
@@ -63,7 +69,10 @@ class TestExporter:
     def test_export_includes_content(self):
         vault = TEMP_ROOT / "vault"
         vault.mkdir()
-        with patch("src.exporter.VAULT_PATH", vault):
+        with (
+            patch("src.exporter.VAULT_PATH", vault),
+            patch("src.exporter.VAULT_PATHS", {"default": vault}),
+        ):
             from src.exporter import export_to_vault
 
             export_to_vault(
@@ -77,7 +86,10 @@ class TestExporter:
 
     def test_export_missing_vault_path(self):
         nonexistent = TEMP_ROOT / "nonexistent_vault"
-        with patch("src.exporter.VAULT_PATH", nonexistent):
+        with (
+            patch("src.exporter.VAULT_PATH", nonexistent),
+            patch("src.exporter.VAULT_PATHS", {"default": nonexistent}),
+        ):
             from src.exporter import export_to_vault
 
             # Should not raise, just log error

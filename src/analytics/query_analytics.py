@@ -445,7 +445,7 @@ class SemanticCache:
     def put(self, query: str, results: List[Dict]) -> None:
         """Cache results for a query."""
         query_embedding = self.embedding_service.embed_query(query)
-        query_hash = hashlib.md5(query.encode()).hexdigest()
+        query_hash = hashlib.md5(query.encode(), usedforsecurity=False).hexdigest()
 
         with self._lock:
             # Evict if at capacity

@@ -162,6 +162,22 @@ class ManifestResponse(BaseModel):
 # === Error Response ===
 
 
+class QuickCaptureRequest(BaseModel):
+    """Request body for quick capture (mobile/shortcut)."""
+
+    text: str = Field(..., min_length=1, max_length=50000, description="Text to capture")
+    source: str = Field(default="quick-capture", max_length=200, description="Source identifier")
+    tags: List[str] = Field(default=[], description="Optional tags")
+
+
+class QuickCaptureResponse(BaseModel):
+    """Response from quick capture."""
+
+    document_id: str = Field(description="Generated document ID")
+    status: str = Field(description="Capture status")
+    error: Optional[str] = Field(default=None, description="Error message if capture failed")
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 

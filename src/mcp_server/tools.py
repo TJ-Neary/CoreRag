@@ -80,6 +80,8 @@ class CoreRagTools:
         self._conflict_detector = conflict_detector
         self._memory_manager = None
         self._user_profile = None
+        self._query_analytics = None
+        self._conversation_manager = None
 
     def _to_dict(self, obj) -> dict:
         """Convert a dataclass or dict result to a plain dict."""
@@ -100,6 +102,7 @@ class CoreRagTools:
         use_reranker: bool = True,
         use_hyde: bool = False,
         use_multi_query: bool = False,
+        conversational: bool = False,
         debug: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -113,6 +116,7 @@ class CoreRagTools:
             use_reranker: Whether to apply cross-encoder re-ranking
             use_hyde: Whether to use HyDE query expansion
             use_multi_query: Decompose complex queries into sub-queries and fuse
+            conversational: Enable multi-turn context-aware query rewriting
             debug: Include raw retrieval context for debugging
 
         Returns:
@@ -121,6 +125,11 @@ class CoreRagTools:
         import time
 
         start_time = time.time()
+
+        # Apply conversational query rewriting if enabled
+        original_query = query
+        if conversational and self._conversation_manager:
+            query = self._conversation_manager.rewrite_query(query)
 
         # Merge tags into filters dict
         if tags:
@@ -238,6 +247,12 @@ class CoreRagTools:
                 "rerank_time_ms": rerank_time,
                 "total_candidates": len(candidates),
             }
+
+        # Record turn for conversational context
+        if conversational and self._conversation_manager:
+            self._conversation_manager.add_turn(original_query, response.get("results", []))
+            if original_query != query:
+                response["_rewritten_query"] = query
 
         return response
 
@@ -989,3 +1004,142 @@ class CoreRagTools:
             logger.error(f"Error reading ingestion queue: {e}")
 
         return {"pending": 0, "processing": 0, "completed": 0, "total": 0}
+
+    # === Document Versioning ===
+
+    async def get_document_history(self, document_id: str, limit: int = 10) -> Dict[str, Any]:
+        """Get version history for a document."""
+        from src.utils.versioning import VersionManager
+
+        vm = VersionManager()
+        history = vm.get_history(document_id, limit=limit)
+        total = len(vm.get_versions(document_id))
+        return {"document_id": document_id, "versions": history, "total": total}
+
+    async def get_document_diff(
+        self, document_id: str, from_version: int, to_version: int
+    ) -> Dict[str, Any]:
+        """Get diff between two versions of a document."""
+        from src.utils.versioning import VersionManager
+
+        vm = VersionManager()
+        diff = vm.get_diff(document_id, from_version, to_version)
+        if not diff:
+            return {"error": "Version(s) not found"}
+        return {
+            "from_version": from_version,
+            "to_version": to_version,
+            "additions": diff.additions,
+            "deletions": diff.deletions,
+            "summary": diff.summary,
+            "diff_lines": diff.diff_lines[:50],
+        }
+
+    async def restore_document_version(
+        self, document_id: str, version_number: int
+    ) -> Dict[str, Any]:
+        """Restore a previous version of a document."""
+        from src.utils.versioning import VersionManager
+
+        vm = VersionManager()
+        restored = vm.restore_version(document_id, version_number)
+        if not restored:
+            return {"error": f"Version {version_number} not found"}
+        return {
+            "success": True,
+            "new_version": restored.version_number,
+            "restored_from": version_number,
+        }
+
+    # === Knowledge Gaps ===
+
+    async def analyze_knowledge_gaps(self) -> Dict[str, Any]:
+        """Analyze the knowledge base for gaps and improvement opportunities."""
+        from src.analytics.gaps_analyzer import GapsAnalyzer
+
+        analyzer = GapsAnalyzer(
+            analytics=self._query_analytics,
+            db=self.db,
+        )
+        return analyzer.get_comprehensive_analysis()
+
+    # === Golden Set Management ===
+
+    async def get_golden_suggestions(self, limit: int = 10) -> Dict[str, Any]:
+        """Get analytics-based suggestions for golden set entries."""
+        from src.quality.golden_set_manager import GoldenSetManager
+
+        mgr = GoldenSetManager(analytics=self._query_analytics)
+        suggestions = mgr.get_suggestions(limit=limit)
+        return {
+            "suggestions": suggestions,
+            "count": len(suggestions),
+            "current_entries": mgr.entry_count,
+        }
+
+    async def approve_golden_suggestion(self, query: str) -> Dict[str, Any]:
+        """Approve a golden set suggestion from analytics."""
+        from src.quality.golden_set_manager import GoldenSetManager
+
+        mgr = GoldenSetManager(analytics=self._query_analytics)
+        success = mgr.approve_suggestion(query)
+        if success:
+            return {"status": "approved", "query": query, "total_entries": mgr.entry_count}
+        return {"status": "failed", "error": f"Query not found in suggestions: {query}"}
+
+    async def list_golden_entries(
+        self, limit: int = 50, source: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """List current golden set entries."""
+        from src.quality.golden_set_manager import GoldenSetManager
+
+        mgr = GoldenSetManager(analytics=self._query_analytics)
+        entries = mgr.list_entries(source_filter=source, limit=limit)
+        return {"entries": entries, "total": mgr.entry_count}
+
+    # === Multi-Vault Support ===
+
+    async def list_vaults(self) -> Dict[str, Any]:
+        """List configured Obsidian vaults."""
+        from src.config import VAULT_PATHS
+
+        return {
+            "vaults": {
+                name: {"path": str(path), "exists": path.exists()}
+                for name, path in VAULT_PATHS.items()
+            }
+        }
+
+    # === External Integrations ===
+
+    async def list_integrations(self) -> Dict[str, Any]:
+        """List available integration plugins and their status."""
+        integrations = []
+        try:
+            from src.integrations.readwise import ReadwisePlugin
+
+            rw = ReadwisePlugin()
+            integrations.append(
+                {
+                    "name": rw.name(),
+                    "connected": rw.check_connection(),
+                    "config": rw.get_config_schema(),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"Readwise plugin unavailable: {e}")
+        return {"integrations": integrations}
+
+    async def sync_integration(self, name: str) -> Dict[str, Any]:
+        """Run a sync cycle for a named integration."""
+        if name == "readwise":
+            from src.integrations.readwise import ReadwisePlugin
+
+            plugin = ReadwisePlugin()
+            if not plugin.check_connection():
+                return {
+                    "status": "error",
+                    "error": "Readwise not connected (check READWISE_API_TOKEN)",
+                }
+            return plugin.sync()
+        return {"status": "error", "error": f"Unknown integration: {name}"}

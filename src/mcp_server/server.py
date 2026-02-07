@@ -156,6 +156,13 @@ async def _startup():
         semantic_cache=semantic_cache,
         conflict_detector=conflict_detector,
     )
+    _corerag_tools._query_analytics = _query_analytics
+
+    # Initialize conversation manager for multi-turn search
+    from src.search.conversation_manager import ConversationManager
+
+    _corerag_tools._conversation_manager = ConversationManager()
+    logger.info("Conversation manager initialized")
 
     # Initialize session tracker
     global _session_tracker
@@ -213,6 +220,7 @@ async def search_knowledge(
     use_reranker: bool = True,
     use_hyde: bool = False,
     use_multi_query: bool = False,
+    conversational: bool = False,
     filters: Optional[dict] = None,
     tags: Optional[list] = None,
     debug: bool = False,
@@ -246,6 +254,7 @@ async def search_knowledge(
         use_reranker=use_reranker,
         use_hyde=use_hyde,
         use_multi_query=use_multi_query,
+        conversational=conversational,
         filters=filters,
         tags=tags,
         debug=debug,
@@ -825,6 +834,92 @@ async def manage_tags(
 
     except Exception as e:
         return {"error": str(e)}
+
+
+# === DOCUMENT VERSIONING ===
+
+
+@mcp.tool()
+async def get_document_history(document_id: str, limit: int = 10) -> dict:
+    """Get version history for a document, showing changes over time."""
+    return await _corerag_tools.get_document_history(document_id=document_id, limit=limit)
+
+
+@mcp.tool()
+async def get_document_diff(document_id: str, from_version: int, to_version: int) -> dict:
+    """Get a diff between two versions of a document."""
+    return await _corerag_tools.get_document_diff(
+        document_id=document_id, from_version=from_version, to_version=to_version
+    )
+
+
+@mcp.tool()
+async def restore_document_version(document_id: str, version_number: int) -> dict:
+    """Restore a previous version of a document."""
+    return await _corerag_tools.restore_document_version(
+        document_id=document_id, version_number=version_number
+    )
+
+
+# === KNOWLEDGE GAPS ===
+
+
+@mcp.tool()
+async def analyze_knowledge_gaps() -> dict:
+    """Analyze the knowledge base for gaps — failed searches, sparse folders, topic imbalances."""
+    return await _corerag_tools.analyze_knowledge_gaps()
+
+
+# === GOLDEN SET MANAGEMENT ===
+
+
+@mcp.tool()
+async def get_golden_suggestions(limit: int = 10) -> dict:
+    """Get analytics-based suggestions for golden set regression tests."""
+    return await _corerag_tools.get_golden_suggestions(limit=limit)
+
+
+@mcp.tool()
+async def approve_golden_suggestion(query: str) -> dict:
+    """Approve a golden set suggestion and add it to the test suite."""
+    return await _corerag_tools.approve_golden_suggestion(query=query)
+
+
+@mcp.tool()
+async def list_golden_entries(limit: int = 50, source: str = "") -> dict:
+    """List current golden set entries, optionally filtered by source."""
+    src_filter = source if source else None
+    return await _corerag_tools.list_golden_entries(limit=limit, source=src_filter)
+
+
+# === MULTI-VAULT ===
+
+
+@mcp.tool()
+async def list_vaults() -> dict:
+    """List configured Obsidian vaults and their paths."""
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
+    return await _corerag_tools.list_vaults()
+
+
+# === EXTERNAL INTEGRATIONS ===
+
+
+@mcp.tool()
+async def list_integrations() -> dict:
+    """List available external integrations and their connection status."""
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
+    return await _corerag_tools.list_integrations()
+
+
+@mcp.tool()
+async def sync_integration(name: str) -> dict:
+    """Run a sync cycle for a named external integration (e.g., 'readwise')."""
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
+    return await _corerag_tools.sync_integration(name=name)
 
 
 # === RESOURCE ENDPOINTS ===

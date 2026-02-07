@@ -24,7 +24,7 @@
 
 ## Project Timeline
 
-**Started**: 2026-01-31 | **Status**: All audit items resolved — ready for public release | **Sessions**: 17
+**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 19
 
 | Session | Date | Focus | Key Outcomes |
 |---------|------|-------|-------------|
@@ -45,12 +45,14 @@
 | 15 | Feb 6 | Wiring Completion & Cleanup | Wired exceptions.py (15 files), logging_config.py (4 entry points), retry.py (API call sites). Async migration (intelligence.py → httpx). Config consolidation (EMBEDDING_MODEL centralized). Fixed broken __init__.py imports. Deleted remaining orphaned files (code_chunker, citations, collections, coreragignore). Cleaned empty packages. 177 tests passing. |
 | 16 | Feb 7 | Full Audit & Public Prep | Comprehensive codebase audit: verified all 32 wired modules, 19 deleted files, 14 audit claims. Found and deleted orphaned `src/obsidian/obsidian_export.py` (exporter.py handles export directly). Created cross-project message board (`_HQ/messages/BOARD.md`). Merged `/sync` into `/gogogo`. Documented all remaining open items. |
 | 17 | Feb 7 | Complete All Open Items | Fixed MCP stdout corruption (logging to stderr). Fixed embedding dimension bug (768→384). Centralized 14 magic numbers in config.py. Decomposed server.py monolith (1,276→102 lines) into v1_routes.py + dashboard_routes.py. Added return type hints to 33 functions. Added slowapi rate limiting. Added mutmut config. Fixed MCP entry point. Created CHANGELOG.md, architecture/README.md, troubleshooting guide. All audit items resolved. |
+| 18 | Feb 7 | Public Release | Created MIT LICENSE. Rewrote README.md, USER_GUIDE.md, StartHere.md, CONVENTIONS.md for public/portfolio readiness. Added project banner. Fixed all ruff E731/E722 lint errors. Black-formatted 26 files. Upgraded security scanner to v4 (9 phases, commercial marker detection). Published to GitHub as public repo. 185 tests passing. |
+| 19 | Feb 7 | All P1-P3 Roadmap Items | Implemented all 11 future roadmap items across 3 phases. P1: backlink generator with inline wikilinks, dashboard bulk ops + keyboard nav, golden set manager + MCP tools. P2: knowledge gaps analyzer, versioning enhancement (is_changed + MCP tools), learned rules from correction patterns. P3: multi-vault support (VAULT_PATHS), RBAC scaffold (AccessControl), Readwise integration plugin, conversational search (query rewriting), quick-capture REST endpoint for mobile. Fixed GitHub CI (bandit, isort, platform markers, MPS OOM). 295 tests, 29 MCP tools. |
 
-### Metrics at Session 17
+### Metrics at Session 19
 
-- **Tests**: 177 passing, 26 skipped (golden set)
+- **Tests**: 295 passing, 26 skipped (golden set)
 - **CLI commands**: 13
-- **MCP tools**: 19
+- **MCP tools**: 29
 - **RAG**: 4,702 child chunks + 52 parent chunks from 43 documents
 - **Knowledge graph**: 979 entities, 165 relationships
 - **Security**: API auth, path validation, query sanitization, secure file permissions, rate limiting (slowapi)
@@ -495,17 +497,17 @@ preferences (key, value, last_updated)
 | **P0** | ~~Security Hardening~~ | **Complete** (Session 14) — API auth, path validation, query sanitization, secure file ops |
 | **P0** | ~~Dead Code Cleanup~~ | **Complete** (Session 14) — 12 orphaned files deleted |
 | **P0** | Query Analytics → Episodic Memory Unification | Handed off to external AI |
-| **P1** | Obsidian Backlinks Enhancement | Pending (basic backlinks exist from Session 11) |
-| **P1** | Dashboard Bulk Operations & Keyboard Navigation | Pending |
-| **P1** | Golden Set Auto-Population from Analytics | Pending |
-| **P2** | Knowledge Gaps Analysis | Pending |
-| **P2** | Document Versioning Enhancement | Pending (basic versioning in executor) |
-| **P2** | Sorting Rules: Pattern Learning | Pending |
-| **P3** | Multi-vault support | Backlog |
-| **P3** | Collaborative features | Backlog |
-| **P3** | External integrations (Readwise, Pocket, Calendar) | Backlog |
-| **P3** | Advanced retrieval (query rewriting, conversational search) | Backlog |
-| **P3** | Mobile companion app | Backlog |
+| **P1** | ~~Obsidian Backlinks Enhancement~~ | **Complete** (Session 19) — BacklinkGenerator with inline wikilinks + Related section |
+| **P1** | ~~Dashboard Bulk Operations & Keyboard Navigation~~ | **Complete** (Session 19) — j/k/a/Space keyboard nav, bulk approve, apply-to-similar |
+| **P1** | ~~Golden Set Auto-Population from Analytics~~ | **Complete** (Session 19) — GoldenSetManager + 3 MCP tools |
+| **P2** | ~~Knowledge Gaps Analysis~~ | **Complete** (Session 19) — GapsAnalyzer (search gaps, sparse folders, topic imbalances) + MCP tool |
+| **P2** | ~~Document Versioning Enhancement~~ | **Complete** (Session 19) — is_changed() + 3 MCP tools + skip unchanged re-indexing |
+| **P2** | ~~Sorting Rules: Pattern Learning~~ | **Complete** (Session 19) — LearnedRulesManager integrated into intelligence.py + processor.py |
+| **P3** | ~~Multi-vault support~~ | **Complete** (Session 19) — VAULT_PATHS config, vault_name param, /api/v1/vaults endpoint |
+| **P3** | ~~Collaborative features~~ | **Complete** (Session 19) — AccessControl scaffold (ADMIN/EDITOR/VIEWER roles, PII filtering) |
+| **P3** | ~~External integrations (Readwise)~~ | **Complete** (Session 19) — IntegrationPlugin base + ReadwisePlugin + MCP tools |
+| **P3** | ~~Advanced retrieval (conversational search)~~ | **Complete** (Session 19) — ConversationManager with follow-up detection + query rewriting |
+| **P3** | ~~Mobile companion app~~ | **Complete** (Session 19) — POST /api/v1/quick-capture endpoint (30/min rate limit) |
 
 ### Success Metrics
 
@@ -1125,4 +1127,4 @@ Previously archived files (from scaffold phase, Jan 31):
 
 ---
 
-*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-07.*
+*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-07 (Session 18).*

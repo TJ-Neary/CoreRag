@@ -21,12 +21,14 @@ from src.api.models import (
     DeleteResponse,
     IngestRequest,
     IngestResponse,
+    QuickCaptureRequest,
+    QuickCaptureResponse,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
     StatsResponse,
 )
-from src.config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, STATE_DIR
+from src.config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, STATE_DIR, VAULT_PATHS
 from src.exceptions import CoreRagError
 from src.utils.query_sanitize import build_eq_clause, build_tag_clauses
 
@@ -506,5 +508,81 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                 chunks_deleted=0,
                 error=str(e),
             )
+
+    # ── GET /api/v1/vaults ──────────────────────────────────────────────────
+
+    @router.get("/vaults")
+    async def list_vaults():
+        """List configured Obsidian vaults."""
+        return {
+            "vaults": {
+                name: {"path": str(path), "exists": path.exists()}
+                for name, path in VAULT_PATHS.items()
+            }
+        }
+
+    # ── POST /api/v1/quick-capture ───────────────────────────────────────────
+
+    @router.post("/quick-capture", response_model=QuickCaptureResponse)
+    @limiter.limit("30/minute")
+    async def quick_capture(request: Request, body: QuickCaptureRequest, _=Depends(verify_api_key)):
+        """Quick capture endpoint for mobile/iOS shortcuts.
+
+        Accepts plain text, indexes directly into RAG without full pipeline.
+        """
+        import hashlib
+
+        try:
+            import lancedb
+
+            from src.chunking.parent_child import ParentChildChunker
+            from src.embeddings.embedding_service import create_embedding_service
+
+            db = lancedb.connect(str(DB_PATH))
+            chunker = ParentChildChunker()
+            embedder = create_embedding_service()
+
+            document_id = hashlib.sha256(body.text[:5000].encode()).hexdigest()[:16]
+
+            parents, children = chunker.chunk_document(
+                content=body.text,
+                document_id=document_id,
+                metadata={"source_path": body.source, "file_type": "quick-capture"},
+            )
+
+            if children:
+                child_texts = [c.content for c in children]
+                embeddings = embedder.embed_documents(child_texts, show_progress=False)
+
+                tags_str = ""
+                if body.tags:
+                    tags_str = "," + ",".join(body.tags) + ","
+
+                child_data = []
+                for c, emb in zip(children, embeddings):
+                    child_data.append(
+                        {
+                            "id": c.id,
+                            "parent_id": c.parent_id,
+                            "document_id": c.document_id,
+                            "content": c.content,
+                            "vector": emb,
+                            "chunk_index": c.chunk_index,
+                            "source_path": body.source,
+                            "tags": tags_str,
+                        }
+                    )
+
+                try:
+                    table = db.open_table("child_chunks")
+                    table.add(child_data)
+                except Exception:
+                    db.create_table("child_chunks", child_data)
+
+            return QuickCaptureResponse(document_id=document_id, status="captured")
+
+        except Exception as e:
+            logger.error(f"Quick capture failed: {e}", exc_info=True)
+            return QuickCaptureResponse(document_id="", status="error", error=str(e))
 
     return router

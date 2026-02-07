@@ -117,8 +117,8 @@ Describe:
         import torch
         from transformers import AutoModelForVision2Seq, AutoProcessor
 
-        self._processor = AutoProcessor.from_pretrained(self.model_name)
-        self._model = AutoModelForVision2Seq.from_pretrained(
+        self._processor = AutoProcessor.from_pretrained(self.model_name)  # nosec B615
+        self._model = AutoModelForVision2Seq.from_pretrained(  # nosec B615
             self.model_name,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto",

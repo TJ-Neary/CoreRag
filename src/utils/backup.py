@@ -209,7 +209,7 @@ class BackupManager:
                 for member in members:
                     logger.info(f"  Restoring: {member.name}")
 
-                tar.extractall(target_dir, members=members)
+                tar.extractall(target_dir, members=members, filter="data")
 
             logger.info(f"Restore complete: {backup_name}")
             return True

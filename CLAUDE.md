@@ -217,13 +217,13 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | Directory | Purpose | Status |
 |-----------|---------|--------|
 | `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop | **Wired** |
-| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | **Wired** |
+| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring, conversational search | **Wired** |
 | `src/embeddings/` | all-MiniLM-L6-v2 with caching, MPS-optimized | **Wired** |
 | `src/ingestion/` | ~~File processing pipeline orchestrator~~ | **Deleted** (orphaned scaffold) |
 | `src/storage/` | ~~LanceDB vector store wrapper~~ | **Deleted** (orphaned scaffold) |
 | `src/chunking/` | Parent-child hierarchical chunking | **Wired** (via executor) |
-| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection | **Wired** (MCP tools + ingestion pipeline) |
-| `src/classification/` | Keyword + embedding-based auto-tagging | **Wired** (via processor) |
+| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection, golden set manager | **Wired** (MCP tools + ingestion pipeline) |
+| `src/classification/` | Keyword + embedding-based auto-tagging, learned rules from corrections | **Wired** (via processor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
 | `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Deleted** (orphaned — `exporter.py` handles export directly) |
 | `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
@@ -234,6 +234,9 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/video/` | OpenCV keyframe + scene detection | **Wired** (via extractor) |
 | `src/multimodal/` | VLM image captioning (LLaVA) | **Wired** (via extractor) |
 | `src/menubar/` | macOS menu bar app (rumps) — CR icon, dashboard launcher, status polling | **Wired** |
+| `src/export/` | BacklinkGenerator — inline wikilinks + Related section from knowledge graph | **Wired** (via exporter) |
+| `src/auth/` | AccessControl scaffold — RBAC with ADMIN/EDITOR/VIEWER roles, PII filtering | Scaffold (not wired into routes) |
+| `src/integrations/` | Plugin architecture + ReadwisePlugin for external data sync | **Wired** (MCP tools) |
 | `src/utils/` | SafeProcessor, hardware monitor, PII detection, checkpoints, queue manager, retry, logging | **Wired** |
 
 ### Data Models

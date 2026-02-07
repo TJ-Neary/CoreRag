@@ -145,6 +145,21 @@ async def analyze_document(text: str) -> tuple[dict, str]:
         # Remove is_sensitive if the LLM included it (no longer its responsibility)
         metadata.pop("is_sensitive", None)
 
+        # Apply learned rules from user correction patterns
+        try:
+            from src.classification.learned_rules import LearnedRulesManager
+
+            rules_mgr = LearnedRulesManager()
+            category = metadata.get("category", "")
+            folder_hint = rules_mgr.get_folder_suggestion("", category)
+            if folder_hint:
+                metadata["_learned_folder"] = folder_hint
+            sens_hint = rules_mgr.should_mark_sensitive(category, metadata.get("type", ""))
+            if sens_hint is not None:
+                metadata["_learned_sensitivity"] = sens_hint
+        except Exception as e:
+            logger.debug(f"Learned rules lookup skipped: {e}")
+
         logger.info(
             f"Analysis complete: category={metadata['category']}, "
             f"year={metadata['year']}, type={metadata['type']}, "
