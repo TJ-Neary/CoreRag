@@ -10,6 +10,7 @@ import logging
 import os
 import secrets
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -19,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from src import config
 from src.api.dashboard_routes import DashboardState, create_dashboard_router
 from src.api.v1_routes import create_v1_router, limiter
 from src.batch_processor import BatchProcessor
@@ -29,6 +31,37 @@ from src.utils.tagging import TagManager
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# ── Startup / Shutdown ────────────────────────────────────────────────────────
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run integrity checks and auto-backup on startup."""
+    if config.BACKUP_INTEGRITY_CHECK:
+        from src.utils.backup_triggers import check_database_integrity
+
+        result = check_database_integrity(config.DB_PATH)
+        for error in result["errors"]:
+            logger.error("DB integrity: %s", error)
+        for warning in result["warnings"]:
+            logger.warning("DB integrity: %s", warning)
+        if result["table_counts"]:
+            logger.info("DB integrity: table counts %s", result["table_counts"])
+
+    if config.BACKUP_ENABLED:
+        from src.utils.backup import BackupManager
+        from src.utils.backup_triggers import create_backup_if_needed
+
+        mgr = BackupManager(data_dir=config.STATE_DIR, max_backups=config.BACKUP_MAX_COUNT)
+        create_backup_if_needed(
+            mgr,
+            cooldown_hours=config.BACKUP_STARTUP_COOLDOWN_HOURS,
+            backup_name="startup",
+        )
+
+    yield
+
+
 # ── FastAPI App ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -37,6 +70,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 # Rate limiting

@@ -20,6 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from src import config
 from src.batch_processor import BatchProcessor
 from src.config import (
     BATCH_MEMORY_PAUSE_PCT,
@@ -103,6 +104,23 @@ def _run_commit(item_ids: list[str]) -> None:
                 "paused_reason": "",
             }
         )
+
+    # Pre-commit backup
+    if config.BACKUP_ENABLED:
+        try:
+            from src.utils.backup import BackupManager
+            from src.utils.backup_triggers import create_backup_if_needed
+
+            backup_mgr = BackupManager(
+                data_dir=config.STATE_DIR, max_backups=config.BACKUP_MAX_COUNT
+            )
+            create_backup_if_needed(
+                backup_mgr,
+                cooldown_hours=config.BACKUP_COMMIT_COOLDOWN_HOURS,
+                backup_name="pre-commit",
+            )
+        except Exception as e:
+            logger.warning("Pre-commit backup failed (continuing): %s", e)
 
     for i, item_id in enumerate(item_ids):
         # Check for stop

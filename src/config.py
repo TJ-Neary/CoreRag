@@ -88,6 +88,14 @@ SAFE_MEMORY_RESUME_PCT = 65  # SafeProcessor resume threshold
 MEMORY_CHECK_INTERVAL_SEC = 2  # Seconds between memory checks when paused
 COMMIT_BATCH_SIZE = 5  # Files between memory checks during commit
 
+# ── Backup Configuration ─────────────────────────────────────────────────────
+
+BACKUP_ENABLED = os.getenv("CORERAG_BACKUP_ENABLED", "true").lower() == "true"
+BACKUP_STARTUP_COOLDOWN_HOURS = float(os.getenv("CORERAG_BACKUP_STARTUP_COOLDOWN", "24"))
+BACKUP_COMMIT_COOLDOWN_HOURS = float(os.getenv("CORERAG_BACKUP_COMMIT_COOLDOWN", "1"))
+BACKUP_MAX_COUNT = int(os.getenv("CORERAG_BACKUP_MAX_COUNT", "10"))
+BACKUP_INTEGRITY_CHECK = os.getenv("CORERAG_BACKUP_INTEGRITY_CHECK", "true").lower() == "true"
+
 # ── API Keys ──────────────────────────────────────────────────────────────────
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
