@@ -209,7 +209,7 @@ CoreRag/
 │   └── *.md
 │
 ├── scripts/
-│   ├── run_system.sh            # Start server + watchdog + dashboard
+│   ├── run_system.sh            # Ensure server running + inbox notification
 │   ├── security_scan.sh         # PII/secret scanner (pre-commit hook)
 │   ├── install_menubar.sh       # Menu bar app installer
 │   └── backfill_knowledge_graph.py

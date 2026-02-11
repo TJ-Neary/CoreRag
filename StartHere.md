@@ -22,6 +22,7 @@ CoreRag is a local-first, privacy-preserving knowledge engine optimized for Appl
 | **README.md** | [README.md](./README.md) | Project overview, quick start, feature list, tech stack |
 | **CONVENTIONS.md** | [CONVENTIONS.md](./CONVENTIONS.md) | Coding standards, design patterns, project structure, testing patterns, git commit format |
 | **User Guide** | [docs/USER_GUIDE.md](./docs/USER_GUIDE.md) | End-user documentation: installation, CLI usage, search, Claude Desktop setup, troubleshooting |
+| **ANTIGRAVITY.md** | [ANTIGRAVITY.md](./ANTIGRAVITY.md) | AG multi-agent integration protocol and workflows |
 
 ### Security
 
@@ -90,6 +91,7 @@ CI runs on push to `main`/`develop` and on pull requests to `main`. Integration 
 | .coreragignore | [.coreragignore](./.coreragignore) | Files excluded from indexing (gitignore syntax) |
 | sorting_rules.example.yaml | [sorting_rules.example.yaml](./sorting_rules.example.yaml) | Template for folder categorization rules |
 | .gitignore | [.gitignore](./.gitignore) | Git exclusions (secrets, runtime data, caches, IDE files) |
+| .agent/workflows/ | [.agent/workflows/](./.agent/workflows/) | AG multi-agent coordination workflows (gogogo, wrapup) |
 
 ---
 
@@ -202,22 +204,25 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | Directory | Purpose | Key File(s) | Status |
 |-----------|---------|-------------|--------|
 | `mcp_server/` | FastMCP server + tool definitions for Claude Desktop | `server.py`, `tools.py` | **Wired** |
-| `search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring | `hybrid_search.py`, `reranker.py`, `hyde.py`, `multi_query.py`, `decay_scoring.py` | **Wired** |
+| `search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring, conversational search | `hybrid_search.py`, `reranker.py`, `hyde.py`, `multi_query.py`, `decay_scoring.py`, `conversation_manager.py` | **Wired** |
 | `embeddings/` | all-MiniLM-L6-v2 with LRU cache, MPS-optimized | `embedding_service.py` | **Wired** |
 | `chunking/` | Parent-child hierarchical chunking | `parent_child.py` | **Wired** |
 | `chunking/` | ~~AST-based code chunking~~ | ~~`code_chunker.py`~~ | **Deleted** (was orphaned) |
-| `classification/` | Keyword + embedding-based auto-tagging | `auto_tagger.py` | **Wired** |
-| `quality/` | Duplicate detection, link checker, freshness, conflict detection | `duplicate_detector.py`, `link_checker.py`, `freshness.py`, `conflict_detector.py` | **Wired** (via MCP + CLI) |
+| `classification/` | Keyword + embedding-based auto-tagging, learned correction rules | `auto_tagger.py`, `learned_rules.py` | **Wired** |
+| `quality/` | Duplicate detection, link checker, freshness, conflict detection, golden set management | `duplicate_detector.py`, `link_checker.py`, `freshness.py`, `conflict_detector.py`, `golden_set_manager.py` | **Wired** (via MCP + CLI) |
 | `graph/` | Entity-based knowledge graph (SQLite) | `knowledge_graph.py` | **Wired** (executor + MCP) |
 | `memory/` | User facts/preferences for MCP context | `episodic_memory.py` | **Wired** (MCP tools) |
-| `analytics/` | Query tracking + semantic cache | `query_analytics.py` | **Wired** (MCP server init) |
+| `analytics/` | Query tracking, semantic cache, knowledge gaps analysis | `query_analytics.py`, `gaps_analyzer.py` | **Wired** (MCP server init) |
+| `export/` | Backlink generation — inline wikilinks + related section from knowledge graph | `backlink_generator.py` | **Wired** (via exporter) |
+| `auth/` | RBAC scaffold — ADMIN/EDITOR/VIEWER roles, PII filtering | `access_control.py` | Scaffold (not wired into routes) |
+| `integrations/` | Plugin architecture + ReadwisePlugin for external data sync | `base.py`, `readwise.py` | **Wired** (MCP tools) |
 | ~~`obsidian/`~~ | ~~Markdown export~~ | — | **Deleted** (logic consolidated in `exporter.py`) |
 | `ocr/` | macOS Vision.framework text extraction | `vision_ocr.py` | **Wired** (via extractor) |
 | `multimodal/` | LLaVA VLM image captioning | `vlm_captioner.py` | **Wired** (via extractor) |
 | `audio/` | mlx-whisper transcription + topic segmentation | `topic_segmentation.py` | **Wired** (via extractor) |
 | `video/` | OpenCV keyframe + scene detection | `scene_detector.py` | **Wired** (via extractor) |
 | `maintenance/` | LanceDB optimizer, health reports | `db_optimizer.py` | **Wired** (MCP + CLI) |
-| `menubar/` | macOS menu bar app (rumps) | `app.py` | **Wired** (standalone) |
+| `menubar/` | macOS menu bar app (rumps) — auto-starts server | `app.py` | **Wired** (standalone) |
 | `cli/` | 13 CLI commands | `main.py` | **Wired** |
 | `api/` | REST API v1 routes + dashboard routes | `v1_routes.py`, `dashboard_routes.py`, `models.py` | **Wired** (via server.py) |
 | `models/` | Dataclasses: Document, Chunk, SearchResult, PersonalContext | `document.py`, `search.py`, `context.py` | **Wired** |
@@ -275,6 +280,18 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `test_rules.py` | Classification rules |
 | `test_session_tracker.py` | Session tracking |
 | `test_backup_triggers.py` | Auto-backup cooldowns, integrity checks |
+| `test_access_control.py` | RBAC access control scaffold |
+| `test_backlink_generator.py` | Backlink generation for Obsidian export |
+| `test_conversation_manager.py` | Conversational search sessions |
+| `test_dashboard_bulk.py` | Dashboard bulk operations and keyboard navigation |
+| `test_gaps_analyzer.py` | Knowledge gaps analysis |
+| `test_golden_set_manager.py` | Golden set auto-population from analytics |
+| `test_integrations.py` | Plugin architecture + Readwise integration |
+| `test_learned_rules.py` | Learned sorting rules from corrections |
+| `test_multi_vault.py` | Multi-vault export support |
+| `test_quick_capture.py` | Quick-capture API endpoint |
+| `test_tdd_example.py` | TDD example/template test |
+| `test_versioning_enhanced.py` | Enhanced document versioning |
 | `test_utils.py` | Utility modules, health, logging, versioning |
 | `fixtures/sample_documents.py` | Synthetic test data (corpus, PII samples, similarity pairs) |
 | `golden_set.yaml` | Golden dataset for regression testing |
@@ -283,10 +300,10 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 
 | Script | Purpose |
 |--------|---------|
-| `run_system.sh` | Start server + watchdog + open dashboard (main entry point) |
+| `run_system.sh` | Ensure server is running, notify on inbox files |
 | `security_scan.sh` | Pre-commit security scanner (secrets, PII, paths, dangerous patterns) |
 | `install_menubar.sh` | Install/uninstall menu bar app as login item |
-| `run_menubar.sh` | Launch menu bar app |
+| `run_menubar.sh` | Launch menu bar app (app auto-starts server) |
 | `mcp_server.sh` | Launch MCP server for Claude Desktop |
 | `install_automation.sh` | Setup automation (watchdog trigger) |
 | `setup_folders.py` | Create CoreRag folder structure (inbox, processed, vault) |
@@ -294,7 +311,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 | `test_search_pipeline.py` | End-to-end search quality testing |
 | `generate_icons.py` | Generate menu bar app icons |
 | `com.user.corerag.example.plist` | launchd template for file watcher automation |
-| `com.user.corerag.plist` | Runtime launchd config for watchdog (gitignored) |
+| `com.user.corerag.plist` | Legacy launchd config for inbox watchpath (gitignored, replaced by menubar agent) |
 | `com.user.corerag-menubar.plist` | launchd config for menu bar auto-launch on login |
 
 ### Dashboard UI (`src/ui/`)
@@ -308,6 +325,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 
 | File | Purpose |
 |------|---------|
+| `assets/core_rag_banner.png` | Project banner image (used in README) |
 | `assets/menubar_icon.png` | Menu bar app icon (normal state) |
 | `assets/menubar_icon_active.png` | Menu bar app icon (active/processing state) |
 
@@ -318,9 +336,9 @@ These files are generated at runtime and excluded from version control:
 | File | Purpose |
 |------|---------|
 | `staging_manifest.json` | Documents currently in the ingestion pipeline |
-| `automation.log` | Watchdog/launchd automation log |
+| `~/.corerag/logs/automation.log` | Automation log (server startup, inbox checks) |
+| `~/.corerag/logs/server.log` | Dashboard server log (menubar app redirects here) |
 | `ingestion.log` | Detailed processing log |
-| `server.log` | Dashboard server log |
 | `.coverage` | pytest coverage data |
 
 ---
@@ -394,11 +412,11 @@ Full details in [_project/DevPlan.md](./_project/DevPlan.md#future-roadmap).
 ### Running the System
 
 ```bash
-./scripts/run_system.sh                  # Server + watchdog + dashboard
+./scripts/run_system.sh                  # Ensures server is running, notifies on inbox files
 python -m src.server                     # Dashboard server only (port 8000)
 python -m src.watchdog                   # File watcher only
 python -m src.mcp_server.server          # MCP server for Claude Desktop (stdio)
-python -m src.menubar                    # Menu bar app
+python -m src.menubar                    # Menu bar app (auto-starts server)
 ```
 
 ### CLI Commands
@@ -518,4 +536,4 @@ mypy src/                                # Type check
 
 ---
 
-*Last updated: 2026-02-07 — 305 tests. All P1-P3 roadmap items complete. Auto-backup + integrity checking. Mypy clean (0 errors, 93 files).*
+*Last updated: 2026-02-10 — 331 tests. All P1-P3 roadmap items complete. Auto-backup + integrity checking. Menu bar app with server auto-start. AG integration deployed.*

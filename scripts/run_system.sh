@@ -1,12 +1,20 @@
 #!/bin/bash
+# =============================================================================
+# CoreRag System Launcher
+# =============================================================================
+# Ensures the server is running and opens the dashboard.
+# Triggered by launchd WatchPaths when files appear in Inbox,
+# or can be run manually to start everything.
+# =============================================================================
 
-# Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_FILE="$PROJECT_DIR/automation.log"
+LOG_DIR="$HOME/.corerag/logs"
+LOG_FILE="$LOG_DIR/automation.log"
 DASHBOARD_URL="http://localhost:8000"
 INBOX_DIR="${INBOX_PATH:-$HOME/Desktop/Inbox}"
 
+mkdir -p "$LOG_DIR"
 cd "$PROJECT_DIR" || exit 1
 
 echo "$(date) - Triggered." >> "$LOG_FILE"
@@ -22,26 +30,32 @@ fi
 
 export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
 
-# Check inbox file count
-FILE_COUNT=$(find "$INBOX_DIR" -maxdepth 1 -not -name '.*' -type f 2>/dev/null | wc -l | tr -d ' ')
-
-if [ "$FILE_COUNT" -eq 0 ]; then
-    osascript -e 'display notification "Inbox is empty, nothing to process." with title "CoreRag"'
-    echo "$(date) - Inbox empty, exiting." >> "$LOG_FILE"
-    exit 0
-fi
-
-echo "$(date) - $FILE_COUNT files in inbox." >> "$LOG_FILE"
-
-# Start Server if not running
+# Always ensure server is running
 if ! pgrep -f "src.server" > /dev/null; then
     echo "$(date) - Starting Server..." >> "$LOG_FILE"
-    nohup env PYTHONPATH="$PROJECT_DIR" "$PYTHON_CMD" -m src.server > server.log 2>&1 &
-    sleep 2
+    nohup env PYTHONPATH="$PROJECT_DIR" "$PYTHON_CMD" -m src.server >> "$LOG_DIR/server.log" 2>&1 &
+
+    # Wait for server to be ready (up to 10 seconds)
+    for i in $(seq 1 20); do
+        if curl -s http://localhost:8000/api/progress > /dev/null 2>&1; then
+            echo "$(date) - Server ready." >> "$LOG_FILE"
+            break
+        fi
+        sleep 0.5
+    done
 else
     echo "$(date) - Server already running." >> "$LOG_FILE"
 fi
 
-# Open Browser to Dashboard
-open "$DASHBOARD_URL"
-echo "$(date) - Opened Dashboard ($FILE_COUNT files ready)." >> "$LOG_FILE"
+# Check inbox file count
+FILE_COUNT=$(find "$INBOX_DIR" -maxdepth 1 -not -name '.*' -type f 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$FILE_COUNT" -gt 0 ]; then
+    osascript -e "display notification \"$FILE_COUNT file(s) ready for review.\" with title \"CoreRag\" subtitle \"Inbox\""
+    echo "$(date) - $FILE_COUNT files in inbox." >> "$LOG_FILE"
+    # Open dashboard to review files
+    open "$DASHBOARD_URL"
+    echo "$(date) - Opened Dashboard ($FILE_COUNT files ready)." >> "$LOG_FILE"
+else
+    echo "$(date) - Inbox empty, server running." >> "$LOG_FILE"
+fi

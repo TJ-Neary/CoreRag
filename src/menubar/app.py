@@ -4,9 +4,14 @@ CoreRag macOS Menu Bar App.
 Shows a "CR" icon in the menu bar. Click to access the dashboard,
 trigger ingestion, and monitor processing status.
 
+Auto-starts the server if it detects it's not running.
 The icon circle fills with neon green (#39FF14) during active ingestion.
 """
 
+import os
+import subprocess
+import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -21,6 +26,9 @@ COMMIT_STATUS_URL = f"{DASHBOARD_URL}/api/commit-progress"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ICON_IDLE = str(PROJECT_ROOT / "assets" / "menubar_icon.png")
 ICON_ACTIVE = str(PROJECT_ROOT / "assets" / "menubar_icon_active.png")
+
+# Server auto-start cooldown (seconds) — don't spam restart attempts
+_SERVER_START_COOLDOWN = 30
 
 
 class CoreRagApp(rumps.App):
@@ -40,13 +48,19 @@ class CoreRagApp(rumps.App):
             rumps.MenuItem("Open Dashboard", callback=self.open_dashboard),
             rumps.MenuItem("Start Ingestion", callback=self.start_ingestion),
             None,  # separator
-            rumps.MenuItem("Status: Idle", callback=None),
+            rumps.MenuItem("Start Server", callback=self.manual_start_server),
+            rumps.MenuItem("Status: Starting...", callback=None),
             None,  # separator
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
 
-        self._status_item = self.menu["Status: Idle"]
+        self._status_item = self.menu["Status: Starting..."]
+        self._start_server_item = self.menu["Start Server"]
         self._is_active = False
+        self._server_process = None
+        self._last_start_attempt = 0.0
+        self._server_was_available = False
+        self._startup_time = time.time()
 
         # Start polling timer (every 3 seconds)
         self._timer = rumps.Timer(self._poll_status, 3)
@@ -76,9 +90,73 @@ class CoreRagApp(rumps.App):
                 message=f"Could not start ingestion: {e}",
             )
 
+    def manual_start_server(self, _):
+        """Manually start the server from the menu."""
+        self._start_server()
+
     def quit_app(self, _):
         """Quit the menu bar app."""
         rumps.quit_application()
+
+    def _is_server_process_running(self) -> bool:
+        """Check if a src.server process already exists."""
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "src.server"],
+                capture_output=True,
+                timeout=2,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _start_server(self) -> bool:
+        """Start the CoreRag server as a background process.
+
+        Returns True if a start was attempted, False if on cooldown or already running.
+        """
+        now = time.time()
+        if now - self._last_start_attempt < _SERVER_START_COOLDOWN:
+            return False
+
+        # Don't start if a server process already exists
+        if self._is_server_process_running():
+            self._last_start_attempt = now
+            self._status_item.title = "Status: Server starting..."
+            return False
+
+        self._last_start_attempt = now
+        self._status_item.title = "Status: Starting server..."
+
+        # Find Python interpreter — prefer venv
+        venv_python = PROJECT_ROOT / "venv" / "bin" / "python3"
+        if venv_python.exists():
+            python_cmd = str(venv_python)
+        else:
+            python_cmd = sys.executable
+
+        # Start server as detached subprocess
+        log_dir = Path.home() / ".corerag" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "server.log"
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(PROJECT_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
+        try:
+            with open(log_file, "a") as lf:
+                self._server_process = subprocess.Popen(
+                    [python_cmd, "-m", "src.server"],
+                    cwd=str(PROJECT_ROOT),
+                    env=env,
+                    stdout=lf,
+                    stderr=lf,
+                    start_new_session=True,
+                )
+            return True
+        except Exception:
+            self._status_item.title = "Status: Server failed to start"
+            return False
 
     def _poll_status(self, _):
         """Poll the server for ingestion status and update the icon."""
@@ -90,6 +168,11 @@ class CoreRagApp(rumps.App):
             req = urllib.request.Request(STATUS_URL, method="GET")
             with urllib.request.urlopen(req, timeout=2) as resp:  # nosec B310
                 data = json.loads(resp.read())
+
+            # Server is available
+            if not self._server_was_available:
+                self._server_was_available = True
+                self._start_server_item.title = "Restart Server"
 
             status = data.get("status", "idle")
             total = data.get("total", 0)
@@ -130,9 +213,19 @@ class CoreRagApp(rumps.App):
                 self._status_item.title = "Status: Idle"
 
         except Exception:
-            # Server might not be running — show idle state
-            self._status_item.title = "Status: Server unavailable"
+            # Server not running — try to auto-start it
             self._set_active(False)
+            self._server_was_available = False
+            self._start_server_item.title = "Start Server"
+
+            # Grace period: don't auto-start in the first 5 seconds after app launch
+            # (the server may still be initializing from run_menubar.sh)
+            if time.time() - self._startup_time < 5:
+                self._status_item.title = "Status: Connecting..."
+            elif self._start_server():
+                self._status_item.title = "Status: Starting server..."
+            else:
+                self._status_item.title = "Status: Server starting..."
 
     def _set_active(self, active: bool):
         """Switch between idle and active icon states."""

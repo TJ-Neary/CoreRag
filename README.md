@@ -56,7 +56,10 @@ python -m spacy download en_core_web_lg
 cp .env.example .env
 # Edit .env with your paths
 
-# Start the system
+# Install menu bar app (auto-starts server at login)
+./scripts/install_menubar.sh
+
+# Or start manually
 ./scripts/run_system.sh
 ```
 

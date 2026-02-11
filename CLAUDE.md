@@ -50,11 +50,11 @@ python -m spacy download en_core_web_lg  # PII detection NER model
 
 ### Running the System
 ```bash
-./scripts/run_system.sh                  # Starts server + watchdog + opens dashboard
+./scripts/run_system.sh                  # Ensures server is running, notifies on inbox files
 python -m src.server                     # Dashboard server only (port 8000)
 python -m src.watchdog                   # File watcher only
 python -m src.mcp_server.server          # MCP server for Claude Desktop (stdio)
-python -m src.menubar                    # Menu bar app (opens dashboard, shows status)
+python -m src.menubar                    # Menu bar app (auto-starts server, status polling)
 ./scripts/install_menubar.sh             # Install menu bar app as login item
 ./scripts/install_menubar.sh --remove    # Uninstall menu bar login item
 ```
@@ -233,7 +233,7 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | `src/audio/` | mlx-whisper transcription + topic segmentation | **Wired** (via extractor) |
 | `src/video/` | OpenCV keyframe + scene detection | **Wired** (via extractor) |
 | `src/multimodal/` | VLM image captioning (LLaVA) | **Wired** (via extractor) |
-| `src/menubar/` | macOS menu bar app (rumps) — CR icon, dashboard launcher, status polling | **Wired** |
+| `src/menubar/` | macOS menu bar app (rumps) — CR icon, auto-starts server, dashboard launcher, status polling | **Wired** |
 | `src/export/` | BacklinkGenerator — inline wikilinks + Related section from knowledge graph | **Wired** (via exporter) |
 | `src/auth/` | AccessControl scaffold — RBAC with ADMIN/EDITOR/VIEWER roles, PII filtering | Scaffold (not wired into routes) |
 | `src/integrations/` | Plugin architecture + ReadwisePlugin for external data sync | **Wired** (MCP tools) |
