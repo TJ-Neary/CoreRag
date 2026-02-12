@@ -160,7 +160,10 @@ class CoreRagTools:
         # HyDE: generate hypothetical document, embed that instead
         if use_hyde and self._hyde_expander:
             try:
-                hyde_result = self._hyde_expander.expand(query)
+                if self._hyde_expander.async_llm_generator:
+                    hyde_result = await self._hyde_expander.expand_async(query)
+                else:
+                    hyde_result = self._hyde_expander.expand(query)
                 search_query = hyde_result.hypothetical_document
                 hyde_doc = search_query
                 logger.debug(f"HyDE expanded query: {search_query[:200]}...")

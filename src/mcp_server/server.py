@@ -106,15 +106,19 @@ async def _startup():
         )
         logger.info("Semantic cache initialized (threshold=0.92, ttl=24h)")
 
-    # Initialize HyDE expander (uses Ollama for hypothetical document generation)
+    # Initialize HyDE expander with LLM provider for async expansion
+    from src.llm.provider import get_default_provider
+
+    llm_provider = get_default_provider()
     ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
     hyde_expander = create_hyde_expander(
         backend="ollama",
         model=ollama_model,
         embedder=_embedding_service.embed_query,
+        provider=llm_provider,
         cache_dir=Path(config["state_dir"]) / "cache",
     )
-    logger.info(f"HyDE expander ready: ollama/{ollama_model}")
+    logger.info(f"HyDE expander ready: {llm_provider.provider_name}/{llm_provider.model_name}")
 
     # Vault root for file listing / folder structure tools
     vault_root = Path(config["vault_path"]).expanduser().resolve()
@@ -271,6 +275,111 @@ async def search_knowledge(
         )
 
     return result
+
+
+@mcp.tool()
+async def answer_question(
+    query: str,
+    k: int = 5,
+    validation_mode: str = "relaxed",
+    use_reranker: bool = True,
+    use_hyde: bool = False,
+    tags: Optional[list] = None,
+    filters: Optional[dict] = None,
+    debug: bool = False,
+) -> dict:
+    """
+    Answer a question using RAG search + LLM synthesis with citation validation.
+
+    Searches the knowledge base for evidence, then synthesizes a cited answer.
+    Supports strict mode (verbatim quotes required) and relaxed mode (paraphrasing OK).
+
+    Args:
+        query: Natural language question to answer
+        k: Number of evidence chunks to retrieve (default: 5)
+        validation_mode: 'strict' (verbatim citations) or 'relaxed' (paraphrasing OK)
+        use_reranker: Apply cross-encoder re-ranking (default: True)
+        use_hyde: Use HyDE query expansion (default: False)
+        tags: Optional collection tags to filter evidence by
+        filters: Optional filters (e.g., {"category": "work"})
+        debug: Return detailed debug information (default: False)
+
+    Returns:
+        Synthesized answer with claims, citations, validation info, and source list
+    """
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
+
+    import time as _time
+
+    _start = _time.time()
+
+    # Step 1: retrieve evidence via existing search pipeline
+    search_result = await _corerag_tools.search_knowledge(
+        query=query,
+        k=k,
+        use_reranker=use_reranker,
+        use_hyde=use_hyde,
+        filters=filters,
+        tags=tags,
+        debug=debug,
+    )
+
+    results = search_result.get("results", [])
+
+    # Step 2: synthesize answer
+    from src.llm.provider import get_default_provider
+    from src.search.answer_synthesis import AnswerSynthesizer, ValidationMode
+
+    mode = ValidationMode.STRICT if validation_mode == "strict" else ValidationMode.RELAXED
+    synthesizer = AnswerSynthesizer(llm_provider=get_default_provider())
+    answer_result = await synthesizer.synthesize(query, results, validation_mode=mode)
+
+    # Step 3: build response
+    response = {
+        "query": answer_result.query,
+        "answer": answer_result.answer,
+        "claims": [
+            {
+                "text": c.text,
+                "citations": [
+                    {
+                        "source_path": cit.source_path,
+                        "chunk_index": cit.chunk_index,
+                        "quote": cit.quote,
+                        "confidence": cit.confidence,
+                    }
+                    for cit in c.citations
+                ],
+                "confidence": c.confidence,
+            }
+            for c in answer_result.claims
+        ],
+        "sources_used": answer_result.sources_used,
+        "validation_mode": answer_result.validation_mode.value,
+        "validation_errors": answer_result.validation_errors,
+        "not_found": answer_result.not_found,
+        "llm_calls": answer_result.llm_calls,
+        "evidence_count": len(results),
+    }
+
+    if debug:
+        response["_debug"] = {
+            "search_results": results,
+            "search_debug": search_result.get("_debug"),
+        }
+
+    # Log event
+    if _session_tracker:
+        _session_tracker.log_event(
+            event_type="answer",
+            tool_name="answer_question",
+            query=query,
+            result_count=len(answer_result.claims),
+            duration_ms=(_time.time() - _start) * 1000,
+        )
+
+    return response
 
 
 @mcp.tool()

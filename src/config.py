@@ -96,9 +96,16 @@ BACKUP_COMMIT_COOLDOWN_HOURS = float(os.getenv("CORERAG_BACKUP_COMMIT_COOLDOWN",
 BACKUP_MAX_COUNT = int(os.getenv("CORERAG_BACKUP_MAX_COUNT", "10"))
 BACKUP_INTEGRITY_CHECK = os.getenv("CORERAG_BACKUP_INTEGRITY_CHECK", "true").lower() == "true"
 
+# ── LLM Provider Configuration ─────────────────────────────────────────────
+
+LLM_PROVIDER = os.getenv("CORERAG_LLM_PROVIDER", "")  # auto-detect if empty
+LLM_MODEL = os.getenv("CORERAG_LLM_MODEL", "")  # provider default if empty
+ANSWER_MAX_EVIDENCE_CHUNKS = int(os.getenv("CORERAG_ANSWER_MAX_EVIDENCE", "10"))
+
 # ── API Keys ──────────────────────────────────────────────────────────────────
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
 def validate_config():

@@ -1,56 +1,12 @@
 import json
 import logging
-import os
 import re
 
-import httpx
-
-from src.config import GOOGLE_API_KEY, OLLAMA_HOST, OLLAMA_MODEL
 from src.correction_log import get_recent_examples
 from src.exceptions import ProcessingError
-from src.utils.retry import RetryStrategies, with_retry
+from src.llm.provider import get_default_provider
 
 logger = logging.getLogger(__name__)
-
-# Ollama generation settings
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
-OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "1024"))
-OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))
-
-# Determine provider: Gemini if key exists, else Ollama
-_provider = "gemini" if GOOGLE_API_KEY else "ollama"
-
-if _provider == "gemini":
-    import google.generativeai as genai
-
-    genai.configure(api_key=GOOGLE_API_KEY)
-    logger.info("Intelligence provider: Gemini API")
-else:
-    logger.info(f"Intelligence provider: Ollama ({OLLAMA_MODEL} at {OLLAMA_HOST})")
-
-
-# ── Ollama Helper ─────────────────────────────────────────────────────────────
-
-
-@with_retry(**RetryStrategies.ollama_call())
-async def _ollama_generate(prompt: str) -> str:
-    """Send a prompt to Ollama and return the response text."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-        resp = await client.post(
-            f"{OLLAMA_HOST}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "num_ctx": OLLAMA_NUM_CTX,
-                    "num_predict": OLLAMA_NUM_PREDICT,
-                    "temperature": OLLAMA_TEMPERATURE,
-                },
-            },
-        )
-        resp.raise_for_status()
-        return resp.json().get("response", "")
 
 
 # ── Text Sampling ─────────────────────────────────────────────────────────────
@@ -95,7 +51,7 @@ JSON format:
 async def analyze_document(text: str) -> tuple[dict, str]:
     """Analyzes text to extract metadata.
 
-    Uses Gemini API if GOOGLE_API_KEY is set, otherwise falls back to Ollama.
+    Uses the configured LLM provider (Ollama, Gemini, or Anthropic).
 
     The LLM handles classification, summarization, and advisory PII observations.
     Actual PII detection is done by Presidio + custom dictionary in processor.py.
@@ -119,13 +75,9 @@ async def analyze_document(text: str) -> tuple[dict, str]:
     correction_examples = get_recent_examples()
     prompt = _ANALYSIS_PROMPT.format(text=sample) + correction_examples
 
+    provider = get_default_provider()
     try:
-        if _provider == "gemini":
-            model = genai.GenerativeModel("gemini-1.5-pro-latest")
-            response = model.generate_content(prompt)
-            raw = response.text
-        else:
-            raw = await _ollama_generate(prompt)
+        raw = await provider.generate("", prompt)
 
         cleaned = _clean_json_markdown(raw)
         repaired = _repair_json(cleaned)
@@ -172,8 +124,10 @@ async def analyze_document(text: str) -> tuple[dict, str]:
     except ProcessingError:
         raise
     except Exception as e:
-        logger.error(f"Intelligence analysis failed ({_provider}): {e}")
-        raise ProcessingError(f"Intelligence analysis failed ({_provider}): {e}") from e
+        logger.error(f"Intelligence analysis failed ({provider.provider_name}): {e}")
+        raise ProcessingError(
+            f"Intelligence analysis failed ({provider.provider_name}): {e}"
+        ) from e
 
 
 # ── Folder Suggestion ─────────────────────────────────────────────────────────
@@ -226,13 +180,9 @@ Rules:
 - Prefer fitting into existing structure when provided
 """
 
+    provider = get_default_provider()
     try:
-        if _provider == "gemini":
-            model = genai.GenerativeModel("gemini-1.5-pro-latest")
-            response = model.generate_content(prompt)
-            raw = response.text
-        else:
-            raw = await _ollama_generate(prompt)
+        raw = await provider.generate("", prompt)
 
         cleaned = _clean_json_markdown(raw)
         return json.loads(cleaned)
@@ -240,8 +190,8 @@ Rules:
     except ProcessingError:
         raise
     except Exception as e:
-        logger.error(f"Folder suggestion failed ({_provider}): {e}")
-        raise ProcessingError(f"Folder suggestion failed ({_provider}): {e}") from e
+        logger.error(f"Folder suggestion failed ({provider.provider_name}): {e}")
+        raise ProcessingError(f"Folder suggestion failed ({provider.provider_name}): {e}") from e
 
 
 def _clean_json_markdown(text: str) -> str:

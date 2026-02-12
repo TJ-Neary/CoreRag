@@ -16,12 +16,13 @@ This dramatically improves retrieval for:
 - How-to questions (matches procedural content)
 """
 
+import asyncio
 import hashlib
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.exceptions import SearchError
 from src.utils.retry import RetryStrategies, with_retry
@@ -88,18 +89,21 @@ class HyDEExpander:
         llm_generator: Callable[[str], str],
         embedder: Optional[Callable[[str], List[float]]] = None,
         config: Optional[HyDEConfig] = None,
+        async_llm_generator: Optional[Callable[[str], Awaitable[str]]] = None,
     ):
         """
         Initialize HyDE expander.
 
         Args:
-            llm_generator: Function that takes a prompt and returns generated text
+            llm_generator: Sync function that takes a prompt and returns generated text
             embedder: Optional function to generate embeddings
             config: HyDE configuration
+            async_llm_generator: Async function for use with expand_async()
         """
         self.llm_generator = llm_generator
         self.embedder = embedder
         self.config = config or HyDEConfig()
+        self.async_llm_generator = async_llm_generator
 
         # Setup cache
         self._cache: Dict[str, str] = {}
@@ -158,6 +162,48 @@ class HyDEExpander:
 
         return result
 
+    async def expand_async(self, query: str) -> HyDEResult:
+        """Expand a query using HyDE with the async LLM generator.
+
+        Falls back to sync expand() in a thread if no async generator is set.
+        """
+        query = query.strip()
+
+        if self._should_skip(query):
+            logger.debug(f"Skipping HyDE for query: {query[:50]}...")
+            return HyDEResult(
+                original_query=query,
+                hypothetical_document=query,
+                cache_hit=False,
+            )
+
+        cache_key = self._cache_key(query)
+        if self.config.enable_cache and cache_key in self._cache:
+            logger.debug(f"HyDE cache hit for: {query[:50]}...")
+            hypothetical = self._cache[cache_key]
+            result = HyDEResult(
+                original_query=query,
+                hypothetical_document=hypothetical,
+                cache_hit=True,
+            )
+        else:
+            hypothetical = await self._generate_hypothetical_async(query)
+
+            if self.config.enable_cache:
+                self._cache[cache_key] = hypothetical
+                self._save_cache()
+
+            result = HyDEResult(
+                original_query=query,
+                hypothetical_document=hypothetical,
+                cache_hit=False,
+            )
+
+        if self.embedder:
+            result.embedding = self.embedder(result.hypothetical_document)
+
+        return result
+
     def expand_batch(self, queries: List[str]) -> List[HyDEResult]:
         """
         Expand multiple queries.
@@ -189,6 +235,28 @@ class HyDEExpander:
 
         except Exception as e:
             logger.warning(f"HyDE generation failed: {e}, using original query")
+            return query
+
+    async def _generate_hypothetical_async(self, query: str) -> str:
+        """Generate hypothetical document using async LLM or sync fallback."""
+        prompt = self.config.prompt_template.format(query=query)
+
+        try:
+            if self.async_llm_generator:
+                response = await self.async_llm_generator(prompt)
+            else:
+                response = await asyncio.to_thread(self.llm_generator, prompt)
+
+            response = response.strip()
+            if len(response) < 20:
+                logger.warning("HyDE generated short response, using original query")
+                return query
+
+            logger.debug(f"HyDE generated (async): {response[:100]}...")
+            return response
+
+        except Exception as e:
+            logger.warning(f"HyDE async generation failed: {e}, using original query")
             return query
 
     def _should_skip(self, query: str) -> bool:
@@ -329,20 +397,31 @@ def create_hyde_expander(
     backend: str = "ollama",
     model: str = "llama3.2:3b",
     embedder: Optional[Callable[[str], List[float]]] = None,
+    provider: Optional[Any] = None,
     **kwargs,
 ) -> HyDEExpander:
     """
     Create HyDE expander with specified LLM backend.
 
     Args:
-        backend: LLM backend ("ollama", "openai", "anthropic", "mlx")
+        backend: LLM backend ("ollama", "mlx")
         model: Model name
         embedder: Embedding function
+        provider: Optional LLMProvider instance — when set, enables expand_async()
         **kwargs: Additional config options
 
     Returns:
         Configured HyDEExpander
     """
+    # Build async generator from LLMProvider if provided
+    async_gen: Optional[Callable[[str], Awaitable[str]]] = None
+    if provider is not None:
+
+        async def _provider_generate(prompt: str) -> str:
+            return await provider.generate("", prompt)
+
+        async_gen = _provider_generate
+
     if backend == "ollama":
 
         @with_retry(**RetryStrategies.ollama_call())
@@ -369,6 +448,7 @@ def create_hyde_expander(
             llm_generator=ollama_generator,
             embedder=embedder,
             config=HyDEConfig(**{k: v for k, v in kwargs.items() if hasattr(HyDEConfig, k)}),
+            async_llm_generator=async_gen,
         )
 
     elif backend == "mlx":
@@ -393,6 +473,7 @@ def create_hyde_expander(
             llm_generator=mlx_generator,
             embedder=embedder,
             config=HyDEConfig(**{k: v for k, v in kwargs.items() if hasattr(HyDEConfig, k)}),
+            async_llm_generator=async_gen,
         )
 
     else:

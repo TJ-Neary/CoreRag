@@ -14,11 +14,20 @@ from datetime import datetime
 from typing import Callable
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from src.api.models import (
+    AnswerCitation,
+    AnswerClaim,
+    AnswerRequest,
+    AnswerResponse,
+    BulkDeleteRequest,
+    BulkDeleteResponse,
+    BulkDeleteResult,
     DeleteResponse,
+    DocumentResponse,
     IngestRequest,
     IngestResponse,
     QuickCaptureRequest,
@@ -125,7 +134,21 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                         "query": "str (required) — natural language search query",
                         "k": "int (default 5) — max results",
                         "tags": "list[str] (optional) — filter by collection tags",
+                        "category": "str (optional) — filter by document category",
                         "use_hyde": "bool (default false) — HyDE query expansion",
+                    },
+                },
+                "answer": {
+                    "endpoint": "/api/v1/answer",
+                    "method": "POST",
+                    "description": "Answer a question with cited evidence from the knowledge base",
+                    "parameters": {
+                        "query": "str (required) — question to answer",
+                        "k": "int (default 5) — evidence chunks to retrieve",
+                        "validation_mode": "str (default 'relaxed') — 'strict' or 'relaxed'",
+                        "use_reranker": "bool (default true) — cross-encoder re-ranking",
+                        "use_hyde": "bool (default false) — HyDE query expansion",
+                        "tags": "list[str] (optional) — filter evidence by tags",
                     },
                 },
                 "ingest": {
@@ -133,10 +156,20 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     "method": "POST",
                     "description": "Add text content to the knowledge base",
                 },
+                "get_document": {
+                    "endpoint": "/api/v1/documents/{document_id}",
+                    "method": "GET",
+                    "description": "Retrieve document metadata and content preview",
+                },
                 "delete": {
                     "endpoint": "/api/v1/documents/{document_id}",
                     "method": "DELETE",
                     "description": "Remove a document and all its chunks",
+                },
+                "bulk_delete": {
+                    "endpoint": "/api/v1/documents/bulk-delete",
+                    "method": "POST",
+                    "description": "Delete multiple documents by ID",
                 },
                 "stats": {
                     "endpoint": "/api/v1/stats",
@@ -236,7 +269,10 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         tags = request_body.tags
 
         if not query:
-            return SearchResponse(error="No query provided", results=[], total=0, query="")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No query provided", "results": [], "total": 0, "query": ""},
+            )
 
         try:
             import lancedb
@@ -246,7 +282,15 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             db = lancedb.connect(DB_PATH)
 
             if "child_chunks" not in db.table_names():
-                return SearchResponse(error="No data indexed yet", results=[], total=0, query=query)
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": "No data indexed yet",
+                        "results": [],
+                        "total": 0,
+                        "query": query,
+                    },
+                )
 
             embedder = create_embedding_service()
             search_text = query
@@ -294,10 +338,142 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
         except CoreRagError as e:
             logger.error(f"Search API failed: {e}")
-            return SearchResponse(error=str(e), results=[], total=0, query=query)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e), "results": [], "total": 0, "query": query},
+            )
         except Exception as e:
             logger.error(f"Search API failed: {e}", exc_info=True)
-            return SearchResponse(error=str(e), results=[], total=0, query=query)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e), "results": [], "total": 0, "query": query},
+            )
+
+    @router.post("/answer", response_model=AnswerResponse)
+    @limiter.limit("30/minute")
+    async def api_answer(
+        request: Request, request_body: AnswerRequest, _: bool = Depends(verify_api_key)
+    ) -> AnswerResponse:
+        """Answer a question using RAG search + LLM synthesis with citation validation."""
+        query = request_body.query
+        if not query:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "No query provided",
+                    "query": "",
+                    "answer": "",
+                    "not_found": True,
+                },
+            )
+
+        try:
+            import lancedb
+
+            from src.embeddings.embedding_service import create_embedding_service
+
+            db = lancedb.connect(DB_PATH)
+
+            if "child_chunks" not in db.table_names():
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": "No data indexed yet",
+                        "query": query,
+                        "answer": "",
+                        "not_found": True,
+                    },
+                )
+
+            embedder = create_embedding_service()
+            search_text = query
+
+            if request_body.use_hyde:
+                try:
+                    from src.search.hyde import create_hyde_expander
+
+                    hyde = create_hyde_expander(
+                        backend="ollama",
+                        model=os.getenv("OLLAMA_MODEL", "qwen2.5:32b"),
+                        embedder=None,
+                    )
+                    result = hyde.expand(query)
+                    search_text = result.hypothetical_document
+                except Exception as e:
+                    logger.warning(f"HyDE expansion failed: {e}")
+
+            query_vector = embedder.embed_query(search_text)
+            child_table = db.open_table("child_chunks")
+            search_op = child_table.search(query_vector).limit(request_body.k)
+
+            if request_body.tags:
+                search_op = search_op.where(build_tag_clauses(request_body.tags))
+
+            results_raw = search_op.to_list()
+
+            # Build search results for synthesizer
+            search_results = [
+                {
+                    "source_path": r.get("source_path", ""),
+                    "chunk_index": r.get("chunk_index", 0),
+                    "content": r.get("content", ""),
+                    "score": float(r.get("_distance", 0)),
+                }
+                for r in results_raw
+            ]
+
+            # Synthesize answer
+            from src.llm.provider import get_default_provider
+            from src.search.answer_synthesis import AnswerSynthesizer, ValidationMode
+
+            mode = (
+                ValidationMode.STRICT
+                if request_body.validation_mode == "strict"
+                else ValidationMode.RELAXED
+            )
+            synthesizer = AnswerSynthesizer(llm_provider=get_default_provider())
+            answer_result = await synthesizer.synthesize(
+                query, search_results, validation_mode=mode
+            )
+
+            return AnswerResponse(
+                query=answer_result.query,
+                answer=answer_result.answer,
+                claims=[
+                    AnswerClaim(
+                        text=c.text,
+                        citations=[
+                            AnswerCitation(
+                                source_path=cit.source_path,
+                                chunk_index=cit.chunk_index,
+                                quote=cit.quote,
+                                confidence=cit.confidence,
+                            )
+                            for cit in c.citations
+                        ],
+                        confidence=c.confidence,
+                    )
+                    for c in answer_result.claims
+                ],
+                sources_used=answer_result.sources_used,
+                validation_mode=answer_result.validation_mode.value,
+                validation_errors=answer_result.validation_errors,
+                not_found=answer_result.not_found,
+                llm_calls=answer_result.llm_calls,
+            )
+
+        except CoreRagError as e:
+            logger.error(f"Answer API failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e), "query": query, "answer": "", "not_found": True},
+            )
+        except Exception as e:
+            logger.error(f"Answer API failed: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e), "query": query, "answer": "", "not_found": True},
+            )
 
     @router.post("/ingest", response_model=IngestResponse)
     @limiter.limit("30/minute")
@@ -334,12 +510,15 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             )
 
             if not children:
-                return IngestResponse(
-                    error="Content too short to create chunks",
-                    document_id=document_id,
-                    source=source,
-                    chunks_created=0,
-                    parent_chunks=0,
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "error": "Content too short to create chunks",
+                        "document_id": document_id,
+                        "source": source,
+                        "chunks_created": 0,
+                        "parent_chunks": 0,
+                    },
                 )
 
             child_texts = [c.content for c in children]
@@ -427,21 +606,27 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
         except CoreRagError as e:
             logger.error(f"Ingest API failed: {e}")
-            return IngestResponse(
-                error=str(e),
-                document_id="",
-                source=source,
-                chunks_created=0,
-                parent_chunks=0,
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": str(e),
+                    "document_id": "",
+                    "source": source,
+                    "chunks_created": 0,
+                    "parent_chunks": 0,
+                },
             )
         except Exception as e:
             logger.error(f"Ingest API failed: {e}", exc_info=True)
-            return IngestResponse(
-                error=str(e),
-                document_id="",
-                source=source,
-                chunks_created=0,
-                parent_chunks=0,
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": str(e),
+                    "document_id": "",
+                    "source": source,
+                    "chunks_created": 0,
+                    "parent_chunks": 0,
+                },
             )
 
     @router.delete("/documents/{document_id}", response_model=DeleteResponse)
@@ -478,11 +663,15 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
             total_deleted = deleted["parent_chunks"] + deleted["child_chunks"]
             if total_deleted == 0:
-                return DeleteResponse(
-                    success=False,
-                    document_id=document_id,
-                    chunks_deleted=0,
-                    error=f"Document not found: {document_id}",
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "document_id": document_id,
+                        "chunks_deleted": 0,
+                        "graph_deleted": 0,
+                        "error": f"Document not found: {document_id}",
+                    },
                 )
 
             return DeleteResponse(
@@ -494,20 +683,149 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
         except CoreRagError as e:
             logger.error(f"Delete API failed: {e}")
-            return DeleteResponse(
-                success=False,
-                document_id=document_id,
-                chunks_deleted=0,
-                error=str(e),
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "document_id": document_id,
+                    "chunks_deleted": 0,
+                    "graph_deleted": 0,
+                    "error": str(e),
+                },
             )
         except Exception as e:
             logger.error(f"Delete API failed: {e}", exc_info=True)
-            return DeleteResponse(
-                success=False,
-                document_id=document_id,
-                chunks_deleted=0,
-                error=str(e),
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "document_id": document_id,
+                    "chunks_deleted": 0,
+                    "graph_deleted": 0,
+                    "error": str(e),
+                },
             )
+
+    # ── GET /api/v1/documents/{document_id} ──────────────────────────────────
+
+    @router.get("/documents/{document_id}", response_model=DocumentResponse)
+    @limiter.limit("120/minute")
+    async def api_get_document(
+        request: Request, document_id: str, _: bool = Depends(verify_api_key)
+    ) -> DocumentResponse | JSONResponse:
+        """Retrieve a document's metadata and content preview."""
+        try:
+            import lancedb
+
+            db = lancedb.connect(DB_PATH)
+
+            source_path = ""
+            parent_count = 0
+            child_count = 0
+            tags_set: set[str] = set()
+            content_preview = ""
+            created_at = None
+
+            doc_filter = build_eq_clause("document_id", document_id)
+
+            if "parent_chunks" in db.table_names():
+                pt = db.open_table("parent_chunks")
+                parents = pt.search().where(doc_filter).limit(1000).to_list()
+                parent_count = len(parents)
+                if parents:
+                    source_path = parents[0].get("source_path", "")
+                    content_preview = parents[0].get("content", "")[:500]
+                    created_at = parents[0].get("created_at")
+                    for p in parents:
+                        raw_tags = p.get("tags", "")
+                        if raw_tags:
+                            tags_set.update(t for t in raw_tags.strip(",").split(",") if t)
+
+            if "child_chunks" in db.table_names():
+                ct = db.open_table("child_chunks")
+                children = ct.search().where(doc_filter).limit(10000).to_list()
+                child_count = len(children)
+
+            if parent_count == 0 and child_count == 0:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"Document not found: {document_id}"},
+                )
+
+            return DocumentResponse(
+                document_id=document_id,
+                source_path=source_path,
+                parent_chunks=parent_count,
+                child_chunks=child_count,
+                tags=sorted(tags_set),
+                content_preview=content_preview,
+                created_at=created_at,
+            )
+
+        except Exception as e:
+            logger.error(f"Get document failed: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e)},
+            )
+
+    # ── DELETE /api/v1/documents/bulk ──────────────────────────────────────
+
+    @router.post("/documents/bulk-delete", response_model=BulkDeleteResponse)
+    @limiter.limit("10/minute")
+    async def api_bulk_delete(
+        request: Request, body: BulkDeleteRequest, _: bool = Depends(verify_api_key)
+    ) -> BulkDeleteResponse:
+        """Delete multiple documents by ID."""
+        import lancedb
+
+        results = []
+        total_deleted = 0
+
+        try:
+            db = lancedb.connect(DB_PATH)
+
+            for doc_id in body.document_ids:
+                try:
+                    deleted = {"parent_chunks": 0, "child_chunks": 0}
+                    doc_filter = build_eq_clause("document_id", doc_id)
+
+                    for table_name in ["parent_chunks", "child_chunks"]:
+                        if table_name in db.table_names():
+                            tbl = db.open_table(table_name)
+                            before = tbl.count_rows()
+                            tbl.delete(doc_filter)
+                            after = tbl.count_rows()
+                            deleted[table_name] = before - after
+
+                    doc_total = deleted["parent_chunks"] + deleted["child_chunks"]
+                    total_deleted += doc_total
+                    results.append(
+                        BulkDeleteResult(
+                            document_id=doc_id,
+                            success=doc_total > 0,
+                            chunks_deleted=doc_total,
+                            error=None if doc_total > 0 else f"Not found: {doc_id}",
+                        )
+                    )
+                except Exception as e:
+                    results.append(
+                        BulkDeleteResult(
+                            document_id=doc_id,
+                            success=False,
+                            chunks_deleted=0,
+                            error=str(e),
+                        )
+                    )
+
+        except Exception as e:
+            logger.error(f"Bulk delete failed: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e), "results": [], "total_deleted": 0},
+            )
+
+        return BulkDeleteResponse(results=results, total_deleted=total_deleted)
 
     # ── GET /api/v1/vaults ──────────────────────────────────────────────────
 
@@ -583,6 +901,9 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
         except Exception as e:
             logger.error(f"Quick capture failed: {e}", exc_info=True)
-            return QuickCaptureResponse(document_id="", status="error", error=str(e))
+            return JSONResponse(
+                status_code=500,
+                content={"document_id": "", "status": "error", "error": str(e)},
+            )
 
     return router

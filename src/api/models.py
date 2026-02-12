@@ -20,6 +20,7 @@ class SearchRequest(BaseModel):
         default=False, description="Enable HyDE (Hypothetical Document Embedding) expansion"
     )
     tags: List[str] = Field(default=[], description="Filter results to documents with these tags")
+    category: Optional[str] = Field(default=None, description="Filter by document category")
 
     class Config:
         json_schema_extra = {
@@ -176,6 +177,111 @@ class QuickCaptureResponse(BaseModel):
     document_id: str = Field(description="Generated document ID")
     status: str = Field(description="Capture status")
     error: Optional[str] = Field(default=None, description="Error message if capture failed")
+
+
+# === Document Retrieval Endpoint ===
+
+
+class DocumentResponse(BaseModel):
+    """Response from document retrieval."""
+
+    document_id: str = Field(description="Document identifier")
+    source_path: str = Field(description="Original source path")
+    parent_chunks: int = Field(description="Number of parent chunks")
+    child_chunks: int = Field(description="Number of child chunks")
+    tags: List[str] = Field(default=[], description="Document tags")
+    content_preview: str = Field(default="", description="Preview of document content")
+    created_at: Optional[str] = Field(default=None, description="Creation timestamp")
+
+
+# === Bulk Delete Endpoint ===
+
+
+class BulkDeleteRequest(BaseModel):
+    """Request body for bulk document deletion."""
+
+    document_ids: List[str] = Field(
+        ..., min_length=1, max_length=100, description="Document IDs to delete"
+    )
+
+
+class BulkDeleteResult(BaseModel):
+    """Result for a single document in bulk delete."""
+
+    document_id: str = Field(description="Document ID")
+    success: bool = Field(description="Whether deletion succeeded")
+    chunks_deleted: int = Field(default=0, description="Chunks removed")
+    error: Optional[str] = Field(default=None, description="Error if failed")
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response from bulk document deletion."""
+
+    results: List[BulkDeleteResult] = Field(description="Per-document results")
+    total_deleted: int = Field(description="Total chunks deleted across all documents")
+
+
+# === Error Response ===
+
+
+# === Answer Synthesis Endpoint ===
+
+
+class AnswerRequest(BaseModel):
+    """Request body for answer synthesis."""
+
+    query: str = Field(..., min_length=1, max_length=5000, description="Question to answer")
+    k: int = Field(default=5, ge=1, le=50, description="Number of evidence chunks to retrieve")
+    validation_mode: str = Field(
+        default="relaxed",
+        description="Citation validation mode: 'strict' (verbatim quotes) or 'relaxed' (paraphrasing OK)",
+    )
+    use_reranker: bool = Field(default=True, description="Apply cross-encoder re-ranking")
+    use_hyde: bool = Field(default=False, description="Enable HyDE query expansion")
+    tags: List[str] = Field(default=[], description="Filter evidence to documents with these tags")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "How does authentication work?",
+                "k": 5,
+                "validation_mode": "relaxed",
+            }
+        }
+
+
+class AnswerCitation(BaseModel):
+    """A citation supporting a claim."""
+
+    source_path: str = Field(description="Source document path")
+    chunk_index: int = Field(description="Chunk position within document")
+    quote: str = Field(description="Supporting quote from evidence")
+    confidence: float = Field(default=1.0, description="Citation confidence (0-1)")
+
+
+class AnswerClaim(BaseModel):
+    """A claim from the synthesized answer with citations."""
+
+    text: str = Field(description="The claim text")
+    citations: List[AnswerCitation] = Field(default=[], description="Supporting citations")
+    confidence: float = Field(default=1.0, description="Claim confidence (0-1)")
+
+
+class AnswerResponse(BaseModel):
+    """Response from answer synthesis."""
+
+    query: str = Field(description="Original question")
+    answer: str = Field(description="Synthesized answer text")
+    claims: List[AnswerClaim] = Field(default=[], description="Claims with citations")
+    sources_used: List[str] = Field(default=[], description="Source documents referenced")
+    validation_mode: str = Field(description="Validation mode used")
+    validation_errors: List[str] = Field(default=[], description="Any citation validation errors")
+    not_found: bool = Field(default=False, description="True if evidence was insufficient")
+    llm_calls: int = Field(default=0, description="Number of LLM calls made")
+    error: Optional[str] = Field(default=None, description="Error message if synthesis failed")
+
+
+# === Error Response ===
 
 
 class ErrorResponse(BaseModel):
