@@ -96,6 +96,29 @@ BACKUP_COMMIT_COOLDOWN_HOURS = float(os.getenv("CORERAG_BACKUP_COMMIT_COOLDOWN",
 BACKUP_MAX_COUNT = int(os.getenv("CORERAG_BACKUP_MAX_COUNT", "10"))
 BACKUP_INTEGRITY_CHECK = os.getenv("CORERAG_BACKUP_INTEGRITY_CHECK", "true").lower() == "true"
 
+# ── Server Configuration ─────────────────────────────────────────────────────
+
+SERVER_HOST = os.getenv("CORERAG_SERVER_HOST", "127.0.0.1")
+SERVER_PORT = int(os.getenv("CORERAG_SERVER_PORT", "8000"))
+SERVER_PORT_MAX_ATTEMPTS = 10
+SERVER_PORT_FILE = STATE_DIR / "server.port"
+
+
+def get_server_url() -> str:
+    """Get the URL of the running CoreRag server.
+
+    Reads the port from the port file if it exists, otherwise uses the
+    configured default port.
+    """
+    port = SERVER_PORT
+    if SERVER_PORT_FILE.exists():
+        try:
+            port = int(SERVER_PORT_FILE.read_text().strip())
+        except (ValueError, OSError):
+            pass
+    return f"http://{SERVER_HOST}:{port}"
+
+
 # ── LLM Provider Configuration ─────────────────────────────────────────────
 
 LLM_PROVIDER = os.getenv("CORERAG_LLM_PROVIDER", "")  # auto-detect if empty

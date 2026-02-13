@@ -88,11 +88,11 @@ python -m src.cli.main memory list           # List user facts (also: add, conte
 # Capability manifest (handshake protocol — no auth required)
 curl http://localhost:8000/api/v1/manifest
 
-# Semantic search (optionally filter by collection tags)
+# Semantic search (optionally filter by collection tags and category)
 curl -X POST http://localhost:8000/api/v1/search \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key" \
-  -d '{"query": "authentication setup", "k": 5, "tags": ["sphr-study"]}'
+  -d '{"query": "authentication setup", "k": 5, "tags": ["sphr-study"], "category": "notes"}'
 
 # Ingest content
 curl -X POST http://localhost:8000/api/v1/ingest \
@@ -103,8 +103,17 @@ curl -X POST http://localhost:8000/api/v1/ingest \
 # Database stats
 curl -H "X-API-Key: your_api_key" http://localhost:8000/api/v1/stats
 
+# Get document metadata
+curl -H "X-API-Key: your_api_key" http://localhost:8000/api/v1/documents/{document_id}
+
 # Delete document
 curl -X DELETE -H "X-API-Key: your_api_key" http://localhost:8000/api/v1/documents/{document_id}
+
+# Bulk delete
+curl -X POST http://localhost:8000/api/v1/documents/bulk-delete \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key" \
+  -d '{"document_ids": ["id1", "id2"]}'
 ```
 
 ### Knowledge Graph Backfill

@@ -3,7 +3,7 @@
 > **Purpose**: Single source of truth for CoreRag's development history, current status, architectural decisions, integration protocols, and future roadmap.
 > Consolidates content from 8 previously separate planning files (now archived in `_project/Archive/`).
 >
-> **Last Updated**: 2026-02-07
+> **Last Updated**: 2026-02-10
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## Project Timeline
 
-**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 19
+**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 21
 
 | Session | Date | Focus | Key Outcomes |
 |---------|------|-------|-------------|
@@ -48,10 +48,13 @@
 | 18 | Feb 7 | Public Release | Created MIT LICENSE. Rewrote README.md, USER_GUIDE.md, StartHere.md, CONVENTIONS.md for public/portfolio readiness. Added project banner. Fixed all ruff E731/E722 lint errors. Black-formatted 26 files. Upgraded security scanner to v4 (9 phases, commercial marker detection). Published to GitHub as public repo. 185 tests passing. |
 | 19 | Feb 7 | All P1-P3 Roadmap Items | Implemented all 11 future roadmap items across 3 phases. P1: backlink generator with inline wikilinks, dashboard bulk ops + keyboard nav, golden set manager + MCP tools. P2: knowledge gaps analyzer, versioning enhancement (is_changed + MCP tools), learned rules from correction patterns. P3: multi-vault support (VAULT_PATHS), RBAC scaffold (AccessControl), Readwise integration plugin, conversational search (query rewriting), quick-capture REST endpoint for mobile. Fixed GitHub CI (bandit, isort, platform markers, MPS OOM). 295 tests, 29 MCP tools. |
 | 20 | Feb 7 | Mypy Cleanup + Auto-Backup | Fixed all 122 mypy type errors across 36 source files (type annotations, Optional patterns, assert guards). Added automatic backup system: server startup backup (24h cooldown), pre-commit backup (1h cooldown), LanceDB integrity check on startup (table existence + row counts). 5 backup config constants in config.py. FastAPI lifespan added to server.py. 305 tests, 29 MCP tools. |
+| 20.5 | Feb 10 | Menu Bar + AG Deploy | Rewrote menu bar app with auto-start server, process detection, cooldown timers. Fixed launchd notification spam. Deployed AG integration files (ANTIGRAVITY.md, .agent/workflows). Updated StartHere.md, CLAUDE.md, README.md, CONVENTIONS.md. Committed AG files. 331 tests. |
+| 21 | Feb 10 | Production Hardening | Fixed CI integration test path bug. Fixed v1 API error response codes (proper HTTP status codes instead of 200+error). Added 39 v1 API route tests covering all endpoints. Applied pytest markers (integration, slow). Added 3 new API endpoints: GET /documents/{id}, POST /documents/bulk-delete, category search filter. Updated manifest. 344 tests. |
 
-### Metrics at Session 20
+### Metrics at Session 21
 
-- **Tests**: 305 passing, 26 skipped (golden set)
+- **Tests**: 344 passing, 26 skipped (golden set)
+- **API endpoints**: 10 v1 endpoints (manifest, stats, search, ingest, delete, get-document, bulk-delete, vaults, quick-capture + manifest)
 - **CLI commands**: 13
 - **MCP tools**: 29
 - **RAG**: 4,702 child chunks + 52 parent chunks from 43 documents
@@ -872,15 +875,44 @@ class LearnedRulesManager:
 
 ---
 
-### P3: Backlog Items
+### P3: Backlog Items (All Complete)
 
-| Item | Description |
-|------|-------------|
-| Multi-vault support | Multiple Obsidian vaults (Work, Personal, Research) |
-| Collaborative features | Shared CoreRag, permission levels for sensitive content |
-| External integrations | Readwise sync, Pocket/Instapaper, calendar integration |
-| Advanced retrieval | Query rewriting with context, conversational search with follow-ups |
-| Mobile companion | iOS Shortcut or lightweight app for quick capture to Inbox |
+| Item | Description | Status |
+|------|-------------|--------|
+| Multi-vault support | Multiple Obsidian vaults (Work, Personal, Research) | **Complete** (Session 19) |
+| Collaborative features | Shared CoreRag, permission levels for sensitive content | **Complete** (Session 19) — AccessControl scaffold |
+| External integrations | Readwise sync, Pocket/Instapaper, calendar integration | **Complete** (Session 19) — ReadwisePlugin |
+| Advanced retrieval | Query rewriting with context, conversational search with follow-ups | **Complete** (Session 19) — ConversationManager |
+| Mobile companion | iOS Shortcut or lightweight app for quick capture to Inbox | **Complete** (Session 19) — /api/v1/quick-capture |
+
+---
+
+### P4: Production Hardening (Session 21+)
+
+| # | Item | Priority | Status | Trigger |
+|---|------|----------|--------|---------|
+| 1 | **CI integration test path** — Fixed nonexistent `tests/integration/` dir in CI | High | **Complete** (Session 21) | — |
+| 2 | **API error response codes** — Proper HTTP 4xx/5xx instead of 200+error | High | **Complete** (Session 21) | — |
+| 3 | **v1 API route tests** — 39 tests covering all endpoints | High | **Complete** (Session 21) | — |
+| 4 | **Pytest markers** — `integration` and `slow` markers applied | Medium | **Complete** (Session 21) | — |
+| 5 | **Document retrieval endpoint** — GET /api/v1/documents/{id} | Medium | **Complete** (Session 21) | — |
+| 6 | **Bulk delete endpoint** — POST /api/v1/documents/bulk-delete | Medium | **Complete** (Session 21) | — |
+| 7 | **Search category filter** — Filter by document category | Medium | **Complete** (Session 21) | — |
+| 8 | **XLSX processor reimplementation** — openpyxl-based spreadsheet support | Low | Deferred | When TJ ingests spreadsheets |
+| 9 | **Code chunker reimplementation** — AST-based chunking for Python/JS/TS | Low | Deferred | When TJ ingests source code |
+| 10 | **RBAC wiring** — Wire AccessControl into API routes | Low | Deferred | When multi-user access is needed |
+| 11 | **Episodic memory dashboard** — Dashboard panel for facts/corrections (Phase 6d) | Low | Deferred | When dashboard is actively used for memory review |
+| 12 | **Health check unification** — Consolidate health.py + backup_triggers.py integrity checks | Low | Deferred | During next maintenance session |
+| 13 | **Query analytics dashboard** — Surface search quality metrics in dashboard | Low | Deferred | When search quality monitoring is needed |
+| 14 | **Search pagination** — `offset`/`limit` params on search and stats endpoints | Low | Deferred | When document count exceeds 100+ |
+
+### Not Building
+
+| Item | Reason | Decided |
+|------|--------|---------|
+| Auto-backup on every commit | Cooldown-based approach is better; prevents backup spam | Session 20 |
+| Full RBAC enforcement | Single-user system; scaffold exists for future need | Session 19 |
+| Real-time WebSocket search | REST polling is sufficient for current use case | Session 21 |
 
 ---
 
@@ -1096,9 +1128,9 @@ Note: `src/utils/deduplication.py` retained because it has tests (provides `Dedu
 
 ## Open Questions
 
-- [ ] Topic taxonomy (predefined vs AI-generated)?
-- [ ] Obsidian vault structure for new categories?
-- [ ] Priority file types for next ingestion batch?
+- [x] Topic taxonomy (predefined vs AI-generated)? **AI-generated** — Ollama produces good categories; no need for a fixed taxonomy
+- [x] Obsidian vault structure for new categories? **Resolved** — multi-vault support (VAULT_PATHS) handles vault structure; categories map to archive folders
+- [x] Priority file types for next ingestion batch? **Resolved** — XLSX is the main gap; code chunking deferred until needed
 - [x] Paid API needed? **No** — Ollama achieves 100% quality
 - [x] PII detection approach? **Three-layer** (Presidio + dictionary + LLM advisory)
 - [x] Chunking strategy? **Parent-child** (512 token children, 2048 parents)
@@ -1130,4 +1162,4 @@ Previously archived files (from scaffold phase, Jan 31):
 
 ---
 
-*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-07 (Session 20).*
+*Consolidated from 8 planning files on 2026-02-02. Last updated: 2026-02-10 (Session 21).*

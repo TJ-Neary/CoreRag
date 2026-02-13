@@ -40,6 +40,7 @@ def test_env():
         shutil.rmtree(TEMP_ROOT)
 
 
+@pytest.mark.integration
 class TestProcessDocument:
     """Tests for the process_document pipeline."""
 

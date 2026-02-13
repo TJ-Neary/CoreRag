@@ -17,10 +17,19 @@ from pathlib import Path
 
 import rumps
 
-DASHBOARD_URL = "http://localhost:8000"
-STATUS_URL = f"{DASHBOARD_URL}/api/progress"
-START_BATCH_URL = f"{DASHBOARD_URL}/api/start-batch"
-COMMIT_STATUS_URL = f"{DASHBOARD_URL}/api/commit-progress"
+from src.config import SERVER_HOST, SERVER_PORT, SERVER_PORT_FILE
+
+
+def _get_dashboard_url() -> str:
+    """Read the active server port from the port file, fallback to configured default."""
+    port = SERVER_PORT
+    if SERVER_PORT_FILE.exists():
+        try:
+            port = int(SERVER_PORT_FILE.read_text().strip())
+        except (ValueError, OSError):
+            pass
+    return f"http://{SERVER_HOST}:{port}"
+
 
 # Asset paths (relative to project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -68,14 +77,14 @@ class CoreRagApp(rumps.App):
 
     def open_dashboard(self, _):
         """Open the CoreRag dashboard in the default browser."""
-        webbrowser.open(DASHBOARD_URL)
+        webbrowser.open(_get_dashboard_url())
 
     def start_ingestion(self, _):
         """Trigger batch ingestion via the dashboard API."""
         try:
             import urllib.request
 
-            req = urllib.request.Request(START_BATCH_URL, method="POST")
+            req = urllib.request.Request(f"{_get_dashboard_url()}/api/start-batch", method="POST")
             with urllib.request.urlopen(req, timeout=5):  # nosec B310
                 pass
             rumps.notification(
@@ -165,7 +174,7 @@ class CoreRagApp(rumps.App):
             import urllib.request
 
             # Check batch processing status
-            req = urllib.request.Request(STATUS_URL, method="GET")
+            req = urllib.request.Request(f"{_get_dashboard_url()}/api/progress", method="GET")
             with urllib.request.urlopen(req, timeout=2) as resp:  # nosec B310
                 data = json.loads(resp.read())
 
@@ -196,7 +205,9 @@ class CoreRagApp(rumps.App):
             else:
                 # Also check commit status
                 try:
-                    req2 = urllib.request.Request(COMMIT_STATUS_URL, method="GET")
+                    req2 = urllib.request.Request(
+                        f"{_get_dashboard_url()}/api/commit-progress", method="GET"
+                    )
                     with urllib.request.urlopen(req2, timeout=2) as resp2:  # nosec B310
                         commit_data = json.loads(resp2.read())
                     commit_status = commit_data.get("status", "idle")

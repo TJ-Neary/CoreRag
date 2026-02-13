@@ -222,6 +222,8 @@ def embedder():
     pytest.skip("Embedder not configured. Add to conftest.py")
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 @pytest.mark.parametrize("test_case", _test_cases, ids=[tc.query[:50] for tc in _test_cases])
 @pytest.mark.asyncio
 async def test_golden_query(test_case: GoldenTestCase, retriever, embedder):

@@ -6,9 +6,11 @@ App factory that mounts dashboard and API v1 routers.
 Run with: python -m src.server
 """
 
+import atexit
 import logging
 import os
 import secrets
+import socket
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -136,7 +138,62 @@ _dashboard_state = DashboardState(
 app.include_router(create_dashboard_router(_dashboard_state))
 app.include_router(create_v1_router(verify_api_key))
 
+# ── Port Discovery ────────────────────────────────────────────────────────────
+
+
+def _port_is_available(host: str, port: int) -> bool:
+    """Check if a port is available by attempting to bind to it."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+            return True
+    except OSError:
+        return False
+
+
+def find_available_port(
+    host: str = config.SERVER_HOST,
+    preferred: int = config.SERVER_PORT,
+    max_attempts: int = config.SERVER_PORT_MAX_ATTEMPTS,
+) -> int:
+    """Find an available port starting from the preferred port.
+
+    Tries preferred, preferred+1, ..., up to max_attempts.
+    Raises RuntimeError if no port is available.
+    """
+    for offset in range(max_attempts):
+        port = preferred + offset
+        if _port_is_available(host, port):
+            if offset > 0:
+                logger.warning("Port %d in use, falling back to port %d", preferred, port)
+            return port
+        logger.debug("Port %d is in use, trying next", port)
+
+    raise RuntimeError(
+        f"No available port found in range {preferred}-{preferred + max_attempts - 1}"
+    )
+
+
+def _write_port_file(port: int) -> None:
+    """Write the active server port to the port file for service discovery."""
+    port_file = config.SERVER_PORT_FILE
+    port_file.parent.mkdir(parents=True, exist_ok=True)
+    port_file.write_text(str(port))
+
+
+def _remove_port_file() -> None:
+    """Remove the port file on shutdown."""
+    try:
+        config.SERVER_PORT_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass  # Best-effort cleanup
+
+
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = find_available_port()
+    _write_port_file(port)
+    atexit.register(_remove_port_file)
+    uvicorn.run(app, host=config.SERVER_HOST, port=port)

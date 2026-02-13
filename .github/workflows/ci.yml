@@ -113,7 +113,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          pytest tests/integration/ -v --timeout=300
+          pytest -m integration -v --timeout=300
 
   # ============================================
   # Security Scanning
