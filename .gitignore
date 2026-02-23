@@ -85,6 +85,8 @@ credentials.json
 pii_terms.yaml
 pii_terms.yml
 .security_terms
+.security_baseline
+.tos_terms
 
 # =============================================================================
 # CoreRag Data (runtime data, not code)
@@ -150,3 +152,12 @@ claude.yml
 gemini.md
 chatgpt.md
 sessions/
+
+# =============================================================================
+# Ecosystem / Agent Configuration (TJ-specific, not for public repos)
+# =============================================================================
+ANTIGRAVITY.md
+CODEX.md
+GEMINI.md
+AGENTS.md
+.agent/

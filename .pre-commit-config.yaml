@@ -28,6 +28,6 @@ repos:
 
       - id: mypy
         name: MyPy (type checker - warn only)
-        entry: bash -c './venv/bin/mypy --ignore-missing-imports "$@" || true'
+        entry: bash -c './venv/bin/mypy --strict --ignore-missing-imports "$@" || true'
         language: system
         types: [python]
