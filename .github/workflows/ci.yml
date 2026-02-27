@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black mypy
+          pip install ruff black mypy radon
 
       - name: Run ruff (linting + import sorting)
         run: ruff check src/ tests/
@@ -38,8 +38,12 @@ jobs:
       - name: Run black (formatting)
         run: black --check src/ tests/
 
-      - name: Run mypy (type checking)
-        run: mypy src/ --ignore-missing-imports
+      - name: Run mypy (strict type checking)
+        run: mypy --strict --ignore-missing-imports src/
+
+      - name: Check cyclomatic complexity
+        run: radon cc src/ -a -nc
+        continue-on-error: true  # Warning, not blocker
 
   # ============================================
   # Unit Tests
@@ -182,3 +186,25 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  # ============================================
+  # Diff Size Check (PR only)
+  # ============================================
+  diff-check:
+    name: Diff Size Guard
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check diff size
+        env:
+          MAX_LINES: "500"
+        run: |
+          LINES_CHANGED=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{ added += $1; deleted += $2 } END { print added + deleted }')
+          echo "Lines changed: $LINES_CHANGED (threshold: $MAX_LINES)"
+          if [ "$LINES_CHANGED" -gt "$MAX_LINES" ]; then
+            echo "::warning::Large diff detected ($LINES_CHANGED lines changed). Review for scope creep — AI agents may have modified more than requested."
+          fi

@@ -4,6 +4,7 @@ Tests for the knowledge graph module (entity extraction + SQLite triple store).
 Run with: pytest tests/test_knowledge_graph.py -v
 """
 
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -120,3 +121,123 @@ class TestKnowledgeGraph:
         stats = graph.get_stats()
         assert stats["total_entities"] == 0
         assert stats["total_relationships"] == 0
+
+
+class TestBitemporalFeatures:
+    """Tests for bitemporal entity/relationship tracking."""
+
+    @pytest.fixture
+    def graph(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "test_graph.db"
+            yield KnowledgeGraph(db_path)
+
+    def test_entity_mention_count_increments(self, graph):
+        """Adding same entity twice increments mention_count."""
+        e = Entity(name="Python", type="technology", document_id="d1")
+        graph.add_entity(e)
+        graph.add_entity(e)
+
+        timeline = graph.get_entity_timeline("Python")
+        assert len(timeline) == 1
+        assert timeline[0]["mention_count"] == 2
+
+    def test_entity_first_seen_preserved(self, graph):
+        """First_seen stays at original value after re-add."""
+        e = Entity(name="React", type="framework", document_id="d1")
+        graph.add_entity(e)
+
+        timeline = graph.get_entity_timeline("React")
+        first_seen_1 = timeline[0]["first_seen"]
+
+        graph.add_entity(e)
+        timeline = graph.get_entity_timeline("React")
+        assert timeline[0]["first_seen"] == first_seen_1
+
+    def test_entity_timeline(self, graph):
+        """Timeline shows entity across multiple documents."""
+        graph.add_entity(Entity(name="Django", type="framework", document_id="d1"))
+        graph.add_entity(Entity(name="Django", type="framework", document_id="d2"))
+
+        timeline = graph.get_entity_timeline("Django")
+        assert len(timeline) == 2
+        doc_ids = [t["document_id"] for t in timeline]
+        assert "d1" in doc_ids
+        assert "d2" in doc_ids
+
+    def test_search_entities_by_confidence(self, graph):
+        """Search filters by minimum confidence."""
+        graph.add_entity(
+            Entity(name="StrongEntity", type="concept", document_id="d1", confidence=0.9)
+        )
+        graph.add_entity(
+            Entity(name="WeakEntity", type="concept", document_id="d1", confidence=0.2)
+        )
+
+        results = graph.search_entities("Entity", min_confidence=0.5)
+        names = [r["name"] for r in results]
+        assert "StrongEntity" in names
+        assert "WeakEntity" not in names
+
+    def test_supersede_relationship(self, graph):
+        """Superseding marks old relationship."""
+        r1 = Relationship(subject="A", predicate="works_at", object="CompanyX", document_id="d1")
+        graph.add_relationship(r1)
+
+        r2 = Relationship(subject="A", predicate="works_at", object="CompanyY", document_id="d2")
+        graph.add_relationship(r2)
+
+        # Get IDs
+        conn = sqlite3.connect(graph.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM relationships ORDER BY id")
+        ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        assert len(ids) >= 2
+        graph.supersede_relationship(ids[0], ids[1])
+
+        # Verify superseded_by is set
+        conn = sqlite3.connect(graph.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT superseded_by FROM relationships WHERE id = ?", (ids[0],))
+        result = cursor.fetchone()
+        conn.close()
+        assert result[0] == ids[1]
+
+    def test_confidence_decay(self, graph):
+        """Confidence decay reduces stale entity scores."""
+        from datetime import datetime, timedelta, timezone
+
+        # Insert entity with old last_seen
+        conn = sqlite3.connect(graph.db_path)
+        cursor = conn.cursor()
+        old_date = (datetime.now(timezone.utc) - timedelta(days=730)).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO entities (name, type, document_id, confidence,
+                                  first_seen, last_seen, mention_count, confidence_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            ("OldEntity", "concept", "d1", 1.0, old_date, old_date, 1, 1.0),
+        )
+        conn.commit()
+        conn.close()
+
+        updated = graph.apply_confidence_decay(half_life_days=365)
+        assert updated >= 1
+
+        timeline = graph.get_entity_timeline("OldEntity")
+        assert timeline[0]["confidence_score"] < 0.5  # 2 years old, half_life=1yr → ~0.25
+
+    def test_relationship_when_true(self, graph):
+        """when_true is stored on relationships."""
+        r = Relationship(subject="X", predicate="employed_at", object="Y", document_id="d1")
+        graph.add_relationship(r, when_true="2024-01")
+
+        conn = sqlite3.connect(graph.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT when_true FROM relationships WHERE subject = 'X'")
+        result = cursor.fetchone()
+        conn.close()
+        assert result[0] == "2024-01"

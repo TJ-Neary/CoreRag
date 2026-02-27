@@ -77,8 +77,22 @@ def _redact_pii(text: str, file_name: str) -> str:
 
 
 def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
-    """Chunk, embed, and store document text in the LanceDB vector database."""
+    """Chunk, embed, and store document text in the LanceDB vector database.
+
+    Enhanced pipeline:
+    1. Chunk document into parents + children
+    2. Content hash dedup — skip chunks already in the DB
+    3. Contextual Retrieval — prepend LLM context to each chunk before embedding
+    4. Quality scoring — heuristic score per chunk
+    5. Source authority classification
+    6. Date extraction from chunk text
+    7. Multi-resolution parent summaries
+    8. Embed (context_prefix + chunk_text) for richer vectors
+    9. Store with all enrichment fields
+    """
     try:
+        import asyncio
+
         import lancedb
 
         from src.chunking.parent_child import ParentChildChunker
@@ -107,11 +121,130 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
             logger.warning(f"RAG indexing: no chunks created for {file_name}")
             return
 
-        child_texts = [c.content for c in children]
-        embeddings = embedder.embed_documents(child_texts, show_progress=False)
+        # ── Content hash dedup ──────────────────────────────────────────
+        existing_hashes: set[str] = set()
+        try:
+            if "child_chunks" in db.table_names():
+                ct = db.open_table("child_chunks")
+                from src.utils.query_sanitize import build_eq_clause
 
-        # Build comma-delimited tags string for LIKE-based filtering
-        # Format: ",tag1,tag2," — enables WHERE tags LIKE '%,tag1,%'
+                existing = (
+                    ct.search()
+                    .where(build_eq_clause("document_id", document_id))
+                    .limit(10000)
+                    .to_list()
+                )
+                existing_hashes = {
+                    r.get("content_hash", "") for r in existing if r.get("content_hash")
+                }
+        except Exception:
+            pass  # First run, no table yet
+
+        child_hashes = []
+        deduped_children = []
+        for c in children:
+            h = hashlib.sha256(c.content.encode()).hexdigest()
+            if h in existing_hashes:
+                logger.debug(f"Dedup: skipping chunk {c.id} (hash exists)")
+                continue
+            child_hashes.append(h)
+            deduped_children.append(c)
+
+        if not deduped_children:
+            logger.info(f"RAG indexing: all chunks already indexed for {file_name}")
+            return
+
+        children = deduped_children
+
+        # ── Source authority ─────────────────────────────────────────────
+        source_authority = config.SOURCE_AUTHORITY_DEFAULT
+        try:
+            from src.classification.source_authority import SourceAuthorityClassifier
+
+            sa_classifier = SourceAuthorityClassifier()
+            source_authority = sa_classifier.classify(metadata).value
+        except Exception as e:
+            logger.debug(f"Source authority classification failed: {e}")
+
+        # ── Chunk quality scoring ────────────────────────────────────────
+        quality_scores = []
+        try:
+            from src.quality.chunk_scorer import ChunkScorer
+
+            scorer = ChunkScorer()
+            for c in children:
+                score = scorer.score(c.content)
+                quality_scores.append(score.overall)
+        except Exception:
+            quality_scores = [0.0] * len(children)
+
+        # ── Date extraction ──────────────────────────────────────────────
+        date_extracted_list: list[str] = []
+        date_confidence_list: list[float] = []
+        try:
+            from src.quality.date_extractor import DateExtractor
+
+            date_ext = DateExtractor()
+            for c in children:
+                d, conf = date_ext.extract(c.content)
+                date_extracted_list.append(d or "")
+                date_confidence_list.append(conf)
+        except Exception:
+            date_extracted_list = [""] * len(children)
+            date_confidence_list = [0.0] * len(children)
+
+        # ── Contextual Retrieval ─────────────────────────────────────────
+        context_prefixes: list[str] = [""] * len(children)
+        if config.CONTEXT_GENERATION:
+            try:
+                from src.chunking.context_generator import ContextGenerator
+
+                ctx_gen = ContextGenerator()
+                child_texts_for_ctx = [c.content for c in children]
+
+                loop = asyncio.new_event_loop()
+                try:
+                    context_prefixes = loop.run_until_complete(
+                        ctx_gen.generate_contexts_batch(text, child_texts_for_ctx, concurrency=3)
+                    )
+                finally:
+                    loop.close()
+
+                ctx_count = sum(1 for cp in context_prefixes if cp)
+                logger.info(f"Context generated for {ctx_count}/{len(children)} chunks")
+            except Exception as e:
+                logger.warning(f"Context generation failed, proceeding without: {e}")
+
+        # ── Embed (context_prefix + chunk_text) ─────────────────────────
+        embed_texts = []
+        for c, ctx in zip(children, context_prefixes):
+            if ctx:
+                embed_texts.append(ctx + "\n\n" + c.content)
+            else:
+                embed_texts.append(c.content)
+
+        embeddings = embedder.embed_documents(embed_texts, show_progress=False)
+
+        # ── Parent summaries ─────────────────────────────────────────────
+        parent_summaries: dict[str, str] = {}
+        try:
+            from src.chunking.summarizer import MultiResolutionSummarizer
+
+            summarizer = MultiResolutionSummarizer()
+            for p in parents:
+                p_children = [c.content for c in children if c.parent_id == p.id]
+                loop = asyncio.new_event_loop()
+                try:
+                    summary = loop.run_until_complete(
+                        summarizer.summarize_parent(p.content, p_children)
+                    )
+                    parent_summaries[p.id] = summary
+                finally:
+                    loop.close()
+        except Exception as e:
+            logger.debug(f"Parent summary generation skipped: {e}")
+
+        # ── Build comma-delimited tags string ────────────────────────────
         raw_tags = metadata.get("tags", [])
         if isinstance(raw_tags, list) and raw_tags:
             tags_str = "," + ",".join(raw_tags) + ","
@@ -130,11 +263,13 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                     "token_count": p.token_count,
                     "created_at": datetime.now().isoformat(),
                     "tags": tags_str,
+                    "content_hash": hashlib.sha256(p.content.encode()).hexdigest(),
+                    "summary": parent_summaries.get(p.id, ""),
                 }
             )
 
         child_data = []
-        for c, emb in zip(children, embeddings):
+        for i, (c, emb) in enumerate(zip(children, embeddings)):
             child_data.append(
                 {
                     "id": c.id,
@@ -145,6 +280,12 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                     "chunk_index": c.chunk_index,
                     "source_path": file_name,
                     "tags": tags_str,
+                    "content_hash": child_hashes[i],
+                    "context_prefix": context_prefixes[i],
+                    "quality_score": quality_scores[i],
+                    "source_authority": source_authority,
+                    "date_extracted": date_extracted_list[i],
+                    "date_confidence": date_confidence_list[i],
                 }
             )
 
@@ -170,7 +311,11 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                 child_table = db.open_table("child_chunks")
                 child_table.add(child_data)
 
-        logger.info(f"RAG indexed: {file_name} ({len(parents)} parents, {len(children)} children)")
+        low_quality = sum(1 for q in quality_scores if q < config.CHUNK_QUALITY_THRESHOLD)
+        logger.info(
+            f"RAG indexed: {file_name} ({len(parents)} parents, {len(children)} children, "
+            f"{low_quality} low-quality, authority={source_authority})"
+        )
 
     except ProcessingError:
         raise

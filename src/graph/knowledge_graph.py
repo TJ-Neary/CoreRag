@@ -221,7 +221,7 @@ class KnowledgeGraph:
         self._init_db()
 
     def _init_db(self):
-        """Initialize database schema."""
+        """Initialize database schema with bitemporal fields."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -235,11 +235,15 @@ class KnowledgeGraph:
                 confidence REAL DEFAULT 1.0,
                 metadata TEXT DEFAULT '{}',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                mention_count INTEGER DEFAULT 1,
+                confidence_score REAL DEFAULT 1.0,
                 UNIQUE(name, type, document_id)
             )
         """)
 
-        # Relationships table (triples)
+        # Relationships table (triples) with bitemporal tracking
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS relationships (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,6 +254,9 @@ class KnowledgeGraph:
                 confidence REAL DEFAULT 1.0,
                 context TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                when_true TEXT DEFAULT '',
+                when_learned TEXT DEFAULT CURRENT_TIMESTAMP,
+                superseded_by INTEGER DEFAULT NULL,
                 UNIQUE(subject, predicate, object, document_id)
             )
         """)
@@ -261,19 +268,61 @@ class KnowledgeGraph:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_object ON relationships(object)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_predicate ON relationships(predicate)")
 
+        # Migrate existing tables — add new columns if they don't exist
+        self._migrate_schema(cursor)
+
         conn.commit()
         conn.close()
 
+    def _migrate_schema(self, cursor: sqlite3.Cursor) -> None:
+        """Add bitemporal columns to existing tables if missing."""
+        # Entity columns
+        for col, col_type, default in [
+            ("first_seen", "TEXT", "CURRENT_TIMESTAMP"),
+            ("last_seen", "TEXT", "CURRENT_TIMESTAMP"),
+            ("mention_count", "INTEGER", "1"),
+            ("confidence_score", "REAL", "1.0"),
+        ]:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE entities ADD COLUMN {col} {col_type} DEFAULT {default}"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+        # Relationship columns
+        for col, col_type, default in [
+            ("when_true", "TEXT", "''"),
+            ("when_learned", "TEXT", "CURRENT_TIMESTAMP"),
+            ("superseded_by", "INTEGER", "NULL"),
+        ]:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE relationships ADD COLUMN {col} {col_type} DEFAULT {default}"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
     def add_entity(self, entity: Entity):
-        """Add an entity to the graph."""
+        """Add an entity to the graph with bitemporal tracking.
+
+        If the entity already exists (same name+type+document_id), updates
+        last_seen and increments mention_count instead of replacing.
+        """
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         try:
+            # Try to insert new
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO entities (name, type, document_id, confidence, metadata)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO entities
+                    (name, type, document_id, confidence, metadata,
+                     first_seen, last_seen, mention_count, confidence_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
                 (
                     entity.name,
@@ -281,19 +330,41 @@ class KnowledgeGraph:
                     entity.document_id,
                     entity.confidence,
                     json.dumps(entity.metadata),
+                    now,
+                    now,
+                    entity.confidence,
                 ),
             )
-            conn.commit()
+        except sqlite3.IntegrityError:
+            # Entity exists — update last_seen and increment mention_count
+            cursor.execute(
+                """
+                UPDATE entities
+                SET last_seen = ?, mention_count = mention_count + 1,
+                    confidence_score = MAX(confidence_score, ?)
+                WHERE name = ? AND type = ? AND document_id = ?
+            """,
+                (now, entity.confidence, entity.name, entity.type, entity.document_id),
+            )
         except Exception as e:
             logger.error(f"Error adding entity: {e}")
             raise CoreRagDatabaseError(
                 f"Failed to add entity '{entity.name}': {e}", table_name="entities"
             ) from e
-        finally:
-            conn.close()
 
-    def add_relationship(self, rel: Relationship):
-        """Add a relationship to the graph."""
+        conn.commit()
+        conn.close()
+
+    def add_relationship(self, rel: Relationship, when_true: str = ""):
+        """Add a relationship to the graph with bitemporal tracking.
+
+        Args:
+            rel: Relationship to add.
+            when_true: When the fact was true (event time), e.g. "2024-03".
+        """
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -301,8 +372,9 @@ class KnowledgeGraph:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO relationships
-                (subject, predicate, object, document_id, confidence, context)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (subject, predicate, object, document_id, confidence, context,
+                 when_true, when_learned)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     rel.subject,
@@ -311,6 +383,8 @@ class KnowledgeGraph:
                     rel.document_id,
                     rel.confidence,
                     rel.context,
+                    when_true,
+                    now,
                 ),
             )
             conn.commit()
@@ -447,6 +521,151 @@ class KnowledgeGraph:
                     queue.append((entity, new_path))
 
         return None
+
+    def supersede_relationship(self, old_id: int, new_id: int) -> None:
+        """Mark an old relationship as superseded by a newer one."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE relationships SET superseded_by = ? WHERE id = ?",
+                (new_id, old_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def apply_confidence_decay(self, half_life_days: int = 365) -> int:
+        """Reduce confidence of stale entities based on time since last seen.
+
+        Uses exponential decay: confidence *= 2^(-days_since_last_seen / half_life).
+
+        Args:
+            half_life_days: Days for confidence to halve.
+
+        Returns:
+            Number of entities updated.
+        """
+        import math
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        updated = 0
+
+        try:
+            cursor.execute("SELECT id, last_seen, confidence_score FROM entities")
+            rows = cursor.fetchall()
+
+            for row_id, last_seen_str, current_conf in rows:
+                if not last_seen_str:
+                    continue
+                try:
+                    last_seen = datetime.fromisoformat(last_seen_str)
+                    if last_seen.tzinfo is None:
+                        last_seen = last_seen.replace(tzinfo=timezone.utc)
+                    days_elapsed = (now - last_seen).days
+                    if days_elapsed <= 0:
+                        continue
+
+                    decay = math.pow(2, -days_elapsed / half_life_days)
+                    new_conf = round(current_conf * decay, 4)
+
+                    if abs(new_conf - current_conf) > 0.001:
+                        cursor.execute(
+                            "UPDATE entities SET confidence_score = ? WHERE id = ?",
+                            (new_conf, row_id),
+                        )
+                        updated += 1
+                except (ValueError, TypeError):
+                    continue
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        logger.info(f"Confidence decay: updated {updated} entities (half_life={half_life_days}d)")
+        return updated
+
+    def get_entity_timeline(self, name: str) -> List[Dict]:
+        """Get chronological view of an entity's appearances across documents.
+
+        Args:
+            name: Entity name to look up.
+
+        Returns:
+            List of dicts with document_id, type, first_seen, last_seen, mention_count.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT document_id, type, first_seen, last_seen,
+                       mention_count, confidence_score
+                FROM entities
+                WHERE LOWER(name) = ?
+                ORDER BY first_seen
+            """,
+                (name.lower(),),
+            )
+
+            return [
+                {
+                    "document_id": row[0],
+                    "type": row[1],
+                    "first_seen": row[2],
+                    "last_seen": row[3],
+                    "mention_count": row[4],
+                    "confidence_score": row[5],
+                }
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
+
+    def search_entities(
+        self, query: str, min_confidence: float = 0.0, limit: int = 20
+    ) -> List[Dict]:
+        """Search entities by name with optional confidence threshold.
+
+        Args:
+            query: Search term (case-insensitive LIKE match).
+            min_confidence: Minimum confidence_score filter.
+            limit: Max results.
+
+        Returns:
+            List of entity dicts.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT DISTINCT name, type, confidence_score, mention_count, last_seen
+                FROM entities
+                WHERE LOWER(name) LIKE ? AND confidence_score >= ?
+                ORDER BY confidence_score DESC, mention_count DESC
+                LIMIT ?
+            """,
+                (f"%{query.lower()}%", min_confidence, limit),
+            )
+
+            return [
+                {
+                    "name": row[0],
+                    "type": row[1],
+                    "confidence_score": row[2],
+                    "mention_count": row[3],
+                    "last_seen": row[4],
+                }
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
 
     def get_stats(self) -> Dict:
         """Get graph statistics."""

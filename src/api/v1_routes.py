@@ -132,7 +132,8 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     "description": "Semantic search over the knowledge base",
                     "parameters": {
                         "query": "str (required) — natural language search query",
-                        "k": "int (default 5) — max results",
+                        "k": "int (default 5) — results per page",
+                        "offset": "int (default 0) — skip N results for pagination",
                         "tags": "list[str] (optional) — filter by collection tags",
                         "category": "str (optional) — filter by document category",
                         "use_hyde": "bool (default false) — HyDE query expansion",
@@ -265,6 +266,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         """Semantic search over the knowledge base with optional HyDE and tag filtering."""
         query = request_body.query
         k = request_body.k
+        offset = request_body.offset
         use_hyde = request_body.use_hyde
         tags = request_body.tags
 
@@ -311,15 +313,23 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
             query_vector = embedder.embed_query(search_text)
             child_table = db.open_table("child_chunks")
-            search_op = child_table.search(query_vector).limit(k)
+
+            # Fetch enough results to support pagination
+            fetch_count = offset + k + 1  # +1 to detect has_more
+            search_op = child_table.search(query_vector).limit(fetch_count)
 
             if tags:
                 search_op = search_op.where(build_tag_clauses(tags))
 
             results_raw = search_op.to_list()
+            total_available = len(results_raw)
+            has_more = total_available > offset + k
+
+            # Slice for pagination
+            paginated = results_raw[offset : offset + k]
 
             results = []
-            for r in results_raw:
+            for r in paginated:
                 raw_tags = r.get("tags", "")
                 result_tags = [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
                 results.append(
@@ -334,7 +344,13 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     )
                 )
 
-            return SearchResponse(results=results, total=len(results), query=query)
+            return SearchResponse(
+                results=results,
+                total=total_available,
+                query=query,
+                offset=offset,
+                has_more=has_more,
+            )
 
         except CoreRagError as e:
             logger.error(f"Search API failed: {e}")

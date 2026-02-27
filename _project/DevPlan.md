@@ -898,13 +898,13 @@ class LearnedRulesManager:
 | 5 | **Document retrieval endpoint** — GET /api/v1/documents/{id} | Medium | **Complete** (Session 21) | — |
 | 6 | **Bulk delete endpoint** — POST /api/v1/documents/bulk-delete | Medium | **Complete** (Session 21) | — |
 | 7 | **Search category filter** — Filter by document category | Medium | **Complete** (Session 21) | — |
-| 8 | **XLSX processor reimplementation** — openpyxl-based spreadsheet support | Low | Deferred | When TJ ingests spreadsheets |
+| 8 | **XLSX processor reimplementation** — openpyxl-based spreadsheet support | Low | **Complete** (Session 24) | — |
 | 9 | **Code chunker reimplementation** — AST-based chunking for Python/JS/TS | Low | Deferred | When TJ ingests source code |
 | 10 | **RBAC wiring** — Wire AccessControl into API routes | Low | Deferred | When multi-user access is needed |
-| 11 | **Episodic memory dashboard** — Dashboard panel for facts/corrections (Phase 6d) | Low | Deferred | When dashboard is actively used for memory review |
-| 12 | **Health check unification** — Consolidate health.py + backup_triggers.py integrity checks | Low | Deferred | During next maintenance session |
-| 13 | **Query analytics dashboard** — Surface search quality metrics in dashboard | Low | Deferred | When search quality monitoring is needed |
-| 14 | **Search pagination** — `offset`/`limit` params on search and stats endpoints | Low | Deferred | When document count exceeds 100+ |
+| 11 | **Episodic memory dashboard** — Add fact, stats, export routes + analytics panel | Low | **Complete** (Session 24) | — |
+| 12 | **Health check unification** — Unified HealthChecker with quick/full modes, wired into server lifespan + CLI | Low | **Complete** (Session 24) | — |
+| 13 | **Query analytics dashboard** — Summary, failed queries, golden suggestions, patterns, feedback routes | Low | **Complete** (Session 24) | — |
+| 14 | **Search pagination** — `offset`/`limit` params on search endpoints | Low | **Complete** (Session 24) | — |
 
 ### Not Building
 

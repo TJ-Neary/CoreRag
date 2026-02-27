@@ -488,6 +488,9 @@ def create_parent_child_tables(db) -> Tuple:
             pa.field("end_char", pa.int64()),
             pa.field("token_count", pa.int32()),
             pa.field("metadata", pa.string()),
+            # Phase 0 additions
+            pa.field("content_hash", pa.string()),
+            pa.field("summary", pa.string()),
         ]
     )
 
@@ -501,6 +504,13 @@ def create_parent_child_tables(db) -> Tuple:
             pa.field("start_char", pa.int64()),
             pa.field("end_char", pa.int64()),
             pa.field("chunk_index", pa.int32()),
+            # Phase 0 additions
+            pa.field("content_hash", pa.string()),
+            pa.field("context_prefix", pa.string()),
+            pa.field("quality_score", pa.float32()),
+            pa.field("source_authority", pa.string()),
+            pa.field("date_extracted", pa.string()),
+            pa.field("date_confidence", pa.float32()),
         ]
     )
 

@@ -40,15 +40,16 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Run integrity checks and auto-backup on startup."""
     if config.BACKUP_INTEGRITY_CHECK:
-        from src.utils.backup_triggers import check_database_integrity
+        from src.maintenance.health_check import HealthChecker
 
-        result = check_database_integrity(config.DB_PATH)
-        for error in result["errors"]:
+        report = HealthChecker(db_path=config.DB_PATH).quick_check()
+        for error in report.errors:
             logger.error("DB integrity: %s", error)
-        for warning in result["warnings"]:
+        for warning in report.warnings:
             logger.warning("DB integrity: %s", warning)
-        if result["table_counts"]:
-            logger.info("DB integrity: table counts %s", result["table_counts"])
+        if report.tables:
+            counts = {t.name: t.rows for t in report.tables}
+            logger.info("DB integrity: table counts %s", counts)
 
     if config.BACKUP_ENABLED:
         from src.utils.backup import BackupManager

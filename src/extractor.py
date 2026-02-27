@@ -13,6 +13,9 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".webp", ".bmp", 
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
+# Spreadsheet extensions
+_SPREADSHEET_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
+
 # Minimum characters from pypdf before we consider a PDF "text-based"
 # Below this threshold, we assume it's scanned and fall back to OCR
 _PDF_TEXT_THRESHOLD = 50
@@ -21,7 +24,8 @@ _PDF_TEXT_THRESHOLD = 50
 def extract_text(file_path: Path) -> str:
     """Extracts text content from supported file types.
 
-    Supports: PDF (text + scanned via OCR), DOCX, TXT, MD, LOG, CSV, JSON, YAML,
+    Supports: PDF (text + scanned via OCR), DOCX, XLSX/XLS/XLSM (openpyxl),
+    TXT, MD, LOG, CSV, JSON, YAML,
     image files (PNG, JPG, JPEG, TIFF, WebP, BMP, HEIC) via Apple Vision OCR,
     audio files (MP3, WAV, M4A, FLAC, OGG, AAC) via Whisper transcription,
     and video files (MP4, MOV, AVI, MKV, WebM) via scene detection + transcription.
@@ -33,6 +37,8 @@ def extract_text(file_path: Path) -> str:
             return _extract_pdf(file_path)
         elif ext == ".docx":
             return _extract_docx(file_path)
+        elif ext in _SPREADSHEET_EXTENSIONS:
+            return _extract_xlsx(file_path)
         elif ext in _IMAGE_EXTENSIONS:
             return _extract_image_ocr(file_path)
         elif ext in _AUDIO_EXTENSIONS:
@@ -46,6 +52,55 @@ def extract_text(file_path: Path) -> str:
             return ""
     except Exception as e:
         logger.error(f"Error extracting text from {file_path.name}: {e}")
+        return ""
+
+
+def _extract_xlsx(path: Path) -> str:
+    """Extract text from Excel spreadsheet using openpyxl."""
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        parts = []
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c) if c is not None else "" for c in row]
+                if any(cells):
+                    rows.append(cells)
+
+            if not rows:
+                continue
+
+            sheet_text = f"## {sheet_name}\n\n"
+
+            # First row as header, rest as table rows
+            if len(rows) >= 2:
+                header = rows[0]
+                sheet_text += "| " + " | ".join(header) + " |\n"
+                sheet_text += "| " + " | ".join("---" for _ in header) + " |\n"
+                for row in rows[1:]:
+                    # Pad or trim row to match header length
+                    padded = row + [""] * (len(header) - len(row))
+                    sheet_text += "| " + " | ".join(padded[: len(header)]) + " |\n"
+            else:
+                sheet_text += " | ".join(rows[0]) + "\n"
+
+            parts.append(sheet_text)
+
+        wb.close()
+
+        text = "\n\n".join(parts)
+        logger.info(f"XLSX extracted {len(parts)} sheets, {len(text)} chars from {path.name}")
+        return text
+
+    except ImportError:
+        logger.warning(f"openpyxl not installed, cannot extract {path.name}")
+        return ""
+    except Exception as e:
+        logger.error(f"XLSX extraction failed for {path.name}: {e}")
         return ""
 
 

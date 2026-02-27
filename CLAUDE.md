@@ -123,6 +123,13 @@ python scripts/backfill_knowledge_graph.py --llm      # LLM extraction (better)
 python scripts/backfill_knowledge_graph.py --llm --clear  # Clear + re-extract
 ```
 
+### Embedding Migration
+```bash
+python scripts/migrate_embeddings.py                  # Re-embed all chunks with current model
+python scripts/migrate_embeddings.py --dry-run        # Preview without changes
+python scripts/migrate_embeddings.py --model BAAI/bge-m3 --batch-size 64
+```
+
 ### Testing
 ```bash
 pytest                                    # All tests with coverage (config in pyproject.toml)
@@ -160,14 +167,45 @@ ruff check src/ tests/
 mypy src/
 ```
 
+## Code Quality Standards
+
+### Pre-commit Hooks
+
+Pre-commit hooks enforce code quality on every commit. If not yet activated:
+
+```bash
+pre-commit install                  # Activate hooks (ruff, mypy --strict, bandit)
+pre-commit run --all-files          # Run all hooks manually
+```
+
+See `.pre-commit-config.yaml` for hook configuration.
+
+### Type Checking & Complexity
+
+```bash
+mypy --strict src/              # Strict type checking (catches AI-generated type errors)
+radon cc src/ -a -nc   # Cyclomatic complexity (flags functions >15)
+```
+
+### AI Code Review
+
+Before accepting non-trivial code changes (>10 lines), review against the checklist in `_project/AI_CODE_REVIEW.md`. Key checks:
+- **Scope**: Does it modify only the files it should?
+- **Dependencies**: New deps pinned with `==` and license-compatible?
+- **Security**: Input validation at boundaries? No `shell=True`, `eval()`, etc.?
+- **Types**: Does it pass `mypy --strict`?
+- **Tests**: Do tests cover actual behavior, not just pass?
+
+
 ## Architecture
 
 ### Two Subsystems
 
 **1. MCP Server + Search Stack** (`src/mcp_server/`, `src/search/`, `src/embeddings/`)
 - FastMCP server exposes tools to Claude Desktop via stdio transport
-- Hybrid search: Vector (all-MiniLM-L6-v2, 384d) + BM25 full-text via LanceDB with RRF fusion
+- Hybrid search: Vector (BGE-M3, 1024d) + BM25 full-text via LanceDB with RRF fusion
 - Cross-encoder reranking (cross-encoder/ms-marco-MiniLM-L-6-v2)
+- Corrective RAG (CRAG): post-retrieval 3-tier relevance filtering (correct/ambiguous/incorrect)
 - HyDE query expansion, multi-query fusion, time-decay scoring
 
 **2. Ingestion + HITL Dashboard** (root-level modules in `src/`)
@@ -175,14 +213,16 @@ mypy src/
 - `batch_processor.py` processes all inbox files as a batch via the dashboard's "Start Analysis" button
 - Two-phase staging: files appear in dashboard as "processing", then update to "pending" when AI finishes
 - `server.py` serves dashboard at `localhost:8000` for reviewing/editing AI proposals
-- `executor.py` handles: PII redaction (if `is_sensitive`), archive originals to `ARCHIVE_PATH/{target_folder}`, export redacted markdown to `VAULT_PATH/Ingested/`, index into RAG (LanceDB)
+- `executor.py` handles: PII redaction (if `is_sensitive`), archive originals to `ARCHIVE_PATH/{target_folder}`, export redacted markdown to `VAULT_PATH/Ingested/`, enhanced RAG indexing (content hash dedup, contextual retrieval, chunk quality scoring, source authority, date extraction, parent summaries)
 - Config loaded via `src/config.py` (uses `python-dotenv`, reads `.env`)
 
 ### Intelligence Provider
 
-`src/intelligence.py` auto-selects provider (all methods are async, using httpx):
-- **Ollama** (default): uses `qwen2.5:32b` locally at `localhost:11434`. Set `OLLAMA_MODEL` env var to change.
-- **Gemini**: used if `GOOGLE_API_KEY` is set. Faster but sends document text to Google (PII concern).
+`src/llm/provider.py` provides a unified async LLM interface. Set `CORERAG_LLM_PROVIDER` in `.env`:
+- **Ollama** (default): uses `qwen2.5:32b` locally at `localhost:11434`. Fully private.
+- **Claude CLI** (`claude-cli`): uses Claude Code CLI subprocess (`claude -p`). No API key — uses authenticated CLI session (Pro Max plan). Best quality for classification.
+- **Gemini**: used if `GOOGLE_API_KEY` is set. Fast but sends text to Google.
+- **Anthropic API** (`anthropic`): direct API calls. Requires `ANTHROPIC_API_KEY`.
 
 The LLM analyzes each document and returns: category, year, type, summary, suggested filename, `pii_observations` (advisory text, not a flag), and full redacted text. The `is_sensitive` boolean is set by Presidio + custom dictionary scan in `processor.py`, not by the LLM.
 
@@ -216,7 +256,14 @@ watchdog.py / batch_processor.py
   → executor.py
     → archiver.py (move original to ARCHIVE_PATH/{target_folder})
     → exporter.py (write redacted markdown to VAULT_PATH/Ingested/)
-    → RAG indexing (parent-child chunks into LanceDB)
+    → RAG indexing (parent-child chunks into LanceDB):
+      → Content hash dedup (skip unchanged chunks)
+      → Source authority classification
+      → Chunk quality scoring (heuristic 0.0-1.0)
+      → Date extraction with confidence
+      → Contextual Retrieval (LLM-generated context prefix)
+      → Embedding (context + chunk text via BGE-M3)
+      → Parent summaries (LLM multi-resolution)
 ```
 
 All pipeline modules live at `src/` root level (not inside subdirectories).
@@ -226,16 +273,16 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 | Directory | Purpose | Status |
 |-----------|---------|--------|
 | `src/mcp_server/` | FastMCP server + tool definitions for Claude Desktop | **Wired** |
-| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring, conversational search | **Wired** |
-| `src/embeddings/` | all-MiniLM-L6-v2 with caching, MPS-optimized | **Wired** |
+| `src/search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring, conversational search, Corrective RAG | **Wired** |
+| `src/embeddings/` | BGE-M3 (1024d) with caching, MPS-optimized, query instruction prefix | **Wired** |
 | `src/ingestion/` | ~~File processing pipeline orchestrator~~ | **Deleted** (orphaned scaffold) |
 | `src/storage/` | ~~LanceDB vector store wrapper~~ | **Deleted** (orphaned scaffold) |
-| `src/chunking/` | Parent-child hierarchical chunking | **Wired** (via executor) |
-| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection, golden set manager | **Wired** (MCP tools + ingestion pipeline) |
-| `src/classification/` | Keyword + embedding-based auto-tagging, learned rules from corrections | **Wired** (via processor) |
+| `src/chunking/` | Parent-child hierarchical chunking, contextual retrieval (context_generator), multi-resolution summaries (summarizer) | **Wired** (via executor) |
+| `src/quality/` | Duplicate detection, link checker, freshness, conflict detection, golden set, chunk scorer, date extractor, RAGAS evaluator | **Wired** (MCP tools + ingestion pipeline) |
+| `src/classification/` | Keyword + embedding-based auto-tagging, learned rules, source authority classification | **Wired** (via processor + executor) |
 | `src/analytics/` | Query tracking + semantic cache | **Wired** (initialized in MCP server) |
 | `src/obsidian/` | Markdown export to Obsidian vault with backlinks | **Deleted** (orphaned — `exporter.py` handles export directly) |
-| `src/graph/` | GraphRAG entity-based knowledge graph (SQLite) | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
+| `src/graph/` | GraphRAG entity-based knowledge graph (SQLite), bitemporal tracking, confidence decay, supersession | **Wired** (entity extraction in executor, search_by_entity MCP tool) |
 | `src/memory/` | Episodic memory for user context / search patterns | **Wired** (get_user_context, add_user_fact MCP tools) |
 | `src/maintenance/` | LanceDB optimizer, health reports, maintenance scheduler | **Wired** (MCP tools) |
 | `src/ocr/` | macOS Vision.framework text extraction | **Wired** (via extractor fallback) |
@@ -252,8 +299,9 @@ All pipeline modules live at `src/` root level (not inside subdirectories).
 
 Core models in `src/models/` and defined in `architecture/data_schema.md`:
 - **Document**: Source file with metadata, privacy tier (public/private/sensitive), processing status
-- **Chunk**: Text segment with 384d embedding vector (all-MiniLM-L6-v2), parent-child hierarchy, tags
-- **SearchResult**: Scored result with context snippets
+- **Chunk**: Text segment with 1024d embedding vector (BGE-M3), parent-child hierarchy, tags, content_hash, context_prefix, quality_score, source_authority, date_extracted
+- **Parent Chunk**: Includes content_hash and LLM-generated summary
+- **SearchResult**: Scored result with context snippets, CRAG relevance tier
 
 ### Collection Tags
 
@@ -283,13 +331,16 @@ GOOGLE_API_KEY=...                        # Optional: Gemini API (omit to use lo
 OLLAMA_HOST=http://localhost:11434        # Ollama endpoint (default)
 OLLAMA_MODEL=qwen2.5:32b                 # Ollama model for analysis (default)
 CORERAG_DB_PATH=~/.corerag/lancedb               # LanceDB vector database path
-CORERAG_EMBEDDING_MODEL=all-MiniLM-L6-v2     # Embedding model (default)
+CORERAG_EMBEDDING_MODEL=BAAI/bge-m3          # Embedding model (1024d, default)
 CORERAG_RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # Reranker model (default)
 CORERAG_API_KEY=...                       # Optional: API key for /api/v1/* endpoints (omit for open access)
 CORERAG_BACKUP_ENABLED=true               # Enable auto-backup on startup and pre-commit (default: true)
 CORERAG_BACKUP_STARTUP_COOLDOWN=24        # Hours between startup backups (default: 24)
 CORERAG_BACKUP_COMMIT_COOLDOWN=1          # Hours between pre-commit backups (default: 1)
 CORERAG_BACKUP_MAX_COUNT=10               # Maximum backups to retain (default: 10)
+CORERAG_CONTEXT_GENERATION=true           # Enable LLM contextual retrieval (default: true)
+CORERAG_CHUNK_QUALITY_THRESHOLD=0.3       # Min quality score to index chunks (default: 0.3)
+CORERAG_CORRECTIVE_RAG=true               # Enable post-retrieval CRAG filtering (default: true)
 ```
 
 ### Claude Desktop MCP Setup
@@ -331,8 +382,8 @@ The MCP server uses **stdio transport** (not HTTP). It initializes: LanceDB conn
 
 ## File Type Support
 
-**Currently working**: PDF (with OCR fallback for scanned docs), DOCX, TXT, Markdown, JSON, YAML, CSV, log files, PNG/JPG/WebP/HEIC (Vision.framework OCR + VLM captioning), MP3/WAV/M4A (mlx-whisper transcription), MP4/MOV (keyframe + scene detection + audio extraction).
-**Not yet supported**: XLSX/XLS (spreadsheet processor deleted — needs reimplementation), Python/JS/TS/Go/Rust (code chunker deleted — needs reimplementation).
+**Currently working**: PDF (with OCR fallback for scanned docs), DOCX, TXT, Markdown, JSON, YAML, CSV, XLSX/XLS/XLSM (via openpyxl), log files, PNG/JPG/WebP/HEIC (Vision.framework OCR + VLM captioning), MP3/WAV/M4A (mlx-whisper transcription), MP4/MOV (keyframe + scene detection + audio extraction).
+**Not yet supported**: Python/JS/TS/Go/Rust (code chunker deleted — needs reimplementation).
 
 ## Wiring Plan
 
@@ -370,4 +421,4 @@ All 12 phases are **complete**. No remaining wiring work.
 
 **High memory usage**: The batch processor pauses at 92% RAM and resumes at 88%. SafeProcessor pauses background work at 75%. If the system is consistently hitting these thresholds, reduce `EMBEDDING_BATCH_SIZE` in `src/config.py` (default 32) or process fewer files per batch.
 
-**Embedding model mismatch**: If you change `CORERAG_EMBEDDING_MODEL`, you must re-index all documents — existing vectors will have incompatible dimensions. The default model (`all-MiniLM-L6-v2`) produces 384-dimensional vectors. Check `EMBEDDING_DIMENSIONS` in `src/config.py` matches your model.
+**Embedding model mismatch**: If you change `CORERAG_EMBEDDING_MODEL`, you must re-index all documents — existing vectors will have incompatible dimensions. The default model (`BAAI/bge-m3`) produces 1024-dimensional vectors. Use `scripts/migrate_embeddings.py` for model migrations. `EMBEDDING_DIMENSIONS` in `src/config.py` is derived automatically from `EMBEDDING_DIMENSIONS_MAP`.

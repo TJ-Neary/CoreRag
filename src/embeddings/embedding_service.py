@@ -195,11 +195,18 @@ class EmbeddingService:
         "all-mpnet-base-v2": 768,
         "multi-qa-mpnet-base-dot-v1": 768,
         "paraphrase-multilingual-MiniLM-L12-v2": 384,
+        "BAAI/bge-m3": 1024,
     }
 
     # Model name aliases for backwards compatibility
     MODEL_ALIASES = {
         "nomic-embed-text-v1.5": "nomic-ai/nomic-embed-text-v1.5",
+        "bge-m3": "BAAI/bge-m3",
+    }
+
+    # Models that need a query instruction prefix for asymmetric search
+    QUERY_INSTRUCTION_MODELS = {
+        "BAAI/bge-m3": "Represent this sentence for searching relevant passages: ",
     }
 
     def __init__(
@@ -308,7 +315,7 @@ class EmbeddingService:
             with self._lock:
                 self._stats.total_requests += 1
 
-            if self.cache_enabled and self._cache:
+            if self.cache_enabled and self._cache is not None:
                 cached = self._cache.get(text, self.model_name)
                 if cached is not None:
                     with self._lock:
@@ -350,7 +357,7 @@ class EmbeddingService:
                 embedding_list = embedding.tolist()
 
                 # Cache the result
-                if self.cache_enabled and self._cache:
+                if self.cache_enabled and self._cache is not None:
                     self._cache.put(text, self.model_name, embedding_list)
 
                 result = EmbeddingResult(
@@ -370,9 +377,13 @@ class EmbeddingService:
         """
         Embed a search query.
 
-        Convenience method that returns just the embedding vector.
+        Applies model-specific query instruction prefix (e.g., BGE-M3 needs
+        a prefix for asymmetric retrieval). Document embedding does NOT get
+        the prefix — only queries.
         """
-        result = self.embed(query)
+        prefix = self.QUERY_INSTRUCTION_MODELS.get(self.model_name, "")
+        text = prefix + query if prefix else query
+        result = self.embed(text)
         return result.embedding
 
     def embed_documents(

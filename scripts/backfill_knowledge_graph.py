@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import asyncio
-import hashlib
 import logging
 import os
 import sys
@@ -22,7 +21,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.graph.knowledge_graph import KnowledgeGraph, EntityExtractor
+from src.graph.knowledge_graph import EntityExtractor, KnowledgeGraph
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,12 +34,16 @@ def main():
     import lancedb
 
     parser = argparse.ArgumentParser(description="Backfill knowledge graph from LanceDB")
-    parser.add_argument("--llm", action="store_true", help="Use Ollama LLM for extraction (slower but better)")
+    parser.add_argument(
+        "--llm", action="store_true", help="Use Ollama LLM for extraction (slower but better)"
+    )
     parser.add_argument("--clear", action="store_true", help="Clear existing graph before backfill")
     args = parser.parse_args()
 
     db_path = os.getenv("CORERAG_DB_PATH", str(Path.home() / ".corerag" / "lancedb"))
-    graph_db_path = Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+    graph_db_path = (
+        Path(os.getenv("CoreRag_STATE_DIR", str(Path.home() / ".corerag"))) / "knowledge_graph.db"
+    )
 
     logger.info(f"Connecting to LanceDB at {db_path}")
     db = lancedb.connect(db_path)
@@ -58,6 +61,7 @@ def main():
     # Optionally clear existing graph
     if args.clear:
         import sqlite3
+
         conn = sqlite3.connect(graph_db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM entities")
@@ -71,6 +75,7 @@ def main():
     if args.llm:
         try:
             from src.utils.ollama_llm import OllamaLLM
+
             llm = OllamaLLM()
             logger.info(f"Using OllamaLLM ({llm.model}) for entity extraction")
         except Exception as e:

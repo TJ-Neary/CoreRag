@@ -79,6 +79,8 @@ coverage.xml
 .env.local
 .env.*.local
 *.pem
+config.yaml
+*.db
 *.key
 secrets.json
 credentials.json

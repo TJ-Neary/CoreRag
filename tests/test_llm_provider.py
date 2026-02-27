@@ -1,5 +1,6 @@
 """Tests for LLM Provider abstraction."""
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,7 @@ import pytest
 from src.exceptions import ProcessingError
 from src.llm.provider import (
     AnthropicProvider,
+    ClaudeCliProvider,
     GeminiProvider,
     LLMConfig,
     OllamaProvider,
@@ -127,6 +129,124 @@ class TestAnthropicProvider:
         assert result == "Claude response"
 
 
+# ── ClaudeCliProvider Tests ─────────────────────────────────────────────────
+
+
+class TestClaudeCliProvider:
+    @pytest.fixture
+    def config(self):
+        return LLMConfig(provider="claude-cli", model="sonnet", timeout=60.0)
+
+    def test_model_map_resolves_short_names(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+            assert provider._cli_model == "sonnet"
+
+    def test_model_map_resolves_full_ids(self):
+        config = LLMConfig(provider="claude-cli", model="claude-opus-4-6")
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+            assert provider._cli_model == "opus"
+
+    def test_raises_if_cli_not_found(self, config):
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=False):
+                with pytest.raises(ProcessingError, match="Claude CLI not found"):
+                    ClaudeCliProvider(config)
+
+    async def test_generate_parses_json_result(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        cli_response = json.dumps(
+            {
+                "result": '{"category": "Fitness", "summary": "A workout plan"}',
+                "total_cost_usd": 0.003,
+                "session_id": "abc123",
+            }
+        )
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            result = await provider.generate("", "Analyze this document")
+
+        assert "category" in result
+        assert "Fitness" in result
+        assert provider.last_cost_usd == 0.003
+
+    async def test_generate_raises_on_cli_error(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"Authentication failed", 1)
+            with pytest.raises(ProcessingError, match="Claude CLI failed"):
+                await provider.generate("", "test")
+
+    async def test_generate_raises_on_empty_output(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"", 0)
+            with pytest.raises(ProcessingError, match="empty output"):
+                await provider.generate("", "test")
+
+    async def test_generate_handles_is_error_flag(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        cli_response = json.dumps({"is_error": True, "result": "Rate limited"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            with pytest.raises(ProcessingError, match="Rate limited"):
+                await provider.generate("", "test")
+
+    async def test_generate_handles_plain_text_fallback(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"Just plain text response", b"", 0)
+            result = await provider.generate("", "test")
+
+        assert result == "Just plain text response"
+
+    async def test_generate_passes_system_prompt(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("Be a classifier", "doc text")
+
+            args = mock_run.call_args[0][0]
+            assert "--system-prompt" in args
+            idx = args.index("--system-prompt")
+            assert args[idx + 1] == "Be a classifier"
+
+    async def test_generate_skips_empty_system_prompt(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("", "doc text")
+
+            args = mock_run.call_args[0][0]
+            assert "--system-prompt" not in args
+
+    def test_env_removes_claudecode(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = ClaudeCliProvider(config)
+
+        with patch.dict(os.environ, {"CLAUDECODE": "1"}):
+            env = provider._build_env()
+            assert "CLAUDECODE" not in env
+
+
 # ── Factory Tests ─────────────────────────────────────────────────────────────
 
 
@@ -147,6 +267,12 @@ class TestCreateProvider:
             provider="anthropic", model="claude-sonnet-4-20250514", api_key="fake-key"
         )
         assert provider.provider_name == "anthropic"
+
+    def test_explicit_claude_cli(self):
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            provider = create_llm_provider(provider="claude-cli", model="opus")
+            assert provider.provider_name == "claude-cli"
+            assert isinstance(provider, ClaudeCliProvider)
 
     def test_unknown_provider_raises(self):
         with pytest.raises(ProcessingError, match="Unknown LLM provider"):

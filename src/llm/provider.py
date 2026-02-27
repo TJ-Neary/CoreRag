@@ -13,6 +13,7 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -33,6 +34,7 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "qwen2.5:32b",
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-sonnet-4-20250514",
+    "claude-cli": "sonnet",
 }
 
 
@@ -160,6 +162,174 @@ class AnthropicProvider(LLMProvider):
         return message.content[0].text  # type: ignore[union-attr]
 
 
+class ClaudeCliProvider(LLMProvider):
+    """Claude CLI subprocess provider.
+
+    Uses `claude -p --output-format json` to run inference through the
+    authenticated Claude Code CLI. No API key required — uses the active
+    CLI session (Pro Max plan).
+
+    Based on the proven pattern from Kendra (core/claude_bridge.py) and
+    ResumePRO (src/resumepro/llm/claude_bridge.py).
+    """
+
+    # Map full model IDs to CLI short names
+    _MODEL_MAP: dict[str, str] = {
+        "claude-sonnet-4-20250514": "sonnet",
+        "claude-sonnet-4-6": "sonnet",
+        "claude-opus-4-6": "opus",
+        "claude-haiku-4-5-20251001": "haiku",
+        "sonnet": "sonnet",
+        "opus": "opus",
+        "haiku": "haiku",
+    }
+
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        import shutil
+
+        self._cli_path = shutil.which("claude")
+        if not self._cli_path:
+            # Fallback to known location
+            fallback = os.path.expanduser("~/.local/bin/claude")
+            if os.path.isfile(fallback):
+                self._cli_path = fallback
+            else:
+                raise ProcessingError(
+                    "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
+                )
+
+        self._cli_model = self._MODEL_MAP.get(config.model, config.model)
+        self._last_cost_usd: float = 0.0
+        logger.info(f"Claude CLI provider initialized: model={self._cli_model}")
+
+    def _build_env(self) -> dict[str, str]:
+        """Build subprocess environment, removing CLAUDECODE to allow nesting."""
+        env = os.environ.copy()
+        env.pop("CLAUDECODE", None)
+        return env
+
+    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        """Generate text via Claude CLI subprocess.
+
+        Args:
+            system_prompt: System instructions (passed via --system-prompt)
+            user_prompt: User message (passed via stdin)
+
+        Returns:
+            Generated text response
+
+        Raises:
+            ProcessingError: If CLI call fails
+        """
+        args = [
+            self._cli_path,
+            "-p",
+            "--output-format",
+            "json",
+            "--model",
+            self._cli_model,
+            "--max-turns",
+            "1",
+            "--no-session-persistence",
+            "--tools",
+            "",  # No tool use for batch processing
+        ]
+
+        if system_prompt:
+            args.extend(["--system-prompt", system_prompt])
+
+        try:
+            stdout, stderr, returncode = await self._run_process(
+                args, user_prompt.encode(), timeout=self.config.timeout
+            )
+
+            if returncode != 0:
+                error = stderr.decode().strip() if stderr else "Unknown error"
+                logger.error(f"Claude CLI exited with code {returncode}: {error}")
+                raise ProcessingError(f"Claude CLI failed: {error}")
+
+            output = stdout.decode().strip()
+            if not output:
+                raise ProcessingError("Claude CLI returned empty output")
+
+            try:
+                data = json.loads(output)
+            except json.JSONDecodeError:
+                # Treat non-JSON output as plain text
+                return output
+
+            self._last_cost_usd = data.get("total_cost_usd", 0.0)
+
+            if data.get("is_error"):
+                error_msg = data.get("result", "Unknown error")
+                raise ProcessingError(f"Claude CLI error: {error_msg}")
+
+            result = data.get("result", "").strip()
+            if not result:
+                # Some CLI versions use different keys
+                result = data.get("text", data.get("content", "")).strip()
+
+            return result
+
+        except ProcessingError:
+            raise
+        except TimeoutError:
+            raise ProcessingError(f"Claude CLI timed out after {self.config.timeout}s")
+        except Exception as e:
+            raise ProcessingError(f"Claude CLI error: {e}") from e
+
+    async def _run_process(
+        self,
+        args: list[str],
+        input_data: bytes,
+        timeout: float,
+    ) -> tuple[bytes, bytes, int]:
+        """Run subprocess with Python 3.13 event loop compatibility.
+
+        Falls back to subprocess.run() in a thread when asyncio subprocess
+        creation raises NotImplementedError.
+        """
+        import subprocess as sp
+
+        env = self._build_env()
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input_data), timeout=timeout
+            )
+            return stdout or b"", stderr or b"", process.returncode or 0
+
+        except NotImplementedError:
+            # Python 3.13+ fallback: child watchers removed
+            def _run() -> tuple[bytes, bytes, int]:
+                try:
+                    result = sp.run(
+                        args,
+                        input=input_data,
+                        capture_output=True,
+                        env=env,
+                        timeout=timeout,
+                    )
+                    return result.stdout or b"", result.stderr or b"", result.returncode
+                except sp.TimeoutExpired as exc:
+                    raise TimeoutError(str(exc)) from exc
+
+            return await asyncio.to_thread(_run)
+
+    @property
+    def last_cost_usd(self) -> float:
+        """Cost of the last CLI call."""
+        return self._last_cost_usd
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
@@ -171,7 +341,7 @@ def create_llm_provider(
     """Factory function to create an LLM provider.
 
     Args:
-        provider: Provider name ("ollama", "gemini", "anthropic").
+        provider: Provider name ("ollama", "gemini", "anthropic", "claude-cli").
                   Defaults to CORERAG_LLM_PROVIDER env var, then auto-detection.
         model: Model name. Defaults to CORERAG_LLM_MODEL env var,
                then provider-specific default.
@@ -218,6 +388,9 @@ def create_llm_provider(
         if not api_key:
             raise ProcessingError("ANTHROPIC_API_KEY required for Anthropic provider")
         return AnthropicProvider(config, api_key=api_key)
+
+    elif provider == "claude-cli":
+        return ClaudeCliProvider(config)
 
     else:
         raise ProcessingError(f"Unknown LLM provider: {provider}")

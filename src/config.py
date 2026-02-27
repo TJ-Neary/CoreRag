@@ -66,8 +66,19 @@ LOG_DIR = STATE_DIR / "logs"
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
-EMBEDDING_MODEL = os.getenv("CORERAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-EMBEDDING_DIMENSIONS = 384  # Matches all-MiniLM-L6-v2 output
+EMBEDDING_MODEL = os.getenv("CORERAG_EMBEDDING_MODEL", "BAAI/bge-m3")
+
+# Model → dimension mapping for supported embedding models
+EMBEDDING_DIMENSIONS_MAP: dict[str, int] = {
+    "all-MiniLM-L6-v2": 384,
+    "all-mpnet-base-v2": 768,
+    "multi-qa-mpnet-base-dot-v1": 768,
+    "paraphrase-multilingual-MiniLM-L12-v2": 384,
+    "nomic-ai/nomic-embed-text-v1.5": 768,
+    "BAAI/bge-m3": 1024,
+}
+
+EMBEDDING_DIMENSIONS = EMBEDDING_DIMENSIONS_MAP.get(EMBEDDING_MODEL, 384)
 EMBEDDING_BATCH_SIZE = 32  # Tuned for M4 Max 48GB
 RERANKER_MODEL = os.getenv("CORERAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 RERANKER_BATCH_SIZE = 32
@@ -78,6 +89,13 @@ PII_MIN_CONFIDENCE = 0.70  # Minimum confidence for PII detection match
 PII_SAMPLE_MAX_CHARS = 20000  # Max chars to scan for PII (performance)
 PII_CONTEXT_TRUNCATE = 80  # Truncate PII context snippets for display
 SEMANTIC_CACHE_THRESHOLD = 0.92  # Similarity threshold for search cache hits
+
+# ── Retrieval Enhancement ───────────────────────────────────────────────────
+
+CONTEXT_GENERATION = os.getenv("CORERAG_CONTEXT_GENERATION", "true").lower() == "true"
+CHUNK_QUALITY_THRESHOLD = float(os.getenv("CORERAG_CHUNK_QUALITY_THRESHOLD", "0.3"))
+SOURCE_AUTHORITY_DEFAULT = os.getenv("CORERAG_SOURCE_AUTHORITY_DEFAULT", "unknown")
+CORRECTIVE_RAG_ENABLED = os.getenv("CORERAG_CORRECTIVE_RAG", "true").lower() == "true"
 
 # ── Memory Safety ────────────────────────────────────────────────────────────
 

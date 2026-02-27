@@ -585,6 +585,47 @@ def cmd_pii(args: argparse.Namespace) -> int:
 def cmd_health(args: argparse.Namespace) -> int:
     """Run system health checks."""
     try:
+        # Database-only mode uses the unified health checker
+        if args.db:
+            from src.maintenance.health_check import HealthChecker as DBHealthChecker
+
+            print_header("CoreRag Database Health")
+
+            checker = DBHealthChecker()
+            report = checker.full_report() if args.full else checker.quick_check()
+
+            status_colors = {
+                "healthy": Colors.GREEN,
+                "degraded": Colors.YELLOW,
+                "critical": Colors.RED,
+            }
+            c = status_colors.get(report.status, Colors.DIM)
+            print(f"\nStatus: {color(report.status.upper(), c)}")
+            print(f"Database: {report.db_path}")
+
+            if report.total_size_mb > 0:
+                print(f"Total size: {report.total_size_mb:.1f} MB")
+
+            if report.tables:
+                print("\nTables:")
+                for t in report.tables:
+                    parts = [f"{t.rows} rows"]
+                    if t.size_mb > 0:
+                        parts.append(f"{t.size_mb:.1f} MB")
+                    if t.fragmentation > 0:
+                        parts.append(f"{t.fragmentation:.0%} fragmentation")
+                    print(f"  {color(t.name, Colors.BOLD)}: {', '.join(parts)}")
+
+            for error in report.errors:
+                print(f"\n  {color('ERROR', Colors.RED)}: {error}")
+            for warning in report.warnings:
+                print(f"\n  {color('WARN', Colors.YELLOW)}: {warning}")
+            for rec in report.recommendations:
+                print(f"\n  {color('REC', Colors.BLUE)}: {rec}")
+
+            return 0
+
+        # Full system health check
         from src.utils.health import HealthChecker
 
         print_header("CoreRag Health Check")
@@ -1033,6 +1074,12 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Health check command
     health_parser = subparsers.add_parser("health", help="Run system health checks")
+    health_parser.add_argument(
+        "--db", action="store_true", help="Database-only health check (quick or full)"
+    )
+    health_parser.add_argument(
+        "--full", action="store_true", help="Full report with performance analysis (use with --db)"
+    )
     health_parser.set_defaults(func=cmd_health)
 
     # Optimize database command

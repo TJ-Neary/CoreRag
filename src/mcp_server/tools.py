@@ -215,6 +215,26 @@ class CoreRagTools:
         if final_dicts:
             final_dicts = apply_decay_to_results(final_dicts)
 
+        # Corrective RAG — post-retrieval relevance filtering
+        crag_info = None
+        try:
+            from src.config import CORRECTIVE_RAG_ENABLED
+
+            if CORRECTIVE_RAG_ENABLED and final_dicts:
+                from src.search.corrective_rag import CorrectiveRAG
+
+                crag = CorrectiveRAG()
+                crag_result = crag.filter_results(query, final_dicts)
+                final_dicts = crag_result.results
+                crag_info = {
+                    "correct": crag_result.correct_count,
+                    "ambiguous": crag_result.ambiguous_count,
+                    "filtered": crag_result.incorrect_count,
+                    "all_filtered": crag_result.all_filtered,
+                }
+        except Exception as e:
+            logger.debug(f"CRAG filtering skipped: {e}")
+
         # Format results
         results = self._format_results(final_dicts)
 
@@ -243,6 +263,8 @@ class CoreRagTools:
                 "rerank_applied": use_reranker and self.reranker is not None,
                 "hyde_applied": use_hyde and self._hyde_expander is not None,
                 "hyde_document": hyde_doc[:200] if hyde_doc else None,
+                "crag_applied": crag_info is not None,
+                "crag_info": crag_info,
                 "decay_applied": True,
                 "parent_ids": [c.get("parent_id", c.get("id", "")) for c in candidates[:10]],
                 "query_embedding_sample": list(query_vector[:10]),

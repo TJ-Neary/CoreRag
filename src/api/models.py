@@ -15,7 +15,8 @@ class SearchRequest(BaseModel):
     """Request body for semantic search."""
 
     query: str = Field(..., min_length=1, max_length=5000, description="Search query text")
-    k: int = Field(default=5, ge=1, le=100, description="Number of results to return")
+    k: int = Field(default=5, ge=1, le=100, description="Number of results per page")
+    offset: int = Field(default=0, ge=0, description="Number of results to skip (pagination)")
     use_hyde: bool = Field(
         default=False, description="Enable HyDE (Hypothetical Document Embedding) expansion"
     )
@@ -27,6 +28,7 @@ class SearchRequest(BaseModel):
             "example": {
                 "query": "authentication setup guide",
                 "k": 5,
+                "offset": 0,
                 "use_hyde": False,
                 "tags": ["sphr-study"],
             }
@@ -49,8 +51,10 @@ class SearchResponse(BaseModel):
     """Response from semantic search."""
 
     results: List[SearchResultItem] = Field(description="Search results")
-    total: int = Field(description="Total number of results returned")
+    total: int = Field(description="Total results available (before pagination)")
     query: str = Field(description="Original query string")
+    offset: int = Field(default=0, description="Offset used for this page")
+    has_more: bool = Field(default=False, description="Whether more results exist beyond this page")
     error: Optional[str] = Field(default=None, description="Error message if search failed")
 
 

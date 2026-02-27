@@ -13,8 +13,10 @@ from src.extractor import (
     _AUDIO_EXTENSIONS,
     _IMAGE_EXTENSIONS,
     _PDF_TEXT_THRESHOLD,
+    _SPREADSHEET_EXTENSIONS,
     _VIDEO_EXTENSIONS,
     _extract_pdf,
+    _extract_xlsx,
     extract_text,
 )
 
@@ -226,6 +228,109 @@ class TestVideoExtraction:
                 mock_video.assert_called_once()
             finally:
                 os.unlink(f.name)
+
+
+class TestXLSXExtraction:
+    """Tests for XLSX spreadsheet extraction."""
+
+    def test_spreadsheet_extensions_defined(self):
+        """Test that expected spreadsheet extensions are configured."""
+        expected = {".xlsx", ".xls", ".xlsm"}
+        assert expected == _SPREADSHEET_EXTENSIONS
+
+    def test_extract_xlsx_basic(self, tmp_path):
+        """Test extraction from a basic XLSX file."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Data"
+        ws.append(["Name", "Age", "City"])
+        ws.append(["Alice", 30, "Springfield"])
+        ws.append(["Bob", 25, "Shelbyville"])
+        xlsx_path = tmp_path / "test.xlsx"
+        wb.save(xlsx_path)
+
+        result = _extract_xlsx(xlsx_path)
+
+        assert "## Data" in result
+        assert "Alice" in result
+        assert "Bob" in result
+        assert "Springfield" in result
+
+    def test_extract_xlsx_multiple_sheets(self, tmp_path):
+        """Test extraction from XLSX with multiple sheets."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "Sheet1"
+        ws1.append(["Header1", "Header2"])
+        ws1.append(["A", "B"])
+
+        ws2 = wb.create_sheet("Sheet2")
+        ws2.append(["Col1", "Col2"])
+        ws2.append(["X", "Y"])
+
+        xlsx_path = tmp_path / "multi.xlsx"
+        wb.save(xlsx_path)
+
+        result = _extract_xlsx(xlsx_path)
+
+        assert "## Sheet1" in result
+        assert "## Sheet2" in result
+        assert "Header1" in result
+        assert "Col1" in result
+
+    def test_extract_xlsx_empty_sheet(self, tmp_path):
+        """Test extraction skips empty sheets."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "HasData"
+        ws1.append(["Data", "Here"])
+
+        wb.create_sheet("Empty")
+
+        xlsx_path = tmp_path / "empty_sheet.xlsx"
+        wb.save(xlsx_path)
+
+        result = _extract_xlsx(xlsx_path)
+
+        assert "## HasData" in result
+        assert "## Empty" not in result
+
+    def test_extract_xlsx_via_dispatch(self, tmp_path):
+        """Test that .xlsx files are routed through extract_text dispatcher."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["Test", "Content"])
+        xlsx_path = tmp_path / "dispatch.xlsx"
+        wb.save(xlsx_path)
+
+        result = extract_text(xlsx_path)
+
+        assert "Test" in result
+        assert "Content" in result
+
+    def test_extract_xlsx_with_none_cells(self, tmp_path):
+        """Test extraction handles None cells gracefully."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["A", None, "C"])
+        ws.append([None, "B", None])
+        xlsx_path = tmp_path / "nulls.xlsx"
+        wb.save(xlsx_path)
+
+        result = _extract_xlsx(xlsx_path)
+
+        assert "A" in result
+        assert "C" in result
 
 
 class TestConstants:
