@@ -221,7 +221,8 @@ Before accepting non-trivial code changes (>10 lines), review against the checkl
 `src/llm/provider.py` provides a unified async LLM interface. Set `CORERAG_LLM_PROVIDER` in `.env`:
 - **Ollama** (default): uses `qwen2.5:32b` locally at `localhost:11434`. Fully private.
 - **Claude CLI** (`claude-cli`): uses Claude Code CLI subprocess (`claude -p`). No API key — uses authenticated CLI session (Pro Max plan). Best quality for classification.
-- **Gemini**: used if `GOOGLE_API_KEY` is set. Fast but sends text to Google.
+- **Gemini CLI** (`gemini-cli`): uses Gemini CLI subprocess (`gemini -p`). No API key — uses authenticated CLI session. Best for large-context ingestion (1M+ token window).
+- **Gemini API** (`gemini`): used if `GOOGLE_API_KEY` is set. Fast but sends text to Google.
 - **Anthropic API** (`anthropic`): direct API calls. Requires `ANTHROPIC_API_KEY`.
 
 The LLM analyzes each document and returns: category, year, type, summary, suggested filename, `pii_observations` (advisory text, not a flag), and full redacted text. The `is_sensitive` boolean is set by Presidio + custom dictionary scan in `processor.py`, not by the LLM.

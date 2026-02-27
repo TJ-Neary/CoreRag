@@ -10,6 +10,7 @@ from src.exceptions import ProcessingError
 from src.llm.provider import (
     AnthropicProvider,
     ClaudeCliProvider,
+    GeminiCliProvider,
     GeminiProvider,
     LLMConfig,
     OllamaProvider,
@@ -247,6 +248,171 @@ class TestClaudeCliProvider:
             assert "CLAUDECODE" not in env
 
 
+# ── GeminiCliProvider Tests ───────────────────────────────────────────────────
+
+
+class TestGeminiCliProvider:
+    @pytest.fixture
+    def config(self):
+        return LLMConfig(provider="gemini-cli", model="gemini-2.5-pro", timeout=60.0)
+
+    def test_model_map_resolves_known_models(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+            assert provider._cli_model == "gemini-2.5-pro"
+
+    def test_model_map_passes_through_unknown(self):
+        config = LLMConfig(provider="gemini-cli", model="gemini-4-ultra")
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+            assert provider._cli_model == "gemini-4-ultra"
+
+    def test_raises_if_cli_not_found(self, config):
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=False):
+                with pytest.raises(ProcessingError, match="Gemini CLI not found"):
+                    GeminiCliProvider(config)
+
+    def test_fallback_path_if_which_fails(self, config):
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=True):
+                provider = GeminiCliProvider(config)
+                assert "gemini" in provider._cli_path
+
+    async def test_generate_parses_result_key(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"result": '{"category": "Work"}'})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            result = await provider.generate("", "Analyze this document")
+
+        assert "category" in result
+        assert "Work" in result
+
+    async def test_generate_parses_text_key(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"text": "The answer is 42"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            result = await provider.generate("", "test")
+
+        assert result == "The answer is 42"
+
+    async def test_generate_parses_response_key(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"response": "Generated text here"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            result = await provider.generate("", "test")
+
+        assert result == "Generated text here"
+
+    async def test_generate_raises_on_cli_error(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"Authentication failed", 1)
+            with pytest.raises(ProcessingError, match="Gemini CLI failed"):
+                await provider.generate("", "test")
+
+    async def test_generate_raises_on_empty_output(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"", 0)
+            with pytest.raises(ProcessingError, match="empty output"):
+                await provider.generate("", "test")
+
+    async def test_generate_handles_plain_text_fallback(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"Just plain text response", b"", 0)
+            result = await provider.generate("", "test")
+
+        assert result == "Just plain text response"
+
+    async def test_generate_folds_system_prompt(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("Be a classifier", "doc text")
+
+            args = mock_run.call_args[0][0]
+            p_idx = args.index("-p")
+            combined = args[p_idx + 1]
+            assert "Be a classifier" in combined
+            assert "doc text" in combined
+
+    async def test_generate_no_system_prompt(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("", "just user text")
+
+            args = mock_run.call_args[0][0]
+            p_idx = args.index("-p")
+            assert args[p_idx + 1] == "just user text"
+
+    async def test_generate_includes_approval_mode_plan(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("", "test")
+
+            args = mock_run.call_args[0][0]
+            assert "--approval-mode" in args
+            idx = args.index("--approval-mode")
+            assert args[idx + 1] == "plan"
+
+    async def test_generate_includes_model_flag(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        cli_response = json.dumps({"result": "ok"})
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (cli_response.encode(), b"", 0)
+            await provider.generate("", "test")
+
+            args = mock_run.call_args[0][0]
+            assert "-m" in args
+            idx = args.index("-m")
+            assert args[idx + 1] == "gemini-2.5-pro"
+
+    async def test_generate_timeout(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = TimeoutError("timed out")
+            with pytest.raises(ProcessingError, match="timed out"):
+                await provider.generate("", "test")
+
+    def test_provider_properties(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+            assert provider.provider_name == "gemini-cli"
+            assert provider.model_name == "gemini-2.5-pro"
+
+
 # ── Factory Tests ─────────────────────────────────────────────────────────────
 
 
@@ -273,6 +439,18 @@ class TestCreateProvider:
             provider = create_llm_provider(provider="claude-cli", model="opus")
             assert provider.provider_name == "claude-cli"
             assert isinstance(provider, ClaudeCliProvider)
+
+    def test_explicit_gemini_cli(self):
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = create_llm_provider(provider="gemini-cli", model="gemini-2.5-pro")
+            assert provider.provider_name == "gemini-cli"
+            assert isinstance(provider, GeminiCliProvider)
+
+    def test_gemini_cli_default_model(self):
+        with patch.dict(os.environ, {"CORERAG_LLM_MODEL": ""}, clear=False):
+            with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+                provider = create_llm_provider(provider="gemini-cli")
+                assert provider.model_name == "gemini-2.5-pro"
 
     def test_unknown_provider_raises(self):
         with pytest.raises(ProcessingError, match="Unknown LLM provider"):

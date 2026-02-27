@@ -1,9 +1,9 @@
 """
 Multi-LLM Provider abstraction for CoreRag.
 
-Unified async interface for Ollama, Gemini, and Anthropic Claude.
-Provider selection via CORERAG_LLM_PROVIDER env var, with auto-detection
-fallback (Gemini if GOOGLE_API_KEY set, else Ollama).
+Unified async interface for Ollama, Gemini, Anthropic Claude, Claude CLI,
+and Gemini CLI. Provider selection via CORERAG_LLM_PROVIDER env var, with
+auto-detection fallback (Gemini if GOOGLE_API_KEY set, else Ollama).
 
 Usage:
     from src.llm.provider import get_default_provider
@@ -35,6 +35,7 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-sonnet-4-20250514",
     "claude-cli": "sonnet",
+    "gemini-cli": "gemini-2.5-pro",
 }
 
 
@@ -45,7 +46,7 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
 class LLMConfig:
     """Configuration for an LLM provider."""
 
-    provider: str  # "ollama", "gemini", "anthropic"
+    provider: str  # "ollama", "gemini", "anthropic", "claude-cli", "gemini-cli"
     model: str
     temperature: float = 0.1
     max_tokens: int = 1024
@@ -330,6 +331,155 @@ class ClaudeCliProvider(LLMProvider):
         return self._last_cost_usd
 
 
+class GeminiCliProvider(LLMProvider):
+    """Gemini CLI subprocess provider.
+
+    Uses `gemini -p "prompt" --output-format json` to run inference through the
+    authenticated Gemini CLI. No API key required — uses the active CLI session.
+
+    Part of TJ's multi-agent ecosystem: Gem handles large-context ingestion
+    tasks with its 1M+ token context window.
+    """
+
+    _MODEL_MAP: dict[str, str] = {
+        "gemini-2.5-pro": "gemini-2.5-pro",
+        "gemini-2.5-flash": "gemini-2.5-flash",
+        "gemini-3-flash-preview": "gemini-3-flash-preview",
+        "gemini-3-pro-preview": "gemini-3-pro-preview",
+        "gemini-2.0-flash": "gemini-2.0-flash",
+    }
+
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        import shutil
+
+        self._cli_path = shutil.which("gemini")
+        if not self._cli_path:
+            fallback = os.path.expanduser("~/.local/bin/gemini")
+            if os.path.isfile(fallback):
+                self._cli_path = fallback
+            else:
+                raise ProcessingError(
+                    "Gemini CLI not found. Install with: npm install -g @anthropic-ai/gemini-cli"
+                )
+
+        self._cli_model = self._MODEL_MAP.get(config.model, config.model)
+        logger.info(f"Gemini CLI provider initialized: model={self._cli_model}")
+
+    def _build_env(self) -> dict[str, str]:
+        """Build subprocess environment."""
+        env = os.environ.copy()
+        return env
+
+    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        """Generate text via Gemini CLI subprocess.
+
+        Args:
+            system_prompt: System instructions (folded into user prompt since
+                           Gemini CLI has no --system-prompt flag).
+            user_prompt: User message (passed via -p argument).
+
+        Returns:
+            Generated text response
+
+        Raises:
+            ProcessingError: If CLI call fails
+        """
+        if system_prompt:
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+        else:
+            combined_prompt = user_prompt
+
+        args = [
+            self._cli_path,
+            "-p",
+            combined_prompt,
+            "--output-format",
+            "json",
+            "-m",
+            self._cli_model,
+            "--approval-mode",
+            "plan",  # Read-only: no file writes, allows network for API calls
+        ]
+
+        try:
+            stdout, stderr, returncode = await self._run_process(args, timeout=self.config.timeout)
+
+            if returncode != 0:
+                error = stderr.decode().strip() if stderr else "Unknown error"
+                logger.error(f"Gemini CLI exited with code {returncode}: {error}")
+                raise ProcessingError(f"Gemini CLI failed: {error}")
+
+            output = stdout.decode().strip()
+            if not output:
+                raise ProcessingError("Gemini CLI returned empty output")
+
+            try:
+                data = json.loads(output)
+            except json.JSONDecodeError:
+                return output
+
+            # Adaptive JSON parsing — Gemini CLI format not fully documented
+            for key in ("result", "text", "content", "response", "message"):
+                val = data.get(key)
+                if val and isinstance(val, str):
+                    return val.strip()
+
+            # Fallback: single-key dict or re-serialize
+            if isinstance(data, dict) and len(data) == 1:
+                return str(next(iter(data.values()))).strip()
+            return json.dumps(data)
+
+        except ProcessingError:
+            raise
+        except TimeoutError:
+            raise ProcessingError(f"Gemini CLI timed out after {self.config.timeout}s")
+        except Exception as e:
+            raise ProcessingError(f"Gemini CLI error: {e}") from e
+
+    async def _run_process(
+        self,
+        args: list[str],
+        timeout: float,
+    ) -> tuple[bytes, bytes, int]:
+        """Run subprocess with Python 3.13 event loop compatibility.
+
+        Gemini CLI takes the prompt via -p argument (not stdin),
+        so stdin is DEVNULL.
+        """
+        import subprocess as sp
+
+        env = self._build_env()
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            return stdout or b"", stderr or b"", process.returncode or 0
+
+        except NotImplementedError:
+            # Python 3.13+ fallback: child watchers removed
+            def _run() -> tuple[bytes, bytes, int]:
+                try:
+                    result = sp.run(
+                        args,
+                        stdin=sp.DEVNULL,
+                        capture_output=True,
+                        env=env,
+                        timeout=timeout,
+                    )
+                    return result.stdout or b"", result.stderr or b"", result.returncode
+                except sp.TimeoutExpired as exc:
+                    raise TimeoutError(str(exc)) from exc
+
+            return await asyncio.to_thread(_run)
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
@@ -341,8 +491,9 @@ def create_llm_provider(
     """Factory function to create an LLM provider.
 
     Args:
-        provider: Provider name ("ollama", "gemini", "anthropic", "claude-cli").
-                  Defaults to CORERAG_LLM_PROVIDER env var, then auto-detection.
+        provider: Provider name ("ollama", "gemini", "anthropic", "claude-cli",
+                  "gemini-cli"). Defaults to CORERAG_LLM_PROVIDER env var,
+                  then auto-detection.
         model: Model name. Defaults to CORERAG_LLM_MODEL env var,
                then provider-specific default.
         **kwargs: Additional config (temperature, max_tokens, timeout, host, api_key).
@@ -391,6 +542,9 @@ def create_llm_provider(
 
     elif provider == "claude-cli":
         return ClaudeCliProvider(config)
+
+    elif provider == "gemini-cli":
+        return GeminiCliProvider(config)
 
     else:
         raise ProcessingError(f"Unknown LLM provider: {provider}")
