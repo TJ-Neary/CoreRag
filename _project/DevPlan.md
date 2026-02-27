@@ -3,7 +3,7 @@
 > **Purpose**: Single source of truth for CoreRag's development history, current status, architectural decisions, integration protocols, and future roadmap.
 > Consolidates content from 8 previously separate planning files (now archived in `_project/Archive/`).
 >
-> **Last Updated**: 2026-02-10
+> **Last Updated**: 2026-02-27
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## Project Timeline
 
-**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 21
+**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 26
 
 | Session | Date | Focus | Key Outcomes |
 |---------|------|-------|-------------|
@@ -50,19 +50,24 @@
 | 20 | Feb 7 | Mypy Cleanup + Auto-Backup | Fixed all 122 mypy type errors across 36 source files (type annotations, Optional patterns, assert guards). Added automatic backup system: server startup backup (24h cooldown), pre-commit backup (1h cooldown), LanceDB integrity check on startup (table existence + row counts). 5 backup config constants in config.py. FastAPI lifespan added to server.py. 305 tests, 29 MCP tools. |
 | 20.5 | Feb 10 | Menu Bar + AG Deploy | Rewrote menu bar app with auto-start server, process detection, cooldown timers. Fixed launchd notification spam. Deployed AG integration files (ANTIGRAVITY.md, .agent/workflows). Updated StartHere.md, CLAUDE.md, README.md, CONVENTIONS.md. Committed AG files. 331 tests. |
 | 21 | Feb 10 | Production Hardening | Fixed CI integration test path bug. Fixed v1 API error response codes (proper HTTP status codes instead of 200+error). Added 39 v1 API route tests covering all endpoints. Applied pytest markers (integration, slow). Added 3 new API endpoints: GET /documents/{id}, POST /documents/bulk-delete, category search filter. Updated manifest. 344 tests. |
+| 22-24 | Feb 10-17 | P4 Production Hardening (cont.) | LLM Provider abstraction (Ollama, Gemini, Anthropic, Claude CLI). Answer synthesis with citation validation. Search pagination. Auto-port fallback. Security scanner v5-v6. Pre-commit hooks. ~423 tests. |
+| 25 | Feb 17-26 | P5 Retrieval Enhancement | BGE-M3 embedding support (1024d). Contextual retrieval (LLM context prefixes). Corrective RAG (3-tier filtering). Chunk quality scoring. Source authority classification. Content hash dedup. Bitemporal knowledge graph (confidence decay, supersession). Date extraction. Multi-resolution parent summaries. RAGAS evaluator. Embedding migration script. ~540 tests. |
+| 26 | Feb 27 | Migration & Stabilization | Embedding migration executed (384d → 1024d, 4,748 chunks in 84.5s). Fixed migrate_embeddings.py PyArrow bug. Fixed 3 test_llm_provider.py env-var mocking failures. Security scanner v7 (14 phases). 544 tests passing, 0 failures. |
 
-### Metrics at Session 21
+### Metrics at Session 26
 
-- **Tests**: 344 passing, 26 skipped (golden set)
-- **API endpoints**: 10 v1 endpoints (manifest, stats, search, ingest, delete, get-document, bulk-delete, vaults, quick-capture + manifest)
+- **Tests**: 544 passing, 0 failed, 26 skipped
+- **API endpoints**: 11 v1 endpoints (manifest, stats, search, answer, ingest, delete, get-document, bulk-delete, vaults, quick-capture)
 - **CLI commands**: 13
-- **MCP tools**: 29
-- **RAG**: 4,702 child chunks + 52 parent chunks from 43 documents
-- **Knowledge graph**: 979 entities, 165 relationships
-- **Security**: API auth, path validation, query sanitization, secure file permissions, rate limiting (slowapi)
+- **MCP tools**: 30
+- **RAG**: 4,748 child chunks (1024d BGE-M3) + 425 parent chunks from 43 documents
+- **Knowledge graph**: 4,420 entities, 90 relationships (bitemporal with confidence decay)
+- **Embedding model**: BAAI/bge-m3 (1024d) — migrated from all-MiniLM-L6-v2 (384d)
+- **LLM providers**: Ollama (default), Claude CLI, Gemini, Anthropic API
+- **Security**: API auth, path validation, query sanitization, secure file permissions, rate limiting, scanner v7 (14 phases)
 - **Custom exceptions**: CoreRagError hierarchy wired into 15 files
 - **Async**: intelligence.py uses httpx async for all LLM calls
-- **Config**: All model names, paths, and thresholds centralized in config.py (14 named constants)
+- **Config**: All model names, paths, and thresholds centralized in config.py
 - **Architecture**: server.py decomposed — app factory with lifespan + 2 router modules
 - **Mypy**: 0 errors across 93 source files (strict type checking)
 - **Backup**: Auto-backup on startup (24h cooldown) + pre-commit (1h cooldown) + integrity check
@@ -76,7 +81,7 @@
 
 | Date | Decision | Rationale | Outcome |
 |------|----------|-----------|---------|
-| Jan 31 | LanceDB for vector storage | Embedded, handles TB scale, no server process | Running — 4702 child chunks |
+| Jan 31 | LanceDB for vector storage | Embedded, handles TB scale, no server process | Running — 4,748 child chunks |
 | Jan 31 | FastMCP for MCP server | Python-native, stdio transport for Claude Desktop | Running — 20+ tools |
 | Jan 31 | Local-first with hybrid option | Privacy priority, allow API fallback for speed | Architecture pattern |
 | Jan 31 | SafeProcessor for memory mgmt | Prevent OOM on M4 Max 48GB | Reliable batch processing |
@@ -84,7 +89,7 @@
 | Feb 1 | Split-brain intelligence workflow | Single call couldn't reliably produce JSON + full text | Quality: 0% → 100% |
 | Feb 1 | Three-layer PII detection | LLM false positives on HR topic words; Presidio is source of truth | Accuracy: 6 FP → 0 FP |
 | Feb 1 | Custom PII dictionary (YAML) | User-specific terms Presidio can't detect | Full coverage |
-| Feb 1 | all-MiniLM-L6-v2 for embeddings | Already wired; nomic-embed was in original plan but MiniLM works | Pragmatic — can migrate later |
+| Feb 1 | all-MiniLM-L6-v2 for embeddings | Already wired; nomic-embed was in original plan but MiniLM works | Migrated to BGE-M3 (1024d) in Session 26 |
 | Feb 1 | Tag naming: `study-` prefix | Groups by activity across topics (`study-sphr`, `study-pmp`) | Convention established |
 | Feb 1 | Comma-delimited tags in LanceDB | `LIKE '%,tag,%'` filtering; simple and compatible | Working across all interfaces |
 
@@ -92,8 +97,8 @@
 
 | Component | Planned | Actual | Status |
 |-----------|---------|--------|--------|
-| Vector DB | LanceDB | LanceDB | Running — 4702 child chunks, 52 parent chunks |
-| Embeddings | nomic-embed-text-v1.5 (768d) | all-MiniLM-L6-v2 (384d) | Running — migration possible later |
+| Vector DB | LanceDB | LanceDB | Running — 4,748 child chunks, 425 parent chunks |
+| Embeddings | nomic-embed-text-v1.5 (768d) | BAAI/bge-m3 (1024d) | Running — migrated from all-MiniLM-L6-v2 (Session 26) |
 | LLM | Gemini or local | Ollama qwen2.5:32b | Running — 100% metadata quality |
 | MCP | FastMCP | FastMCP (stdio) | Running — Claude Desktop connected |
 | PII | Presidio | Presidio + custom dictionary + LLM advisory | Running — 0 false positives |
@@ -122,8 +127,8 @@ These findings emerged during actual integration work, not theoretical planning.
 #### 3. No Need for Paid API — Local Ollama Sufficient
 Evaluated Gemini API free tier (2 RPM, 32K TPM). Ollama with qwen2.5:32b achieved 100% metadata quality. No quality benefit from external API, plus privacy concern sending documents to Google.
 
-#### 4. Embedding Model Mismatch
-Original plan: nomic-embed-text-v1.5 (768d). Actual: all-MiniLM-L6-v2 (384d) was already wired. Kept it — migration can happen later if needed.
+#### 4. Embedding Model Mismatch → Resolved
+Original plan: nomic-embed-text-v1.5 (768d). Initial: all-MiniLM-L6-v2 (384d) was already wired. Migrated to BAAI/bge-m3 (1024d) in Session 26 for improved retrieval quality.
 
 #### 5. HyDE Expander Bug
 `tools.py` passed the `HyDEResult` dataclass object as the search query string instead of extracting `.hypothetical_document`. Silently broken — embedding a string representation of a Python object. Fixed.
@@ -151,8 +156,9 @@ Initially `sphr-study` (topic-first) but user wants `study-sphr` (action-first p
 | Operation | Measurement | Notes |
 |-----------|-------------|-------|
 | 41-file batch analysis | ~19 minutes | Ollama qwen2.5:32b, 2 calls per file |
-| RAG indexing (41 files) | ~15 minutes | 4702 child chunks + 52 parent chunks |
+| RAG indexing (41 files) | ~15 minutes | 4,748 child chunks + 425 parent chunks |
 | Single file processing | ~25-30 seconds | Extraction + AI analysis + staging |
+| Embedding migration (4,748 chunks) | ~84.5 seconds | 384d → 1024d at ~58 chunks/sec (BGE-M3) |
 | Dashboard load | <1 second | FastAPI + Jinja2 |
 | Peak RAM during batch | ~85% | Paused once, resumed automatically |
 
@@ -339,10 +345,10 @@ async def discover_core_memory():
     async with httpx.AsyncClient() as client:
         resp = await client.get("http://localhost:8000/api/v1/manifest")
         manifest = resp.json()
-    # manifest["schema"]["embedding_model"] → "all-MiniLM-L6-v2"
-    # manifest["schema"]["embedding_dimensions"] → 384
+    # manifest["schema"]["embedding_model"] → "BAAI/bge-m3"
+    # manifest["schema"]["embedding_dimensions"] → 1024
     # manifest["capabilities"]["search_features"] → ["hybrid", "hyde", "reranking", ...]
-    # manifest["stats"] → {"documents": 43, "chunks": 4704, ...}
+    # manifest["stats"] → {"documents": 43, "chunks": 4748, ...}
     return manifest
 ```
 
@@ -394,12 +400,12 @@ Kendra can push content into Core Memory via ingest API:
 ### Database Schema Reference
 
 **LanceDB** (`~/.corerag/lancedb/`):
-- `child_chunks`: content (string), vector (float32[384]), document_id, source_path, chunk_index, parent_id, section_title, tags
-- `parent_chunks`: content (string), document_id, source_path, metadata (JSON)
+- `child_chunks`: content (string), vector (float32[1024]), document_id, source_path, chunk_index, parent_id, tags, content_hash, context_prefix, quality_score, source_authority, date_extracted, date_confidence
+- `parent_chunks`: content (string), document_id, source_path, section_title, token_count, created_at, tags, content_hash, summary
 
 **Knowledge Graph** (`~/.corerag/knowledge_graph.db` — SQLite):
-- `entities`: id, name, type, document_id, confidence
-- `relationships`: id, source_id, target_id, relation_type, document_id
+- `entities`: id, name, type, document_id, confidence, metadata, created_at, mention_count, confidence_score
+- `relationships`: id, subject, predicate, object, document_id, confidence, context, created_at, when_true, superseded_by
 
 ### Port Conflict
 
@@ -514,6 +520,8 @@ preferences (key, value, last_updated)
 | **P3** | ~~External integrations (Readwise)~~ | **Complete** (Session 19) — IntegrationPlugin base + ReadwisePlugin + MCP tools |
 | **P3** | ~~Advanced retrieval (conversational search)~~ | **Complete** (Session 19) — ConversationManager with follow-up detection + query rewriting |
 | **P3** | ~~Mobile companion app~~ | **Complete** (Session 19) — POST /api/v1/quick-capture endpoint (30/min rate limit) |
+| **P4** | ~~Production Hardening~~ | **Complete** (Sessions 21-24) — LLM provider abstraction, answer synthesis, API error codes, search pagination, auto-port fallback, pre-commit hooks |
+| **P5** | ~~Retrieval Enhancement~~ | **Complete** (Sessions 25-26) — BGE-M3 (1024d), contextual retrieval, CRAG, chunk quality, source authority, content hash dedup, bitemporal KG, date extraction, multi-resolution summaries, RAGAS evaluator, embedding migration |
 
 ### Success Metrics
 

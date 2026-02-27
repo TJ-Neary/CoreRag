@@ -113,7 +113,7 @@ CoreRag/
 │   │
 │   ├── embeddings/              # Embedding generation
 │   │   ├── __init__.py
-│   │   └── embedding_service.py # all-MiniLM-L6-v2 (384d) with caching
+│   │   └── embedding_service.py # BAAI/bge-m3 (1024d) with caching
 │   │
 │   ├── search/                  # Search functionality
 │   │   ├── __init__.py
@@ -291,9 +291,9 @@ class Config:
     chunk_overlap: int = 50
     parent_chunk_size: int = 2048
 
-    # Embeddings (actual model: all-MiniLM-L6-v2)
-    embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_dimensions: int = 384
+    # Embeddings (actual model: BAAI/bge-m3)
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_dimensions: int = 1024
     embedding_batch_size: int = 32
 
     # Memory thresholds

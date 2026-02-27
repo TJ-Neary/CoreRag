@@ -33,6 +33,8 @@ import sys
 import time
 from pathlib import Path
 
+import pyarrow as pa
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -230,8 +232,10 @@ def migrate_embeddings(
 
     # ── Swap child_chunks table ───────────────────────────────────────────
     logger.info("Swapping child_chunks table...")
+    child_arrow = pa.table(all_children)
+    logger.info(f"  Arrow table: {child_arrow.num_rows} rows, {child_arrow.num_columns} columns")
     db.drop_table("child_chunks")
-    db.create_table("child_chunks", all_children)
+    db.create_table("child_chunks", child_arrow)
 
     # Rebuild FTS index
     try:
@@ -259,8 +263,12 @@ def migrate_embeddings(
             logger.info("  Added summary (empty — LLM enrichment skipped for backfill)")
 
         logger.info("Swapping parent_chunks table...")
+        parent_arrow = pa.table(all_parents)
+        logger.info(
+            f"  Arrow table: {parent_arrow.num_rows} rows, {parent_arrow.num_columns} columns"
+        )
         db.drop_table("parent_chunks")
-        db.create_table("parent_chunks", all_parents)
+        db.create_table("parent_chunks", parent_arrow)
         logger.info("Parent chunks migrated")
 
     # ── Save embedding cache ──────────────────────────────────────────────

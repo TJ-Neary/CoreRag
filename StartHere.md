@@ -143,7 +143,7 @@ Subsystem 2: MCP Server + Search Stack
   mcp_server/tools.py .............. CoreRagTools (search, graph, memory, quality, maintenance)
       |
       v
-  search/hybrid_search.py .......... Vector (all-MiniLM-L6-v2, 384d) + BM25 + RRF fusion
+  search/hybrid_search.py .......... Vector (BAAI/bge-m3, 1024d) + BM25 + RRF fusion
       |---> [optional] search/reranker.py ........ Cross-encoder reranking
       |---> [optional] search/hyde.py ............ HyDE query expansion
       |---> [optional] search/multi_query.py ..... Query decomposition + RRF
@@ -205,7 +205,7 @@ The `is_sensitive` flag is set by layers 1+2 (threshold 0.70). Dashboard "Mark a
 |-----------|---------|-------------|--------|
 | `mcp_server/` | FastMCP server + tool definitions for Claude Desktop | `server.py`, `tools.py` | **Wired** |
 | `search/` | Hybrid search, HyDE, reranker, multi-query, decay scoring, conversational search | `hybrid_search.py`, `reranker.py`, `hyde.py`, `multi_query.py`, `decay_scoring.py`, `conversation_manager.py` | **Wired** |
-| `embeddings/` | all-MiniLM-L6-v2 with LRU cache, MPS-optimized | `embedding_service.py` | **Wired** |
+| `embeddings/` | BAAI/bge-m3 (1024d) with LRU cache, MPS-optimized | `embedding_service.py` | **Wired** |
 | `chunking/` | Parent-child hierarchical chunking | `parent_child.py` | **Wired** |
 | `chunking/` | ~~AST-based code chunking~~ | ~~`code_chunker.py`~~ | **Deleted** (was orphaned) |
 | `classification/` | Keyword + embedding-based auto-tagging, learned correction rules | `auto_tagger.py`, `learned_rules.py` | **Wired** |
@@ -355,7 +355,7 @@ These are differences between what documentation claims and what the code actual
 | Zombie Reconciliation | Existed but never called | **Resolved** — `sync/reconciliation.py` deleted |
 | Orphaned utility modules | 6+ utils completely orphaned | **Resolved** — deduplication, export, feedback, incremental, search_history, citations, collections, coreragignore all deleted. retry.py re-added and wired. |
 | Health Dashboard | Existed but minimal use | **Resolved** — `dashboard/health_dashboard.py` deleted |
-| Embedding model | CONVENTIONS.md says `nomic-embed-text-v1.5` (768d) | **Resolved** — CONVENTIONS.md corrected to `all-MiniLM-L6-v2` (384d) |
+| Embedding model | CONVENTIONS.md says `nomic-embed-text-v1.5` (768d) | **Resolved** — Now using BAAI/bge-m3 (1024d), migrated in Session 26 |
 | Empty __init__.py exports | Several `__init__.py` files export from deleted modules | **Resolved** — broken packages fixed or deleted |
 
 ---
@@ -493,7 +493,7 @@ mypy src/                                # Type check
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
 | `OLLAMA_MODEL` | `qwen2.5:32b` | Ollama model for analysis |
 | `CORERAG_DB_PATH` | `~/.corerag/lancedb` | LanceDB database path |
-| `CORERAG_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model |
+| `CORERAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model (1024d) |
 | `CORERAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reranker model |
 | `CORERAG_BACKUP_ENABLED` | `true` | Enable auto-backup on startup/pre-commit |
 | `CORERAG_BACKUP_STARTUP_COOLDOWN` | `24` | Hours between startup backups |
@@ -521,7 +521,7 @@ mypy src/                                # Type check
 | Component | Technology | Dimension/Detail |
 |-----------|------------|-----------------|
 | Vector Database | LanceDB | Embedded, Lance format |
-| Embeddings | all-MiniLM-L6-v2 | 384d, sentence-transformers |
+| Embeddings | BAAI/bge-m3 | 1024d, sentence-transformers |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 | Cross-encoder |
 | LLM (local) | Ollama + qwen2.5:32b | Classification, summarization, PII advisory |
 | LLM (cloud) | Google Gemini | Optional alternative |

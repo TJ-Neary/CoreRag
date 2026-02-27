@@ -7,7 +7,7 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 ## Features
 
 ### Search
-- **Hybrid Search**: Vector (all-MiniLM-L6-v2, 384d) + BM25 full-text with RRF fusion
+- **Hybrid Search**: Vector (BAAI/bge-m3, 1024d) + BM25 full-text with RRF fusion
 - **Cross-Encoder Reranking**: ms-marco-MiniLM-L-6-v2
 - **HyDE Expansion**: Hypothetical document embeddings for better recall
 - **Multi-Query Fusion**: Parallel query variants merged via RRF
@@ -19,7 +19,8 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 - **Human-in-the-Loop**: Web dashboard for reviewing AI proposals before commit
 - **Three-Layer PII Detection**: Presidio NER + custom dictionary + LLM advisory
 - **Smart Filing**: Archive originals, export redacted markdown to Obsidian vault
-- **Parent-Child Chunking**: Context-preserving hierarchical chunks
+- **Parent-Child Chunking**: Context-preserving hierarchical chunks with quality scoring
+- **Corrective RAG**: Post-retrieval relevance filtering (correct/ambiguous/incorrect)
 
 ### Multi-Format Support
 - **Documents**: PDF (with OCR fallback), DOCX, TXT, Markdown, JSON, YAML, CSV
@@ -35,7 +36,7 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 - **Conflict Detection**: Find contradictions across documents
 
 ### Advanced
-- **GraphRAG**: Entity-based knowledge graph for relationship queries
+- **GraphRAG**: Bitemporal knowledge graph with confidence decay
 - **Episodic Memory**: User context and search pattern tracking
 - **Rate-Limited REST API**: Authenticated v1 endpoints with slowapi
 - **MCP Server**: Full tool suite for Claude Desktop integration
@@ -150,14 +151,14 @@ Key variables:
 | `CORERAG_DB_PATH` | `~/.corerag/lancedb` | LanceDB vector database |
 | `CORERAG_API_KEY` | *(unset)* | API key for v1 endpoints (omit for open access) |
 | `OLLAMA_MODEL` | `qwen2.5:32b` | Local LLM for document analysis |
-| `CORERAG_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model (384d) |
+| `CORERAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model (1024d) |
 
 ## Technology Stack
 
 | Component | Technology |
 |-----------|------------|
 | Vector Database | LanceDB (embedded, Lance format) |
-| Embeddings | all-MiniLM-L6-v2 (384d, MPS-optimized) |
+| Embeddings | BAAI/bge-m3 (1024d, MPS-optimized) |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
 | LLM | Ollama (qwen2.5:32b, local) |
 | Audio | mlx-whisper (Apple Silicon) |

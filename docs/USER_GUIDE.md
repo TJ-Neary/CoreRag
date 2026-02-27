@@ -518,7 +518,7 @@ CORERAG_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
 | `VAULT_PATH` | `~/Documents/ObsidianVault` | Obsidian vault for markdown exports |
 | `ARCHIVE_PATH` | `~/Documents` | Long-term storage for originals |
 | `CORERAG_DB_PATH` | `~/.corerag/lancedb` | LanceDB vector database path |
-| `CORERAG_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model (384d) |
+| `CORERAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model (1024d) |
 | `CORERAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reranker model |
 | `CORERAG_API_KEY` | *(unset)* | API key for v1 endpoints |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
@@ -527,4 +527,4 @@ CORERAG_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
 
 ---
 
-*CoreRag User Guide | v0.1.0 | Last Updated: 2026-02-07*
+*CoreRag User Guide | v0.2.0 | Last Updated: 2026-02-27*

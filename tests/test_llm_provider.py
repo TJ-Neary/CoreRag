@@ -289,14 +289,16 @@ class TestCreateProvider:
                 create_llm_provider(provider="gemini")
 
     def test_auto_detect_ollama_when_no_keys(self):
-        with patch("src.llm.provider.GOOGLE_API_KEY", None):
-            provider = create_llm_provider()
-            assert provider.provider_name == "ollama"
+        with patch.dict(os.environ, {"CORERAG_LLM_PROVIDER": ""}, clear=False):
+            with patch("src.llm.provider.GOOGLE_API_KEY", None):
+                provider = create_llm_provider()
+                assert provider.provider_name == "ollama"
 
     def test_auto_detect_gemini_when_key_present(self):
-        with patch("src.llm.provider.GOOGLE_API_KEY", "some-key"):
-            provider = create_llm_provider()
-            assert provider.provider_name == "gemini"
+        with patch.dict(os.environ, {"CORERAG_LLM_PROVIDER": ""}, clear=False):
+            with patch("src.llm.provider.GOOGLE_API_KEY", "some-key"):
+                provider = create_llm_provider()
+                assert provider.provider_name == "gemini"
 
     def test_env_var_override(self):
         with patch.dict(
@@ -324,9 +326,10 @@ class TestDefaultProvider:
         reset_default_provider()
 
     def test_get_default_returns_provider(self):
-        with patch("src.llm.provider.GOOGLE_API_KEY", None):
-            provider = get_default_provider()
-            assert isinstance(provider, OllamaProvider)
+        with patch.dict(os.environ, {"CORERAG_LLM_PROVIDER": ""}, clear=False):
+            with patch("src.llm.provider.GOOGLE_API_KEY", None):
+                provider = get_default_provider()
+                assert isinstance(provider, OllamaProvider)
 
     def test_get_default_is_cached(self):
         with patch("src.llm.provider.GOOGLE_API_KEY", None):
