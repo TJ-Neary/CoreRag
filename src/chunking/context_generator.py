@@ -72,7 +72,7 @@ class ContextGenerator:
             doc_truncated = document_text[: self._max_doc_chars]
             prompt = CONTEXT_PROMPT.format(doc_text=doc_truncated, chunk_text=chunk_text)
 
-            response = await self.provider.generate(prompt, max_tokens=200)
+            response = await self.provider.generate("", prompt)
             context = response.strip()
 
             _context_cache[cache_key] = context

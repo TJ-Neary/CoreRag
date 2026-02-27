@@ -275,11 +275,16 @@ class KnowledgeGraph:
         conn.close()
 
     def _migrate_schema(self, cursor: sqlite3.Cursor) -> None:
-        """Add bitemporal columns to existing tables if missing."""
-        # Entity columns
+        """Add bitemporal columns to existing tables if missing.
+
+        Uses constant defaults in ALTER TABLE because some SQLite versions
+        reject CURRENT_TIMESTAMP as a non-constant default. Backfills
+        existing rows with created_at value after adding columns.
+        """
+        # Entity columns — use constant defaults for ALTER TABLE compatibility
         for col, col_type, default in [
-            ("first_seen", "TEXT", "CURRENT_TIMESTAMP"),
-            ("last_seen", "TEXT", "CURRENT_TIMESTAMP"),
+            ("first_seen", "TEXT", "''"),
+            ("last_seen", "TEXT", "''"),
             ("mention_count", "INTEGER", "1"),
             ("confidence_score", "REAL", "1.0"),
         ]:
@@ -287,19 +292,25 @@ class KnowledgeGraph:
                 cursor.execute(
                     f"ALTER TABLE entities ADD COLUMN {col} {col_type} DEFAULT {default}"
                 )
+                # Backfill: set timestamp columns to created_at for existing rows
+                if col in ("first_seen", "last_seen"):
+                    cursor.execute(f"UPDATE entities SET {col} = created_at WHERE {col} = ''")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
         # Relationship columns
         for col, col_type, default in [
             ("when_true", "TEXT", "''"),
-            ("when_learned", "TEXT", "CURRENT_TIMESTAMP"),
+            ("when_learned", "TEXT", "''"),
             ("superseded_by", "INTEGER", "NULL"),
         ]:
             try:
                 cursor.execute(
                     f"ALTER TABLE relationships ADD COLUMN {col} {col_type} DEFAULT {default}"
                 )
+                # Backfill: set when_learned to created_at for existing rows
+                if col == "when_learned":
+                    cursor.execute(f"UPDATE relationships SET {col} = created_at WHERE {col} = ''")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 

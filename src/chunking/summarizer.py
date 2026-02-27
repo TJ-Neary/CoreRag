@@ -48,7 +48,7 @@ class MultiResolutionSummarizer:
         try:
             text = parent_text[: self._max_chars]
             prompt = SUMMARY_PROMPT.format(text=text)
-            response = await self.provider.generate(prompt, max_tokens=150)
+            response = await self.provider.generate("", prompt)
             return response.strip()
         except Exception as e:
             logger.warning(f"Summary generation failed: {e}")
