@@ -398,8 +398,6 @@ class GeminiCliProvider(LLMProvider):
             "json",
             "-m",
             self._cli_model,
-            "--approval-mode",
-            "plan",  # Read-only: no file writes, allows network for API calls
         ]
 
         try:

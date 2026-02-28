@@ -369,7 +369,8 @@ class TestGeminiCliProvider:
             p_idx = args.index("-p")
             assert args[p_idx + 1] == "just user text"
 
-    async def test_generate_includes_approval_mode_plan(self, config):
+    async def test_generate_uses_headless_mode(self, config):
+        """Verify -p flag is used for non-interactive headless mode."""
         with patch("shutil.which", return_value="/usr/local/bin/gemini"):
             provider = GeminiCliProvider(config)
 
@@ -379,9 +380,8 @@ class TestGeminiCliProvider:
             await provider.generate("", "test")
 
             args = mock_run.call_args[0][0]
-            assert "--approval-mode" in args
-            idx = args.index("--approval-mode")
-            assert args[idx + 1] == "plan"
+            assert "-p" in args
+            assert "--output-format" in args
 
     async def test_generate_includes_model_flag(self, config):
         with patch("shutil.which", return_value="/usr/local/bin/gemini"):

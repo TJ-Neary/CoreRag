@@ -35,7 +35,7 @@ CoreRag is a local-first, privacy-preserving knowledge engine running on Apple S
 
 **CoreRag is the knowledge engine; a separate AI assistant project handles the user-facing layer.** That external project owns chat, voice, personality, user memory, skills, and intent routing. CoreRag owns document ingestion, RAG indexing, PII detection, chunking, knowledge graph, quality checks, the HITL dashboard, and Obsidian export. External consumers connect via MCP client (stdio) and REST API (`localhost:8000/api/v1/*`), using the manifest endpoint for capability discovery.
 
-**Development Planning**: See [`_project/DevPlan.md`](./_project/DevPlan.md) for the full development history, architectural decisions, wiring plan status, external integration protocol, future roadmap (P0-P3), and project audit findings.
+**Development Planning**: See [`_project/DevPlan.md`](./_project/DevPlan.md) for the full development history, architectural decisions, wiring plan status, external integration protocol, future roadmap (P0-P6), and project audit findings.
 
 ## Development Commands
 
@@ -129,6 +129,21 @@ python scripts/migrate_embeddings.py                  # Re-embed all chunks with
 python scripts/migrate_embeddings.py --dry-run        # Preview without changes
 python scripts/migrate_embeddings.py --model BAAI/bge-m3 --batch-size 64
 ```
+
+### Enrichment Backfill (P6 — In Progress)
+
+Re-enriches existing chunks with LLM-powered quality enhancements. Uses Gemini CLI (`gemini-2.5-pro`) by default for its 1M+ token context window. Has quota detection + checkpointing so interrupted runs can resume.
+
+```bash
+python scripts/backfill_enrichment.py                  # Full backfill (all 4 phases)
+python scripts/backfill_enrichment.py --resume          # Resume from checkpoint after quota reset
+python scripts/backfill_enrichment.py --dry-run         # Preview without writing
+python scripts/backfill_enrichment.py --phases 1 3      # Only context prefixes + summaries
+python scripts/backfill_enrichment.py --provider ollama  # Use local Ollama instead of Gemini
+python scripts/backfill_enrichment.py --no-resume       # Ignore checkpoint, start fresh
+```
+
+**4 phases**: (1) LLM context prefixes per chunk, (2) re-embed with context+text, (3) parent summaries, (4) knowledge graph entity re-extraction. Checkpoint saved at `~/.corerag/backfill_checkpoint.json`. **Status**: 198/6,641 context prefixes done (Phase 1 ~3%), paused on Gemini 2.5 Pro daily quota. Resume after quota resets.
 
 ### Testing
 ```bash
@@ -423,3 +438,5 @@ All 12 phases are **complete**. No remaining wiring work.
 **High memory usage**: The batch processor pauses at 92% RAM and resumes at 88%. SafeProcessor pauses background work at 75%. If the system is consistently hitting these thresholds, reduce `EMBEDDING_BATCH_SIZE` in `src/config.py` (default 32) or process fewer files per batch.
 
 **Embedding model mismatch**: If you change `CORERAG_EMBEDDING_MODEL`, you must re-index all documents — existing vectors will have incompatible dimensions. The default model (`BAAI/bge-m3`) produces 1024-dimensional vectors. Use `scripts/migrate_embeddings.py` for model migrations. `EMBEDDING_DIMENSIONS` in `src/config.py` is derived automatically from `EMBEDDING_DIMENSIONS_MAP`.
+
+**Gemini CLI quota exhaustion**: Gemini 2.5 Pro has daily quota limits. The backfill script (`scripts/backfill_enrichment.py`) detects quota errors automatically and saves a checkpoint. Wait for the quota to reset (typically ~22 hours), then run `python scripts/backfill_enrichment.py --resume` to continue. Alternatively, use `--provider ollama` to avoid quota limits (slower but unlimited).

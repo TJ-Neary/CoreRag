@@ -3,7 +3,7 @@
 > **Purpose**: Single source of truth for CoreRag's development history, current status, architectural decisions, integration protocols, and future roadmap.
 > Consolidates content from 8 previously separate planning files (now archived in `_project/Archive/`).
 >
-> **Last Updated**: 2026-02-27
+> **Last Updated**: 2026-02-28
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## Project Timeline
 
-**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 26
+**Started**: 2026-01-31 | **Status**: Published on GitHub (2026-02-07) | **Sessions**: 27
 
 | Session | Date | Focus | Key Outcomes |
 |---------|------|-------|-------------|
@@ -53,17 +53,18 @@
 | 22-24 | Feb 10-17 | P4 Production Hardening (cont.) | LLM Provider abstraction (Ollama, Gemini, Anthropic, Claude CLI). Answer synthesis with citation validation. Search pagination. Auto-port fallback. Security scanner v5-v6. Pre-commit hooks. ~423 tests. |
 | 25 | Feb 17-26 | P5 Retrieval Enhancement | BGE-M3 embedding support (1024d). Contextual retrieval (LLM context prefixes). Corrective RAG (3-tier filtering). Chunk quality scoring. Source authority classification. Content hash dedup. Bitemporal knowledge graph (confidence decay, supersession). Date extraction. Multi-resolution parent summaries. RAGAS evaluator. Embedding migration script. ~540 tests. |
 | 26 | Feb 27 | Migration & Stabilization | Embedding migration executed (384d → 1024d, 4,748 chunks in 84.5s). Fixed migrate_embeddings.py PyArrow bug. Fixed 3 test_llm_provider.py env-var mocking failures. Security scanner v7 (14 phases). 544 tests passing, 0 failures. |
+| 27 | Feb 27 | GeminiCliProvider + Enrichment Backfill | Added GeminiCliProvider to `src/llm/provider.py` (5 providers total). Fixed `--approval-mode plan` issue (removed — not needed for headless text generation). Fixed context_generator.py and summarizer.py `generate()` call signature bugs. Fixed knowledge_graph.py SQLite migration (added missing `mention_count` column). Created `scripts/backfill_enrichment.py` (4-phase enrichment: context prefixes, re-embedding, parent summaries, KG re-extraction). Ran Phase 1 with Gemini CLI — 198/6,641 context prefixes generated before Gemini 2.5 Pro daily quota exhausted. Added quota detection + checkpointing safeguards (checkpoint at `~/.corerag/backfill_checkpoint.json`, `--resume` flag). **Backfill must be resumed after quota resets.** |
 
-### Metrics at Session 26
+### Metrics at Session 27
 
 - **Tests**: 544 passing, 0 failed, 26 skipped
 - **API endpoints**: 11 v1 endpoints (manifest, stats, search, answer, ingest, delete, get-document, bulk-delete, vaults, quick-capture)
 - **CLI commands**: 13
 - **MCP tools**: 30
-- **RAG**: 4,748 child chunks (1024d BGE-M3) + 425 parent chunks from 43 documents
+- **RAG**: 6,641 child chunks (1024d BGE-M3) + 542 parent chunks from 90+ documents
 - **Knowledge graph**: 4,420 entities, 90 relationships (bitemporal with confidence decay)
 - **Embedding model**: BAAI/bge-m3 (1024d) — migrated from all-MiniLM-L6-v2 (384d)
-- **LLM providers**: Ollama (default), Claude CLI, Gemini, Anthropic API
+- **LLM providers**: Ollama (default), Claude CLI, **Gemini CLI**, Gemini API, Anthropic API (5 total)
 - **Security**: API auth, path validation, query sanitization, secure file permissions, rate limiting, scanner v7 (14 phases)
 - **Custom exceptions**: CoreRagError hierarchy wired into 15 files
 - **Async**: intelligence.py uses httpx async for all LLM calls
@@ -72,6 +73,7 @@
 - **Mypy**: 0 errors across 93 source files (strict type checking)
 - **Backup**: Auto-backup on startup (24h cooldown) + pre-commit (1h cooldown) + integrity check
 - **Audit**: All medium and low priority items resolved
+- **Enrichment backfill**: 198/6,641 context prefixes done (3%), 0/542 parent summaries, 0/4,420 KG re-extraction — paused on Gemini quota, resume with `python scripts/backfill_enrichment.py --resume`
 
 ---
 
@@ -522,6 +524,7 @@ preferences (key, value, last_updated)
 | **P3** | ~~Mobile companion app~~ | **Complete** (Session 19) — POST /api/v1/quick-capture endpoint (30/min rate limit) |
 | **P4** | ~~Production Hardening~~ | **Complete** (Sessions 21-24) — LLM provider abstraction, answer synthesis, API error codes, search pagination, auto-port fallback, pre-commit hooks |
 | **P5** | ~~Retrieval Enhancement~~ | **Complete** (Sessions 25-26) — BGE-M3 (1024d), contextual retrieval, CRAG, chunk quality, source authority, content hash dedup, bitemporal KG, date extraction, multi-resolution summaries, RAGAS evaluator, embedding migration |
+| **P6** | Enrichment Backfill | **In Progress** (Session 27) — `scripts/backfill_enrichment.py` created. 198/6,641 context prefixes done before Gemini quota hit. Resume with `--resume` after quota resets. 4 phases: context prefixes → re-embed → parent summaries → KG re-extraction. |
 
 ### Success Metrics
 
