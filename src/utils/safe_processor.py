@@ -12,6 +12,7 @@ Key Features:
 import gc
 import logging
 import threading
+import time
 from contextlib import contextmanager
 from enum import Enum
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
@@ -41,6 +42,9 @@ class JobPriority(Enum):
 MEMORY_PAUSE_THRESHOLD = SAFE_MEMORY_PAUSE_PCT
 MEMORY_WARNING_THRESHOLD = 70  # Start reducing batch sizes
 MEMORY_RESUME_THRESHOLD = SAFE_MEMORY_RESUME_PCT
+
+# Notification cooldown: suppress duplicate macOS notifications within this window
+NOTIFICATION_COOLDOWN_SECONDS = 300  # 5 minutes
 
 
 class IngestionController:
@@ -281,6 +285,10 @@ class SafeProcessor:
         self.memory = MemoryManager(self.monitor)
         self.ingestion = get_ingestion_controller()
 
+        # Notification cooldown: {title: (last_sent_time, suppressed_count)}
+        self._notification_state: dict[str, tuple[float, int]] = {}
+        self._notification_lock = threading.Lock()
+
         if auto_start:
             self.monitor.start()
 
@@ -467,11 +475,37 @@ class SafeProcessor:
         )
 
     def _send_notification(self, title: str, message: str) -> None:
-        """Send macOS desktop notification."""
+        """Send macOS desktop notification with cooldown to prevent spam.
+
+        Suppresses duplicate notifications within NOTIFICATION_COOLDOWN_SECONDS.
+        When a suppressed notification finally sends, it includes the count
+        of suppressed occurrences so nothing is silently lost.
+        """
+        now = time.time()
+
+        with self._notification_lock:
+            if title in self._notification_state:
+                last_sent, suppressed = self._notification_state[title]
+                if now - last_sent < NOTIFICATION_COOLDOWN_SECONDS:
+                    self._notification_state[title] = (last_sent, suppressed + 1)
+                    logger.debug(
+                        f"Notification suppressed ({suppressed + 1}x): {title} - {message}"
+                    )
+                    return
+                # Cooldown expired — send with suppression count
+                if suppressed > 0:
+                    message = f"{message} (+{suppressed} suppressed)"
+            self._notification_state[title] = (now, 0)
+
         try:
             import subprocess
 
-            script = f'display notification "{message}" with title "{title}" sound name "Ping"'
+            escaped_msg = message.replace('"', '\\"')
+            escaped_title = title.replace('"', '\\"')
+            script = (
+                f'display notification "{escaped_msg}" '
+                f'with title "{escaped_title}" sound name "Ping"'
+            )
             subprocess.run(
                 ["osascript", "-e", script],
                 capture_output=True,

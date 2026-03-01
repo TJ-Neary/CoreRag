@@ -1,5 +1,9 @@
 # CoreRag
 
+[![CI](https://github.com/TJ-Neary/CoreRag/actions/workflows/ci.yml/badge.svg)](https://github.com/TJ-Neary/CoreRag/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ![CoreRag Banner](assets/core_rag_banner.png)
 
 A local-first, privacy-preserving knowledge engine with semantic search, exposed via MCP (Claude Desktop) and REST API. Optimized for Apple Silicon.
@@ -46,7 +50,7 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/CoreRag.git
+git clone https://github.com/TJ-Neary/CoreRag.git
 cd CoreRag
 python3 -m venv venv
 source venv/bin/activate
