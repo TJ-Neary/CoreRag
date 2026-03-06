@@ -137,9 +137,14 @@ scripts/com.user.corerag.plist
 # _project/Archive/ pattern below covers all archived files
 
 # =============================================================================
-# Project Internal (archived planning docs - contains personal paths/notes)
+# Project Internal (v2 organizational folders + legacy v1)
 # =============================================================================
-_project/Archive/
+_RESEARCH/
+_DEV/
+_CATALOG/
+_ARCHIVE/
+_INBOX/
+_project/
 
 # ============================================================================
 # Privacy Protection - Prevent accidental context leaks
@@ -157,9 +162,20 @@ sessions/
 
 # =============================================================================
 # Ecosystem / Agent Configuration (TJ-specific, not for public repos)
+# Standard: ~/Tech_Projects/_HQ/standards/GITIGNORE.md
 # =============================================================================
+CLAUDE.md
 ANTIGRAVITY.md
 CODEX.md
 GEMINI.md
 AGENTS.md
 .agent/
+
+# =============================================================================
+# Operational Docs (internal development files, not for public repos)
+# =============================================================================
+StartHere.md
+DevPlan.md
+SECURITY.md
+scripts/security_scan.sh
+security_scan.sh
