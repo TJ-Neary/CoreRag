@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ── Provider defaults ─────────────────────────────────────────────────────────
 
 _PROVIDER_DEFAULTS: dict[str, str] = {
-    "ollama": "qwen2.5:32b",
+    "ollama": "qwen3:32b",
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-sonnet-4-20250514",
     "claude-cli": "sonnet",

@@ -26,7 +26,7 @@ from src.llm.provider import (
 class TestOllamaProvider:
     @pytest.fixture
     def config(self):
-        return LLMConfig(provider="ollama", model="qwen2.5:32b")
+        return LLMConfig(provider="ollama", model="qwen3:32b")
 
     async def test_generate_returns_response_text(self, config):
         provider = OllamaProvider(config)
@@ -141,7 +141,7 @@ class TestOllamaProvider:
     def test_provider_properties(self, config):
         provider = OllamaProvider(config)
         assert provider.provider_name == "ollama"
-        assert provider.model_name == "qwen2.5:32b"
+        assert provider.model_name == "qwen3:32b"
 
 
 # ── GeminiProvider Tests ─────────────────────────────────────────────────────
