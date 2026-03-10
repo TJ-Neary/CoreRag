@@ -2,8 +2,8 @@
 Multi-LLM Provider abstraction for CoreRag.
 
 Unified async interface for Ollama, Gemini, Anthropic Claude, Claude CLI,
-and Gemini CLI. Provider selection via CORERAG_LLM_PROVIDER env var, with
-auto-detection fallback (Gemini if GOOGLE_API_KEY set, else Ollama).
+Gemini CLI, and Codex CLI. Provider selection via CORERAG_LLM_PROVIDER env var,
+with auto-detection fallback (Gemini if GOOGLE_API_KEY set, else Ollama).
 
 Usage:
     from src.llm.provider import get_default_provider
@@ -36,6 +36,7 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
     "anthropic": "claude-sonnet-4-20250514",
     "claude-cli": "sonnet",
     "gemini-cli": "gemini-2.5-pro",
+    "codex-cli": "gpt-5.3-codex",
 }
 
 
@@ -46,7 +47,7 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
 class LLMConfig:
     """Configuration for an LLM provider."""
 
-    provider: str  # "ollama", "gemini", "anthropic", "claude-cli", "gemini-cli"
+    provider: str  # "ollama", "gemini", "anthropic", "claude-cli", "gemini-cli", "codex-cli"
     model: str
     temperature: float = 0.1
     max_tokens: int = 1024
@@ -91,6 +92,19 @@ class LLMProvider(ABC):
         return self.config.model
 
 
+# ── Utility ───────────────────────────────────────────────────────────────────
+
+
+def _strip_thinking_tags(text: str) -> str:
+    """Remove <think>...</think> blocks from qwen3-style reasoning output.
+
+    No-op for models that don't emit thinking tags (e.g., qwen2.5).
+    """
+    import re
+
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
 # ── Concrete providers ────────────────────────────────────────────────────────
 
 
@@ -121,7 +135,8 @@ class OllamaProvider(LLMProvider):
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "")
+            raw = resp.json().get("response", "")
+            return _strip_thinking_tags(raw)
 
 
 class GeminiProvider(LLMProvider):
@@ -478,6 +493,179 @@ class GeminiCliProvider(LLMProvider):
             return await asyncio.to_thread(_run)
 
 
+class CodexCliProvider(LLMProvider):
+    """OpenAI Codex CLI subprocess provider.
+
+    Uses `codex exec --json -` to run inference through the authenticated
+    Codex CLI. No API key required — uses the active ChatGPT+ subscription.
+
+    Output format is JSONL on stdout. We parse for `item.completed` events
+    with `type: agent_message` and extract the text field.
+    """
+
+    _MODEL_MAP: dict[str, str] = {
+        "gpt-5.3-codex": "gpt-5.3-codex",
+        "gpt-5.2-codex": "gpt-5.2-codex",
+        "o4-mini": "o4-mini",
+        "o3": "o3",
+    }
+
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        import shutil
+
+        self._cli_path = shutil.which("codex")
+        if not self._cli_path:
+            raise ProcessingError("Codex CLI not found. Install with: npm install -g @openai/codex")
+
+        self._cli_model = self._MODEL_MAP.get(config.model, config.model)
+        logger.info(f"Codex CLI provider initialized: model={self._cli_model}")
+
+    def _build_env(self) -> dict[str, str]:
+        """Build subprocess environment."""
+        env = os.environ.copy()
+        return env
+
+    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        """Generate text via Codex CLI subprocess.
+
+        Args:
+            system_prompt: System instructions (folded into user prompt since
+                           Codex CLI has no --system-prompt flag).
+            user_prompt: User message (passed via stdin).
+
+        Returns:
+            Generated text response
+
+        Raises:
+            ProcessingError: If CLI call fails
+        """
+        if system_prompt:
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+        else:
+            combined_prompt = user_prompt
+
+        args = [
+            self._cli_path,
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "read-only",
+            "--json",
+            "-m",
+            self._cli_model,
+            "-",  # Read prompt from stdin
+        ]
+
+        try:
+            stdout, stderr, returncode = await self._run_process(
+                args, combined_prompt.encode(), timeout=self.config.timeout
+            )
+
+            if returncode != 0:
+                error = stderr.decode().strip() if stderr else "Unknown error"
+                logger.error(f"Codex CLI exited with code {returncode}: {error}")
+                raise ProcessingError(f"Codex CLI failed: {error}")
+
+            output = stdout.decode().strip()
+            if not output:
+                raise ProcessingError("Codex CLI returned empty output")
+
+            return self._parse_jsonl_output(output)
+
+        except ProcessingError:
+            raise
+        except TimeoutError:
+            raise ProcessingError(f"Codex CLI timed out after {self.config.timeout}s")
+        except Exception as e:
+            raise ProcessingError(f"Codex CLI error: {e}") from e
+
+    def _parse_jsonl_output(self, output: str) -> str:
+        """Parse JSONL output from codex exec --json.
+
+        Looks for item.completed events with agent_message type.
+        Concatenates all message texts in order.
+        """
+        messages: list[str] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if event.get("type") == "item.completed":
+                item = event.get("item", {})
+                if item.get("type") == "agent_message":
+                    text = item.get("text", "").strip()
+                    if text:
+                        messages.append(text)
+
+        if messages:
+            return "\n".join(messages)
+
+        # Fallback: try to find any text in the JSONL events
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                for key in ("text", "result", "content", "message"):
+                    val = event.get(key)
+                    if val and isinstance(val, str):
+                        return val.strip()
+            except json.JSONDecodeError:
+                continue
+
+        # Last resort: return raw output
+        return output
+
+    async def _run_process(
+        self,
+        args: list[str],
+        input_data: bytes,
+        timeout: float,
+    ) -> tuple[bytes, bytes, int]:
+        """Run subprocess with Python 3.13 event loop compatibility."""
+        import subprocess as sp
+
+        env = self._build_env()
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input_data), timeout=timeout
+            )
+            return stdout or b"", stderr or b"", process.returncode or 0
+
+        except NotImplementedError:
+            # Python 3.13+ fallback: child watchers removed
+            def _run() -> tuple[bytes, bytes, int]:
+                try:
+                    result = sp.run(
+                        args,
+                        input=input_data,
+                        capture_output=True,
+                        env=env,
+                        timeout=timeout,
+                    )
+                    return result.stdout or b"", result.stderr or b"", result.returncode
+                except sp.TimeoutExpired as exc:
+                    raise TimeoutError(str(exc)) from exc
+
+            return await asyncio.to_thread(_run)
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
@@ -490,7 +678,7 @@ def create_llm_provider(
 
     Args:
         provider: Provider name ("ollama", "gemini", "anthropic", "claude-cli",
-                  "gemini-cli"). Defaults to CORERAG_LLM_PROVIDER env var,
+                  "gemini-cli", "codex-cli"). Defaults to CORERAG_LLM_PROVIDER env var,
                   then auto-detection.
         model: Model name. Defaults to CORERAG_LLM_MODEL env var,
                then provider-specific default.
@@ -543,6 +731,9 @@ def create_llm_provider(
 
     elif provider == "gemini-cli":
         return GeminiCliProvider(config)
+
+    elif provider == "codex-cli":
+        return CodexCliProvider(config)
 
     else:
         raise ProcessingError(f"Unknown LLM provider: {provider}")

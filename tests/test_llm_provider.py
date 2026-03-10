@@ -10,6 +10,7 @@ from src.exceptions import ProcessingError
 from src.llm.provider import (
     AnthropicProvider,
     ClaudeCliProvider,
+    CodexCliProvider,
     GeminiCliProvider,
     GeminiProvider,
     LLMConfig,
@@ -80,6 +81,62 @@ class TestOllamaProvider:
 
             call_json = mock_client.post.call_args[1]["json"]
             assert call_json["prompt"] == "Just a user prompt"
+
+    async def test_generate_strips_thinking_tags(self, config):
+        """OllamaProvider must strip <think> blocks from qwen3 output."""
+        provider = OllamaProvider(config)
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "response": '<think>\nLet me analyze...\n</think>\n{"category": "Work"}'
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with patch("httpx.AsyncClient") as mock_async_client:
+            mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_async_client.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await provider.generate("System", "User prompt")
+
+        assert "<think>" not in result
+        assert '{"category": "Work"}' in result
+
+    async def test_generate_handles_empty_think_block(self, config):
+        provider = OllamaProvider(config)
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "<think></think>clean output"}
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with patch("httpx.AsyncClient") as mock_async_client:
+            mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_async_client.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await provider.generate("", "prompt")
+
+        assert result == "clean output"
+
+    async def test_generate_no_think_tags_passes_through(self, config):
+        """Output without <think> tags is unchanged."""
+        provider = OllamaProvider(config)
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "Hello from Ollama"}
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with patch("httpx.AsyncClient") as mock_async_client:
+            mock_async_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_async_client.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await provider.generate("System", "User prompt")
+
+        assert result == "Hello from Ollama"
 
     def test_provider_properties(self, config):
         provider = OllamaProvider(config)
@@ -413,6 +470,170 @@ class TestGeminiCliProvider:
             assert provider.model_name == "gemini-2.5-pro"
 
 
+# ── CodexCliProvider Tests ────────────────────────────────────────────────────
+
+
+class TestCodexCliProvider:
+    @pytest.fixture
+    def config(self):
+        return LLMConfig(provider="codex-cli", model="gpt-5.3-codex", timeout=60.0)
+
+    def test_model_map_resolves_known_models(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+            assert provider._cli_model == "gpt-5.3-codex"
+
+    def test_model_map_passes_through_unknown(self):
+        config = LLMConfig(provider="codex-cli", model="gpt-6-ultra")
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+            assert provider._cli_model == "gpt-6-ultra"
+
+    def test_raises_if_cli_not_found(self, config):
+        with patch("shutil.which", return_value=None):
+            with pytest.raises(ProcessingError, match="Codex CLI not found"):
+                CodexCliProvider(config)
+
+    async def test_generate_parses_jsonl_agent_message(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"abc123"}',
+                '{"type":"turn.started"}',
+                '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"The answer is 42"}}',
+                '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":10}}',
+            ]
+        )
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            result = await provider.generate("", "What is the answer?")
+
+        assert result == "The answer is 42"
+
+    async def test_generate_parses_json_response(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"abc123"}',
+                '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\\"category\\": \\"Work\\"}"}}',
+                '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":10}}',
+            ]
+        )
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            result = await provider.generate("Classify.", "doc text")
+
+        assert "category" in result
+        assert "Work" in result
+
+    async def test_generate_raises_on_cli_error(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"Model not supported", 1)
+            with pytest.raises(ProcessingError, match="Codex CLI failed"):
+                await provider.generate("", "test")
+
+    async def test_generate_raises_on_empty_output(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (b"", b"", 0)
+            with pytest.raises(ProcessingError, match="empty output"):
+                await provider.generate("", "test")
+
+    async def test_generate_folds_system_prompt_into_stdin(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = (
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'
+        )
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            await provider.generate("Be a classifier", "doc text")
+
+            input_data = mock_run.call_args[0][1]
+            combined = input_data.decode()
+            assert "Be a classifier" in combined
+            assert "doc text" in combined
+
+    async def test_generate_uses_exec_mode(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = (
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'
+        )
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            await provider.generate("", "test")
+
+            args = mock_run.call_args[0][0]
+            assert "exec" in args
+            assert "--json" in args
+            assert "--ephemeral" in args
+            assert "--sandbox" in args
+            assert "read-only" in args
+
+    async def test_generate_includes_model_flag(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = (
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'
+        )
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            await provider.generate("", "test")
+
+            args = mock_run.call_args[0][0]
+            assert "-m" in args
+            idx = args.index("-m")
+            assert args[idx + 1] == "gpt-5.3-codex"
+
+    async def test_generate_timeout(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = TimeoutError("timed out")
+            with pytest.raises(ProcessingError, match="timed out"):
+                await provider.generate("", "test")
+
+    async def test_generate_multiple_messages_concatenated(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+
+        jsonl_output = "\n".join(
+            [
+                '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Part 1"}}',
+                '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Part 2"}}',
+            ]
+        )
+
+        with patch.object(provider, "_run_process", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (jsonl_output.encode(), b"", 0)
+            result = await provider.generate("", "test")
+
+        assert "Part 1" in result
+        assert "Part 2" in result
+
+    def test_provider_properties(self, config):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = CodexCliProvider(config)
+            assert provider.provider_name == "codex-cli"
+            assert provider.model_name == "gpt-5.3-codex"
+
+
 # ── Factory Tests ─────────────────────────────────────────────────────────────
 
 
@@ -445,6 +666,18 @@ class TestCreateProvider:
             provider = create_llm_provider(provider="gemini-cli", model="gemini-2.5-pro")
             assert provider.provider_name == "gemini-cli"
             assert isinstance(provider, GeminiCliProvider)
+
+    def test_explicit_codex_cli(self):
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            provider = create_llm_provider(provider="codex-cli", model="gpt-5.3-codex")
+            assert provider.provider_name == "codex-cli"
+            assert isinstance(provider, CodexCliProvider)
+
+    def test_codex_cli_default_model(self):
+        with patch.dict(os.environ, {"CORERAG_LLM_MODEL": ""}, clear=False):
+            with patch("shutil.which", return_value="/usr/local/bin/codex"):
+                provider = create_llm_provider(provider="codex-cli")
+                assert provider.model_name == "gpt-5.3-codex"
 
     def test_gemini_cli_default_model(self):
         with patch.dict(os.environ, {"CORERAG_LLM_MODEL": ""}, clear=False):

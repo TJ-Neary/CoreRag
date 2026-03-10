@@ -6,6 +6,7 @@ LLM parameter with the signature: await llm.generate(prompt, max_tokens=...) -> 
 """
 
 import logging
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -41,4 +42,5 @@ class OllamaLLM:
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "")
+            raw = resp.json().get("response", "")
+            return re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
