@@ -141,7 +141,9 @@ scripts/com.user.corerag.plist
 # =============================================================================
 _RESEARCH/
 _DEV/
-_CATALOG/
+_CATALOG/*
+!_CATALOG/ARCHITECTURE.md
+!_CATALOG/CHANGELOG.md
 _ARCHIVE/
 _INBOX/
 _project/
@@ -179,3 +181,6 @@ DevPlan.md
 SECURITY.md
 scripts/security_scan.sh
 security_scan.sh
+# Playwright Screenshots
+.playwright-mcp/
+
