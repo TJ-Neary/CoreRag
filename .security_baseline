@@ -10,7 +10,7 @@ Course Piracy / Platform Automation|.env.example|False positive: "automatically 
 # Phase 14 ecosystem references — all legitimate for this project
 # CoreRag IS the local server at localhost:8000; docs reference its own API
 Ecosystem Reference|README.md|CoreRag's own API endpoint documentation
-Ecosystem Reference|StartHere.md|CoreRag's own API endpoint documentation
+Ecosystem Reference|_CATALOG/StartHere.md|CoreRag's own API endpoint documentation
 Ecosystem Reference|_CATALOG/CHANGELOG.md|CoreRag's own API endpoint documentation
 Ecosystem Reference|docs/USER_GUIDE.md|CoreRag's own API endpoint documentation
 Ecosystem Reference|_DEV/DevPlan.md|HQ sync references and CoreRag API docs
