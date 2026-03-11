@@ -43,6 +43,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import psutil
 import pyarrow as pa
 
 # Add project root to path
@@ -72,6 +73,41 @@ logger = logging.getLogger("backfill")
 
 # Quota-related keywords in error messages
 _QUOTA_KEYWORDS = ["quota", "rate limit", "rate_limit", "exhausted", "429", "capacity"]
+
+# Memory safety thresholds (matches SafeProcessor conventions)
+_MEMORY_PAUSE_PCT = 75  # Pause processing above this
+_MEMORY_RESUME_PCT = 65  # Resume once below this
+_MEMORY_CHECK_INTERVAL = 5  # Check every N parent groups
+
+
+def _check_memory_safe() -> tuple[bool, float]:
+    """Check if memory usage is below the pause threshold.
+
+    Returns:
+        (is_safe, memory_percent)
+    """
+    mem = psutil.virtual_memory()
+    return mem.percent < _MEMORY_PAUSE_PCT, mem.percent
+
+
+def _wait_for_memory(timeout: float = 120.0) -> bool:
+    """Wait for memory to drop below resume threshold.
+
+    Runs gc.collect() and sleeps in a loop.
+
+    Returns:
+        True if memory recovered, False if timeout.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        gc.collect()
+        mem = psutil.virtual_memory()
+        if mem.percent < _MEMORY_RESUME_PCT:
+            logger.info(f"Memory recovered to {mem.percent:.1f}% — resuming")
+            return True
+        logger.info(f"Memory at {mem.percent:.1f}%, waiting... ({_MEMORY_RESUME_PCT}% to resume)")
+        time.sleep(5)
+    return False
 
 
 # ── Quota Error ─────────────────────────────────────────────────────
@@ -286,6 +322,7 @@ def backfill_enrichment(
     concurrency: int = 2,
     batch_size: int = 32,
     resume: bool = True,
+    max_chunks_per_call: int | None = None,
 ) -> dict:
     """Run the full enrichment backfill.
 
@@ -296,6 +333,8 @@ def backfill_enrichment(
         phases: Which phases to run (1-4). Default: all.
         concurrency: Max concurrent LLM calls per batch.
         batch_size: Embedding batch size.
+        max_chunks_per_call: Max chunks per batched LLM call. Default: 50 for
+            cloud providers (gemini-cli, claude-cli), 5 for local (ollama).
         resume: Whether to resume from checkpoint if available.
 
     Returns:
@@ -307,12 +346,20 @@ def backfill_enrichment(
     stats = BackfillStats()
     quota_hit = False
 
+    # Set max_chunks_per_call based on provider if not specified
+    if max_chunks_per_call is None:
+        if provider_name in ("ollama",):
+            max_chunks_per_call = 5  # Local models struggle with large JSON arrays
+        else:
+            max_chunks_per_call = 50  # Cloud models (Gemini, Claude) handle large batches
+
     logger.info("=" * 65)
     logger.info("CORERAG ENRICHMENT BACKFILL")
     logger.info("=" * 65)
     logger.info(f"Provider: {provider_name} / {model}")
     logger.info(f"Phases: {phases}")
     logger.info(f"Concurrency: {concurrency}")
+    logger.info(f"Max chunks/call: {max_chunks_per_call}")
     logger.info(f"Log file: {LOG_FILE}")
 
     # Check for checkpoint
@@ -390,12 +437,20 @@ def backfill_enrichment(
 
     if dry_run:
         logger.info("[DRY RUN] No changes will be written.")
-        logger.info(f"  Phase 1 would generate ~{needs_context} context prefixes")
+        # Batched: ~1 call per parent group (+ sub-batches for large groups)
+        est_phase1_calls = len(parent_children_map)
+        large_groups = sum(1 for indices in parent_children_map.values() if len(indices) > 50)
+        if large_groups:
+            est_phase1_calls += large_groups  # Rough extra for sub-batching
+        logger.info(
+            f"  Phase 1 would generate ~{needs_context} context prefixes "
+            f"in ~{est_phase1_calls} batched LLM calls"
+        )
         logger.info(f"  Phase 2 would re-embed {total_children} chunks")
         logger.info(f"  Phase 3 would generate ~{needs_summary} parent summaries")
         logger.info(f"  Phase 4 would re-extract entities from {total_parents} parents")
-        est_llm_calls = needs_context + needs_summary + total_parents
-        logger.info(f"  Estimated LLM calls: ~{est_llm_calls}")
+        est_llm_calls = est_phase1_calls + needs_summary + total_parents
+        logger.info(f"  Estimated LLM calls: ~{est_llm_calls} (batched Phase 1)")
         return {
             "status": "dry_run",
             "needs_context": needs_context,
@@ -404,11 +459,11 @@ def backfill_enrichment(
             "total_parents": total_parents,
         }
 
-    # ── Phase 1: Context Prefixes ───────────────────────────────────
+    # ── Phase 1: Context Prefixes (Batched Multi-Chunk) ─────────────
     if 1 in phases and not quota_hit:
         logger.info("")
         logger.info("=" * 65)
-        logger.info("PHASE 1: Context Prefix Generation (Contextual Retrieval)")
+        logger.info("PHASE 1: Context Prefix Generation (Batched Multi-Chunk)")
         logger.info("=" * 65)
 
         from src.chunking.context_generator import ContextGenerator
@@ -433,6 +488,19 @@ def backfill_enrichment(
         groups_with_work = 0
 
         for group_idx, (pid, child_indices) in enumerate(parent_groups):
+            # Memory safety: check every N groups
+            if groups_processed > 0 and groups_processed % _MEMORY_CHECK_INTERVAL == 0:
+                is_safe, mem_pct = _check_memory_safe()
+                if not is_safe:
+                    logger.warning(
+                        f"Memory at {mem_pct:.1f}% (>{_MEMORY_PAUSE_PCT}%) — "
+                        f"pausing to recover..."
+                    )
+                    if not _wait_for_memory(timeout=120):
+                        logger.error("Memory did not recover — saving checkpoint and stopping")
+                        quota_hit = True  # Reuse flag to trigger clean exit
+                        break
+
             # Use parent content as the "document" for context generation
             doc_text = parent_content_map.get(pid, "")
             if not doc_text:
@@ -454,15 +522,17 @@ def backfill_enrichment(
             source_short = Path(source).name if source else pid[:12]
             logger.info(
                 f"Parent {group_idx + 1}/{len(parent_groups)} [{source_short}]: "
-                f"{len(needs_ctx)} chunks need context"
+                f"{len(needs_ctx)} chunks need context (batched)"
             )
 
-            # Generate contexts in batch with concurrency control
+            # Generate contexts — batched multi-chunk (1 call per parent group)
             chunk_texts = [ct for _, ct in needs_ctx]
             loop = asyncio.new_event_loop()
             try:
                 results = loop.run_until_complete(
-                    ctx_gen.generate_contexts_batch(doc_text, chunk_texts, concurrency=concurrency)
+                    ctx_gen.generate_contexts_batch_multi(
+                        doc_text, chunk_texts, max_chunks_per_call=max_chunks_per_call
+                    )
                 )
             finally:
                 loop.close()
@@ -504,7 +574,7 @@ def backfill_enrichment(
         )
 
         logger.info(
-            f"Phase 1 {'INTERRUPTED (quota)' if quota_hit else 'complete'}: "
+            f"Phase 1 {'INTERRUPTED' if quota_hit else 'complete'}: "
             f"{stats.context_generated} generated, "
             f"{stats.context_skipped} already had context, "
             f"{stats.context_failed} failed"
@@ -594,6 +664,16 @@ def backfill_enrichment(
             if summaries[i]:
                 stats.summaries_skipped += 1
                 continue
+
+            # Memory safety check every 10 parents
+            if i > 0 and i % 10 == 0:
+                is_safe, mem_pct = _check_memory_safe()
+                if not is_safe:
+                    logger.warning(f"Memory at {mem_pct:.1f}% — pausing Phase 3...")
+                    if not _wait_for_memory(timeout=120):
+                        logger.error("Memory did not recover — stopping Phase 3")
+                        quota_hit = True
+                        break
 
             parent_text = all_parents["content"][i]
             pid = all_parents["id"][i]
@@ -689,6 +769,16 @@ def backfill_enrichment(
         )
 
         for i in range(len(source_texts)):
+            # Memory safety check every 25 documents
+            if i > 0 and i % 25 == 0:
+                is_safe, mem_pct = _check_memory_safe()
+                if not is_safe:
+                    logger.warning(f"Memory at {mem_pct:.1f}% — pausing Phase 4...")
+                    if not _wait_for_memory(timeout=120):
+                        logger.error("Memory did not recover — stopping Phase 4")
+                        quota_hit = True
+                        break
+
             text = source_texts[i][:10000]
             doc_id = hashlib.sha256(text[:5000].encode()).hexdigest()[:16]
             source_short = Path(source_paths[i]).name if source_paths[i] else doc_id[:12]
@@ -863,6 +953,12 @@ def main() -> None:
         action="store_true",
         help="Ignore checkpoint and start fresh",
     )
+    parser.add_argument(
+        "--max-chunks-per-call",
+        type=int,
+        default=None,
+        help="Max chunks per batched LLM call (default: 50 cloud, 5 local)",
+    )
     args = parser.parse_args()
 
     result = backfill_enrichment(
@@ -873,6 +969,7 @@ def main() -> None:
         concurrency=args.concurrency,
         batch_size=args.batch_size,
         resume=not args.no_resume,
+        max_chunks_per_call=args.max_chunks_per_call,
     )
 
     if result["status"] in ("complete", "interrupted_quota"):

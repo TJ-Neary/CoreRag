@@ -35,6 +35,7 @@ def _get_dashboard_url() -> str:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ICON_IDLE = str(PROJECT_ROOT / "assets" / "menubar_icon.png")
 ICON_ACTIVE = str(PROJECT_ROOT / "assets" / "menubar_icon_active.png")
+ICON_DOCK = str(PROJECT_ROOT / "assets" / "dock_icon.png")
 
 # Server auto-start cooldown (seconds) — don't spam restart attempts
 _SERVER_START_COOLDOWN = 30
@@ -52,6 +53,9 @@ class CoreRagApp(rumps.App):
             icon=icon_path,
             quit_button=None,  # We'll add our own
         )
+
+        # Set dock icon (replaces generic Python icon)
+        self._set_dock_icon()
 
         self.menu = [
             rumps.MenuItem("Open Dashboard", callback=self.open_dashboard),
@@ -237,6 +241,20 @@ class CoreRagApp(rumps.App):
                 self._status_item.title = "Status: Starting server..."
             else:
                 self._status_item.title = "Status: Server starting..."
+
+    @staticmethod
+    def _set_dock_icon():
+        """Set the dock icon to the CoreRag CR icon (replaces generic Python icon)."""
+        if not Path(ICON_DOCK).exists():
+            return
+        try:
+            from AppKit import NSApplication, NSImage
+
+            icon = NSImage.alloc().initWithContentsOfFile_(ICON_DOCK)
+            if icon:
+                NSApplication.sharedApplication().setApplicationIconImage_(icon)
+        except Exception:
+            pass  # Non-critical — generic Python icon is fine as fallback
 
     def _set_active(self, active: bool):
         """Switch between idle and active icon states."""

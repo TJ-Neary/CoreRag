@@ -12,7 +12,6 @@ Key Features:
 import gc
 import logging
 import threading
-import time
 from contextlib import contextmanager
 from enum import Enum
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
@@ -42,9 +41,6 @@ class JobPriority(Enum):
 MEMORY_PAUSE_THRESHOLD = SAFE_MEMORY_PAUSE_PCT
 MEMORY_WARNING_THRESHOLD = 70  # Start reducing batch sizes
 MEMORY_RESUME_THRESHOLD = SAFE_MEMORY_RESUME_PCT
-
-# Notification cooldown: suppress duplicate macOS notifications within this window
-NOTIFICATION_COOLDOWN_SECONDS = 300  # 5 minutes
 
 
 class IngestionController:
@@ -285,10 +281,6 @@ class SafeProcessor:
         self.memory = MemoryManager(self.monitor)
         self.ingestion = get_ingestion_controller()
 
-        # Notification cooldown: {title: (last_sent_time, suppressed_count)}
-        self._notification_state: dict[str, tuple[float, int]] = {}
-        self._notification_lock = threading.Lock()
-
         if auto_start:
             self.monitor.start()
 
@@ -443,76 +435,22 @@ class SafeProcessor:
                 yield from process_func(current_batch)
 
     def _on_warning(self, status: SystemStatus) -> None:
-        """Handle warning level."""
+        """Handle warning level — log only, system auto-throttles."""
         logger.warning(
-            f"System warning: Memory at {status.memory_used_gb:.1f}GB. " "Reducing batch sizes."
-        )
-        self._send_notification(
-            "CoreRag Warning",
-            f"Memory at {status.memory_used_gb:.1f}GB - reducing load",
+            f"System warning: Memory at {status.memory_used_gb:.1f}GB. Reducing batch sizes."
         )
 
     def _on_critical(self, status: SystemStatus) -> None:
-        """Handle critical level."""
-        logger.error(
-            f"System critical: Memory at {status.memory_used_gb:.1f}GB. " "Pausing new work."
-        )
-        self._send_notification(
-            "CoreRag Critical",
-            "High resource usage - processing paused",
-        )
+        """Handle critical level — log only, system auto-pauses."""
+        logger.error(f"System critical: Memory at {status.memory_used_gb:.1f}GB. Pausing new work.")
 
     def _on_emergency(self, status: SystemStatus) -> None:
-        """Handle emergency level."""
+        """Handle emergency level — cleanup and log."""
         logger.critical(
             f"System emergency: Memory at {status.memory_used_gb:.1f}GB! "
             "Stopping all processing."
         )
         self.memory.cleanup(force=True)
-        self._send_notification(
-            "CoreRag EMERGENCY",
-            "Critical resource usage - stopping all work",
-        )
-
-    def _send_notification(self, title: str, message: str) -> None:
-        """Send macOS desktop notification with cooldown to prevent spam.
-
-        Suppresses duplicate notifications within NOTIFICATION_COOLDOWN_SECONDS.
-        When a suppressed notification finally sends, it includes the count
-        of suppressed occurrences so nothing is silently lost.
-        """
-        now = time.time()
-
-        with self._notification_lock:
-            if title in self._notification_state:
-                last_sent, suppressed = self._notification_state[title]
-                if now - last_sent < NOTIFICATION_COOLDOWN_SECONDS:
-                    self._notification_state[title] = (last_sent, suppressed + 1)
-                    logger.debug(
-                        f"Notification suppressed ({suppressed + 1}x): {title} - {message}"
-                    )
-                    return
-                # Cooldown expired — send with suppression count
-                if suppressed > 0:
-                    message = f"{message} (+{suppressed} suppressed)"
-            self._notification_state[title] = (now, 0)
-
-        try:
-            import subprocess
-
-            escaped_msg = message.replace('"', '\\"')
-            escaped_title = title.replace('"', '\\"')
-            script = (
-                f'display notification "{escaped_msg}" '
-                f'with title "{escaped_title}" sound name "Ping"'
-            )
-            subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True,
-                timeout=2,
-            )
-        except Exception as e:
-            logger.debug(f"Could not send notification: {e}")
 
 
 # Convenience function for one-off status checks

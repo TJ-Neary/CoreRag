@@ -81,6 +81,10 @@ coverage.xml
 *.pem
 config.yaml
 *.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
 *.key
 secrets.json
 credentials.json
