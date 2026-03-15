@@ -189,3 +189,6 @@ security_scan.sh
 # Playwright Screenshots
 .playwright-mcp/
 
+
+# Worktrees
+.worktrees/
