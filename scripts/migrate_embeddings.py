@@ -244,10 +244,22 @@ def migrate_embeddings(
 
     # ── Swap child_chunks table ───────────────────────────────────────────
     logger.info("Swapping child_chunks table...")
-    child_arrow = pa.table(all_children)
-    logger.info(f"  Arrow table: {child_arrow.num_rows} rows, {child_arrow.num_columns} columns")
-    db.drop_table("child_chunks")
-    db.create_table("child_chunks", child_arrow)
+    has_sparse = "sparse_vector" in all_children
+    if has_sparse:
+        # LanceDB handles sparse vectors natively via list-of-dicts
+        # PyArrow doesn't understand sparse vector dicts, so bypass pa.table()
+        num_rows = len(all_children[next(iter(all_children))])
+        child_rows = [{col: all_children[col][i] for col in all_children} for i in range(num_rows)]
+        logger.info(f"  Row list: {len(child_rows)} rows (sparse vectors included)")
+        db.drop_table("child_chunks")
+        db.create_table("child_chunks", child_rows)
+    else:
+        child_arrow = pa.table(all_children)
+        logger.info(
+            f"  Arrow table: {child_arrow.num_rows} rows, {child_arrow.num_columns} columns"
+        )
+        db.drop_table("child_chunks")
+        db.create_table("child_chunks", child_arrow)
 
     # Rebuild FTS index
     try:

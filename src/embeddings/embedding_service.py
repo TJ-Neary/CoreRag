@@ -466,7 +466,7 @@ class EmbeddingService:
 
         dense_vecs = output["dense_vecs"].tolist()
         sparse_vecs = [
-            {int(k): float(v) for k, v in weights.items()} for weights in output["lexical_weights"]
+            {str(k): float(v) for k, v in weights.items()} for weights in output["lexical_weights"]
         ]
 
         return dense_vecs, sparse_vecs
