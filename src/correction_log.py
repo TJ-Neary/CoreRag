@@ -4,9 +4,11 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src import config
+
 logger = logging.getLogger(__name__)
 
-CORRECTIONS_PATH = Path("corrections_log.json")
+CORRECTIONS_PATH = config.STATE_DIR / "corrections_log.json"
 MAX_EXAMPLES = 10  # Number of recent corrections to include in prompts
 
 

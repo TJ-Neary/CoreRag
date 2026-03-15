@@ -1,0 +1,25 @@
+# Personal PII Terms — Copy to your project's data directory and fill in your values.
+#
+# These terms will be matched against all documents during processing.
+# Matches trigger sensitivity flags and get redacted in exports.
+#
+# Supported types:
+#   SSN, EMAIL, PHONE, ADDRESS, NAME, CREDIT_CARD,
+#   ACCOUNT, EMPLOYEE_ID, POLICY, FINANCIAL, MEDICAL, CUSTOM
+#
+# This file should NEVER be committed to git.
+# Set file permissions: chmod 600 <path-to-this-file>
+
+terms:
+  # - value: "123-45-6789"
+  #   type: SSN
+  # - value: "your.email@example.com"
+  #   type: EMAIL
+  # - value: "555-123-4567"
+  #   type: PHONE
+  # - value: "1234 Main Street, Anytown ST 12345"
+  #   type: ADDRESS
+  # - value: "Your Full Name"
+  #   type: NAME
+  # - value: "EMP-123456"
+  #   type: EMPLOYEE_ID

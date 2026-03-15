@@ -375,7 +375,7 @@ class GeminiCliProvider(LLMProvider):
                 self._cli_path = fallback
             else:
                 raise ProcessingError(
-                    "Gemini CLI not found. Install with: npm install -g @anthropic-ai/gemini-cli"
+                    "Gemini CLI not found. Install from: https://github.com/google-gemini/gemini-cli"
                 )
 
         self._cli_model = self._MODEL_MAP.get(config.model, config.model)

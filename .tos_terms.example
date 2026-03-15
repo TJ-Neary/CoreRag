@@ -1,0 +1,22 @@
+# .tos_terms — Project-specific prohibited content terms
+# =====================================================================
+# Copy to .tos_terms and add your project's prohibited terms (gitignored).
+#
+# The security scanner (phase 13/13) checks committed files for these
+# terms to prevent GitHub ToS violations. Terms that should never
+# appear in public repositories go here.
+#
+# Format:
+#   term                    — scanned as HIGH severity (default)
+#   SEVERITY|term           — scanned at specified severity
+#
+# Valid severities: CRITICAL, HIGH, MEDIUM, LOW
+#
+# One term per line. Case-insensitive matching.
+# Lines starting with # are comments. Blank lines are skipped.
+#
+# Examples of what to add:
+# CRITICAL|offensive_persona_name
+# HIGH|internal_codename
+# MEDIUM|private_feature_name
+# your_private_api_endpoint

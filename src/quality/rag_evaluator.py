@@ -88,7 +88,7 @@ class RAGEvaluator:
         for ctx in contexts[:5]:  # Limit to avoid excessive LLM calls
             prompt = PRECISION_PROMPT.format(query=query, context=ctx[:500])
             try:
-                response = await self.provider.generate(prompt, max_tokens=10)
+                response = await self.provider.generate("", prompt)
                 score = self._parse_score(response)
                 scores.append(score)
             except Exception:
@@ -120,7 +120,7 @@ class RAGEvaluator:
         prompt = FAITHFULNESS_PROMPT.format(answer=answer[:500], contexts=combined)
 
         try:
-            response = await self.provider.generate(prompt, max_tokens=10)
+            response = await self.provider.generate("", prompt)
             return self._parse_score(response)
         except Exception:
             return 0.5
@@ -132,7 +132,7 @@ class RAGEvaluator:
 
         prompt = RELEVANCY_PROMPT.format(query=query, answer=answer[:500])
         try:
-            response = await self.provider.generate(prompt, max_tokens=10)
+            response = await self.provider.generate("", prompt)
             return self._parse_score(response)
         except Exception:
             return 0.5

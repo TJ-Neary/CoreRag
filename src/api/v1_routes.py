@@ -37,7 +37,14 @@ from src.api.models import (
     SearchResultItem,
     StatsResponse,
 )
-from src.config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, STATE_DIR, VAULT_PATHS
+from src.config import (
+    DB_PATH,
+    EMBEDDING_DIMENSIONS,
+    EMBEDDING_MODEL,
+    OLLAMA_MODEL,
+    STATE_DIR,
+    VAULT_PATHS,
+)
 from src.exceptions import CoreRagError
 from src.utils.query_sanitize import build_eq_clause, build_tag_clauses
 
@@ -269,6 +276,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         offset = request_body.offset
         use_hyde = request_body.use_hyde
         tags = request_body.tags
+        category = request_body.category
 
         if not query:
             return JSONResponse(
@@ -279,9 +287,14 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         try:
             import lancedb
 
-            from src.embeddings.embedding_service import create_embedding_service
+            # Use shared services from lifespan if available, else create per-request
+            embedder = getattr(request.app.state, "embedding_service", None)
+            db = getattr(request.app.state, "db", None)
+            if not embedder or not db:
+                from src.embeddings.embedding_service import create_embedding_service
 
-            db = lancedb.connect(DB_PATH)
+                db = lancedb.connect(DB_PATH)
+                embedder = create_embedding_service()
 
             if "child_chunks" not in db.table_names():
                 return JSONResponse(
@@ -294,55 +307,100 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     },
                 )
 
-            embedder = create_embedding_service()
-            search_text = query
+            # Use HybridSearcher for full-quality search (same pipeline as MCP)
+            hybrid_searcher = getattr(request.app.state, "hybrid_searcher", None)
+            reranker = getattr(request.app.state, "reranker", None)
 
-            if use_hyde:
-                try:
-                    from src.search.hyde import create_hyde_expander
+            if hybrid_searcher:
+                # Full hybrid search: vector + BM25 + RRF fusion
+                query_vector = embedder.embed_query(query)
+                filters = {}
+                if tags:
+                    filters["tags"] = tags
+                if category:
+                    filters["category"] = category
 
-                    hyde = create_hyde_expander(
-                        backend="ollama",
-                        model=os.getenv("OLLAMA_MODEL", "qwen2.5:32b"),
-                        embedder=None,
-                    )
-                    result = hyde.expand(query)
-                    search_text = result.hypothetical_document
-                except Exception as e:
-                    logger.warning(f"HyDE expansion failed: {e}")
-
-            query_vector = embedder.embed_query(search_text)
-            child_table = db.open_table("child_chunks")
-
-            # Fetch enough results to support pagination
-            fetch_count = offset + k + 1  # +1 to detect has_more
-            search_op = child_table.search(query_vector).limit(fetch_count)
-
-            if tags:
-                search_op = search_op.where(build_tag_clauses(tags))
-
-            results_raw = search_op.to_list()
-            total_available = len(results_raw)
-            has_more = total_available > offset + k
-
-            # Slice for pagination
-            paginated = results_raw[offset : offset + k]
-
-            results = []
-            for r in paginated:
-                raw_tags = r.get("tags", "")
-                result_tags = [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
-                results.append(
-                    SearchResultItem(
-                        content=r.get("content", ""),
-                        source_path=r.get("source_path", ""),
-                        document_id=r.get("document_id", ""),
-                        parent_id=r.get("parent_id", ""),
-                        chunk_index=r.get("chunk_index", 0),
-                        score=float(r.get("_distance", 0)),
-                        tags=result_tags,
-                    )
+                fetch_count = offset + k + 10  # Fetch extra for pagination
+                hybrid_results = await hybrid_searcher.search(
+                    query=query,
+                    query_vector=query_vector,
+                    k=fetch_count,
+                    filters=filters if filters else None,
                 )
+
+                # Apply reranker if available
+                if reranker and hybrid_results:
+                    try:
+                        hybrid_results = reranker.rerank(query, hybrid_results, top_k=fetch_count)
+                    except Exception as e:
+                        logger.warning(f"Reranking failed (non-fatal): {e}")
+
+                total_available = len(hybrid_results)
+                has_more = total_available > offset + k
+                paginated = hybrid_results[offset : offset + k]
+
+                results = []
+                for r in paginated:
+                    raw_tags = r.metadata.get("tags", "")
+                    result_tags = (
+                        [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
+                    )
+                    results.append(
+                        SearchResultItem(
+                            content=r.content,
+                            source_path=r.metadata.get("source_path", ""),
+                            document_id=r.document_id,
+                            parent_id=r.metadata.get("parent_id", ""),
+                            chunk_index=r.metadata.get("chunk_index", 0),
+                            score=r.rrf_score,
+                            tags=result_tags,
+                        )
+                    )
+            else:
+                # Fallback: plain vector search (no hybrid searcher available)
+                search_text = query
+                if use_hyde:
+                    try:
+                        from src.search.hyde import create_hyde_expander
+
+                        hyde = create_hyde_expander(
+                            backend="ollama",
+                            model=OLLAMA_MODEL,
+                            embedder=None,
+                        )
+                        result = hyde.expand(query)
+                        search_text = result.hypothetical_document
+                    except Exception as e:
+                        logger.warning(f"HyDE expansion failed: {e}")
+
+                query_vector = embedder.embed_query(search_text)
+                child_table = db.open_table("child_chunks")
+                fetch_count = offset + k + 1
+                search_op = child_table.search(query_vector).limit(fetch_count)
+                if tags:
+                    search_op = search_op.where(build_tag_clauses(tags))
+                results_raw = search_op.to_list()
+                total_available = len(results_raw)
+                has_more = total_available > offset + k
+                paginated = results_raw[offset : offset + k]
+
+                results = []
+                for r in paginated:
+                    raw_tags = r.get("tags", "")
+                    result_tags = (
+                        [t for t in raw_tags.strip(",").split(",") if t] if raw_tags else []
+                    )
+                    results.append(
+                        SearchResultItem(
+                            content=r.get("content", ""),
+                            source_path=r.get("source_path", ""),
+                            document_id=r.get("document_id", ""),
+                            parent_id=r.get("parent_id", ""),
+                            chunk_index=r.get("chunk_index", 0),
+                            score=max(0.0, 1.0 - float(r.get("_distance", 0))),
+                            tags=result_tags,
+                        )
+                    )
 
             return SearchResponse(
                 results=results,
@@ -386,9 +444,13 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         try:
             import lancedb
 
-            from src.embeddings.embedding_service import create_embedding_service
+            embedder = getattr(request.app.state, "embedding_service", None)
+            db = getattr(request.app.state, "db", None)
+            if not embedder or not db:
+                from src.embeddings.embedding_service import create_embedding_service
 
-            db = lancedb.connect(DB_PATH)
+                db = lancedb.connect(DB_PATH)
+                embedder = create_embedding_service()
 
             if "child_chunks" not in db.table_names():
                 return JSONResponse(
@@ -401,7 +463,6 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     },
                 )
 
-            embedder = create_embedding_service()
             search_text = query
 
             if request_body.use_hyde:
@@ -410,7 +471,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
                     hyde = create_hyde_expander(
                         backend="ollama",
-                        model=os.getenv("OLLAMA_MODEL", "qwen2.5:32b"),
+                        model=OLLAMA_MODEL,
                         embedder=None,
                     )
                     result = hyde.expand(query)
@@ -433,7 +494,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     "source_path": r.get("source_path", ""),
                     "chunk_index": r.get("chunk_index", 0),
                     "content": r.get("content", ""),
-                    "score": float(r.get("_distance", 0)),
+                    "score": max(0.0, 1.0 - float(r.get("_distance", 0))),
                 }
                 for r in results_raw
             ]
@@ -505,11 +566,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             import lancedb
 
             from src.chunking.parent_child import ParentChildChunker
-            from src.embeddings.embedding_service import create_embedding_service
 
-            db = lancedb.connect(DB_PATH)
+            embedder = getattr(request.app.state, "embedding_service", None)
+            db = getattr(request.app.state, "db", None)
+            if not embedder or not db:
+                from src.embeddings.embedding_service import create_embedding_service
+
+                db = lancedb.connect(DB_PATH)
+                embedder = create_embedding_service()
+
             chunker = ParentChildChunker()
-            embedder = create_embedding_service()
 
             document_id = hashlib.sha256(content[:5000].encode()).hexdigest()[:16]
 
@@ -870,12 +936,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             import lancedb
 
             from src.chunking.parent_child import ParentChildChunker
-            from src.embeddings.embedding_service import create_embedding_service
 
-            db = lancedb.connect(str(DB_PATH))
+            embedder = getattr(request.app.state, "embedding_service", None)
+            db = getattr(request.app.state, "db", None)
+            if not embedder or not db:
+                from src.embeddings.embedding_service import create_embedding_service
+
+                db = lancedb.connect(str(DB_PATH))
+                embedder = create_embedding_service()
+
             chunker = ParentChildChunker()
-            embedder = create_embedding_service()
-
             document_id = hashlib.sha256(body.text[:5000].encode()).hexdigest()[:16]
 
             parents, children = chunker.chunk_document(

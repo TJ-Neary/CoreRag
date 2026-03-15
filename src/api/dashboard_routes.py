@@ -9,7 +9,6 @@ All routes are internal (no API key auth) — the dashboard runs on localhost.
 
 import gc
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -429,11 +428,22 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
 
             parents = db.open_table("parent_chunks")
             children = db.open_table("child_chunks")
-            p_dict = parents.to_arrow().to_pydict()
-            c_dict = children.to_arrow().to_pydict()
+
+            # Select only metadata columns — avoid loading content and vector columns
+            # (~30MB for vectors alone at 7,329 x 1024-dim float32)
+            p_cols = (
+                parents.to_arrow()
+                .select([c for c in ["source_path", "content"] if c in parents.schema.names])
+                .to_pydict()
+            )
+            c_cols = (
+                children.to_arrow()
+                .select([c for c in ["source_path"] if c in children.schema.names])
+                .to_pydict()
+            )
 
             files: dict = {}
-            for i, sp in enumerate(p_dict.get("source_path", [])):
+            for i, sp in enumerate(p_cols.get("source_path", [])):
                 if sp not in files:
                     files[sp] = {
                         "source_path": sp,
@@ -442,17 +452,17 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                         "preview": "",
                     }
                 files[sp]["parent_chunks"] += 1
-                if not files[sp]["preview"] and p_dict.get("content"):
-                    files[sp]["preview"] = p_dict["content"][i][:200]
+                if not files[sp]["preview"] and p_cols.get("content"):
+                    files[sp]["preview"] = p_cols["content"][i][:200]
 
-            for sp in c_dict.get("source_path", []):
+            for sp in c_cols.get("source_path", []):
                 if sp in files:
                     files[sp]["child_chunks"] += 1
 
             return {
                 "files": sorted(files.values(), key=lambda f: f["source_path"]),
-                "total_parents": len(p_dict.get("source_path", [])),
-                "total_children": len(c_dict.get("source_path", [])),
+                "total_parents": len(p_cols.get("source_path", [])),
+                "total_children": len(c_cols.get("source_path", [])),
             }
         except Exception as e:
             logger.error(f"RAG index query failed: {e}", exc_info=True)
@@ -779,14 +789,17 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             try:
                 import lancedb
 
-                from src.embeddings.embedding_service import create_embedding_service
+                _db = getattr(request.app.state, "db", None)
+                _embedder = getattr(request.app.state, "embedding_service", None)
+                if not _db or not _embedder:
+                    from src.embeddings.embedding_service import create_embedding_service
 
-                db = lancedb.connect(DB_PATH)
+                    _db = lancedb.connect(DB_PATH)
+                    _embedder = create_embedding_service()
 
-                if "child_chunks" in db.table_names():
-                    embedder = create_embedding_service()
-                    query_vector = embedder.embed_query(user_message)
-                    table = db.open_table("child_chunks")
+                if "child_chunks" in _db.table_names():
+                    query_vector = _embedder.embed_query(user_message)
+                    table = _db.open_table("child_chunks")
                     results = table.search(query_vector).limit(5).to_list()
 
                     for r in results:
@@ -808,30 +821,24 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 f"Retrieved documents:\n{context_text}"
             )
 
-        messages = [{"role": "system", "content": system_prompt}]
+        # Build user prompt from history + current message
+        history_text = ""
         for h in history[-10:]:
-            messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-        messages.append({"role": "user", "content": user_message})
+            role = h.get("role", "user")
+            content = h.get("content", "")
+            history_text += f"{role}: {content}\n"
+        user_prompt = f"{history_text}user: {user_message}" if history_text else user_message
 
         try:
-            import httpx
+            from src.llm.provider import get_default_provider
 
-            ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
-            ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(
-                    f"{ollama_host}/api/chat",
-                    json={"model": ollama_model, "messages": messages, "stream": False},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                assistant_message = data.get("message", {}).get("content", "")
+            provider = get_default_provider()
+            assistant_message = await provider.generate(system_prompt, user_prompt)
 
             return {
                 "response": assistant_message,
                 "sources": sources,
-                "model": ollama_model,
+                "model": provider.config.model,
                 "rag_used": bool(context_chunks),
             }
         except Exception as e:

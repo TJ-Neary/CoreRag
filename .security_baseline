@@ -16,6 +16,9 @@ Ecosystem Reference|docs/USER_GUIDE.md|CoreRag's own API endpoint documentation
 Ecosystem Reference|_DEV/DevPlan.md|HQ sync references and CoreRag API docs
 Ecosystem Reference|scripts/security_scan.sh|Scanner contains ecosystem pattern definitions
 Ecosystem Reference|src/utils/retry.py|HQ origin comment in contributed utility
+Ecosystem Reference|_CATALOG/ECOSYSTEM.md|Ecosystem integration doc — HQ paths are documentation references
+Ecosystem Reference|docs/superpowers/specs/*|P7 spec references HQ paths as documentation
+Ecosystem Reference|docs/superpowers/plans/*|P7 plan references HQ paths as documentation
 
 # GitHub username in badge URLs and clone URL — public repo, username is public
 Private Reference|README.md|GitHub username TJ-Neary in badge URLs and clone URL — public information

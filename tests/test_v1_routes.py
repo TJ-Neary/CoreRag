@@ -269,7 +269,7 @@ class TestSearchEndpoint:
         assert data["total"] == 1
         assert data["query"] == "test query"
         assert data["results"][0]["content"] == "Found result"
-        assert data["results"][0]["score"] == 0.25
+        assert data["results"][0]["score"] == 0.75  # 1.0 - 0.25 distance = 0.75 similarity
         assert "python" in data["results"][0]["tags"]
 
     def test_search_with_tags(self):

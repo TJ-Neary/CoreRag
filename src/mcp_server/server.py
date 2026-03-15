@@ -110,7 +110,8 @@ async def _startup():
     from src.llm.provider import get_default_provider
 
     llm_provider = get_default_provider()
-    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
+    from src.config import OLLAMA_MODEL as ollama_model  # noqa: N811
+
     hyde_expander = create_hyde_expander(
         backend="ollama",
         model=ollama_model,
@@ -951,14 +952,16 @@ async def manage_tags(
 @mcp.tool()
 async def get_document_history(document_id: str, limit: int = 10) -> dict:
     """Get version history for a document, showing changes over time."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.get_document_history(document_id=document_id, limit=limit)
 
 
 @mcp.tool()
 async def get_document_diff(document_id: str, from_version: int, to_version: int) -> dict:
     """Get a diff between two versions of a document."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.get_document_diff(
         document_id=document_id, from_version=from_version, to_version=to_version
     )
@@ -967,7 +970,8 @@ async def get_document_diff(document_id: str, from_version: int, to_version: int
 @mcp.tool()
 async def restore_document_version(document_id: str, version_number: int) -> dict:
     """Restore a previous version of a document."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.restore_document_version(
         document_id=document_id, version_number=version_number
     )
@@ -979,7 +983,8 @@ async def restore_document_version(document_id: str, version_number: int) -> dic
 @mcp.tool()
 async def analyze_knowledge_gaps() -> dict:
     """Analyze the knowledge base for gaps — failed searches, sparse folders, topic imbalances."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.analyze_knowledge_gaps()
 
 
@@ -989,21 +994,24 @@ async def analyze_knowledge_gaps() -> dict:
 @mcp.tool()
 async def get_golden_suggestions(limit: int = 10) -> dict:
     """Get analytics-based suggestions for golden set regression tests."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.get_golden_suggestions(limit=limit)
 
 
 @mcp.tool()
 async def approve_golden_suggestion(query: str) -> dict:
     """Approve a golden set suggestion and add it to the test suite."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     return await _corerag_tools.approve_golden_suggestion(query=query)
 
 
 @mcp.tool()
 async def list_golden_entries(limit: int = 50, source: str = "") -> dict:
     """List current golden set entries, optionally filtered by source."""
-    assert _corerag_tools is not None
+    if not _corerag_tools:
+        return {"error": "CoreRag tools not initialized"}
     src_filter = source if source else None
     return await _corerag_tools.list_golden_entries(limit=limit, source=src_filter)
 

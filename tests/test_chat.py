@@ -27,6 +27,15 @@ def client():
     return TestClient(app)
 
 
+def _mock_provider(response_text: str = "Hello! I'm your CoreRag assistant."):
+    """Create a mock LLMProvider that returns the given text."""
+    provider = MagicMock()
+    provider.generate = AsyncMock(return_value=response_text)
+    provider.config = MagicMock()
+    provider.config.model = "test-model"
+    return provider
+
+
 class TestChatEndpoint:
     """Tests for POST /api/chat."""
 
@@ -38,15 +47,13 @@ class TestChatEndpoint:
         assert "error" in data
 
     def test_chat_no_rag_success(self, client):
-        """Successful chat with RAG disabled and mocked Ollama."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "message": {"content": "Hello! I'm your CoreRag assistant."}
-        }
-        mock_response.raise_for_status = MagicMock()
+        """Successful chat with RAG disabled and mocked LLM provider."""
+        mock_prov = _mock_provider("Hello! I'm your CoreRag assistant.")
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
+        with patch(
+            "src.llm.provider.get_default_provider",
+            return_value=mock_prov,
+        ):
             resp = client.post(
                 "/api/chat",
                 json={
@@ -64,12 +71,12 @@ class TestChatEndpoint:
 
     def test_chat_with_history(self, client):
         """Chat includes conversation history."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"message": {"content": "You asked about Python."}}
-        mock_response.raise_for_status = MagicMock()
+        mock_prov = _mock_provider("You asked about Python.")
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
+        with patch(
+            "src.llm.provider.get_default_provider",
+            return_value=mock_prov,
+        ):
             resp = client.post(
                 "/api/chat",
                 json={
@@ -86,11 +93,14 @@ class TestChatEndpoint:
         assert "response" in data
 
     def test_chat_ollama_failure(self, client):
-        """Ollama connection failure returns error with sources."""
+        """LLM provider failure returns error with sources."""
+        mock_prov = MagicMock()
+        mock_prov.generate = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_prov.config = MagicMock()
+
         with patch(
-            "httpx.AsyncClient.post",
-            new_callable=AsyncMock,
-            side_effect=Exception("Connection refused"),
+            "src.llm.provider.get_default_provider",
+            return_value=mock_prov,
         ):
             resp = client.post(
                 "/api/chat",
@@ -105,17 +115,15 @@ class TestChatEndpoint:
         assert "sources" in data
 
     def test_chat_rag_retrieval_failure_still_calls_llm(self, client):
-        """If RAG fails, chat should still call Ollama without context."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "message": {"content": "I don't have context but I can help."}
-        }
-        mock_response.raise_for_status = MagicMock()
+        """If RAG fails, chat should still call LLM without context."""
+        mock_prov = _mock_provider("I don't have context but I can help.")
 
         with (
             patch("lancedb.connect", side_effect=Exception("DB not found")),
-            patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response),
+            patch(
+                "src.llm.provider.get_default_provider",
+                return_value=mock_prov,
+            ),
         ):
             resp = client.post(
                 "/api/chat",

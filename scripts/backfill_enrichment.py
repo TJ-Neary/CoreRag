@@ -305,12 +305,27 @@ class BackfillStats:
 # ── Main Backfill Logic ────────────────────────────────────────────
 
 
-def _create_provider(provider_name: str, model: str) -> LoggingLLMProvider:
-    """Create an LLM provider wrapped with logging."""
+_BACKFILL_MODEL_DEFAULTS: dict[str, str] = {
+    "ollama": "qwen3:32b",
+    "gemini-cli": "gemini-2.5-pro",
+    "claude-cli": "sonnet",
+    "codex-cli": "gpt-5.3-codex",
+}
+
+
+def _create_provider(provider_name: str, model: str | None) -> LoggingLLMProvider:
+    """Create an LLM provider wrapped with logging.
+
+    When model is None, uses backfill-specific defaults instead of the global
+    CORERAG_LLM_MODEL env var (which may be set for a different provider).
+    """
     from src.llm.provider import create_llm_provider
 
-    raw_provider = create_llm_provider(provider=provider_name, model=model)
-    logger.info(f"LLM provider: {raw_provider.__class__.__name__} (model: {model})")
+    resolved_model = model or _BACKFILL_MODEL_DEFAULTS.get(provider_name)
+    raw_provider = create_llm_provider(provider=provider_name, model=resolved_model)
+    logger.info(
+        f"LLM provider: {raw_provider.__class__.__name__} " f"(model: {raw_provider.config.model})"
+    )
     return LoggingLLMProvider(raw_provider)
 
 
@@ -918,8 +933,8 @@ def main() -> None:
     parser.add_argument(
         "--model",
         type=str,
-        default="gemini-2.5-pro",
-        help="Model name (default: gemini-2.5-pro)",
+        default=None,
+        help="Model name (default: auto per provider — qwen3:32b for ollama, gemini-2.5-pro for gemini-cli)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
     parser.add_argument(

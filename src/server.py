@@ -62,6 +62,38 @@ async def lifespan(app: FastAPI):
             backup_name="startup",
         )
 
+    if not os.getenv("CORERAG_API_KEY"):
+        logger.warning(
+            "API authentication disabled — all /api/v1/ endpoints are open. "
+            "Set CORERAG_API_KEY in .env to enable authentication."
+        )
+
+    # Initialize shared services for API routes (same as MCP server does)
+    try:
+        import lancedb
+
+        from src.embeddings.embedding_service import create_embedding_service
+        from src.search.hybrid_search import HybridSearcher
+        from src.search.reranker import CrossEncoderReranker
+
+        db = lancedb.connect(str(config.DB_PATH))
+        embedding_service = create_embedding_service()
+        reranker = CrossEncoderReranker()
+        hybrid_searcher = HybridSearcher(db=db, embedder=embedding_service)
+        hybrid_searcher.ensure_fts_index()
+
+        app.state.db = db
+        app.state.embedding_service = embedding_service
+        app.state.reranker = reranker
+        app.state.hybrid_searcher = hybrid_searcher
+        logger.info(
+            "Shared services initialized: EmbeddingService (%s), HybridSearcher, Reranker",
+            embedding_service.model_name,
+        )
+    except Exception as e:
+        logger.warning("Shared services not initialized (non-fatal): %s", e)
+        # API routes will fall back to per-request initialization
+
     yield
 
 

@@ -65,7 +65,7 @@ LOG_DIR = STATE_DIR / "logs"
 # ── LLM / Model Configuration ────────────────────────────────────────────────
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:32b")
 EMBEDDING_MODEL = os.getenv("CORERAG_EMBEDDING_MODEL", "BAAI/bge-m3")
 
 # Model → dimension mapping for supported embedding models

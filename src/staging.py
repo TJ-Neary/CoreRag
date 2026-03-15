@@ -5,9 +5,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from src import config
 from src.exceptions import DatabaseError
 
-STAGING_MANIFEST_PATH = Path("staging_manifest.json")
+STAGING_MANIFEST_PATH = config.STATE_DIR / "staging_manifest.json"
 
 
 def _read_locked(f):
