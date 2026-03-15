@@ -83,6 +83,20 @@ class CoreRagTools:
         self._query_analytics = None
         self._conversation_manager = None
 
+        # Delegate to tool groups (facade pattern)
+        from src.mcp_server.maintenance_tools import MaintenanceTools
+        from src.mcp_server.memory_tools import MemoryTools
+        from src.mcp_server.quality_tools import QualityTools
+
+        self._memory = MemoryTools()
+        self._quality = QualityTools(
+            db=db,
+            vault_root=self.vault_root,
+            conflict_detector=conflict_detector,
+            query_analytics=None,
+        )
+        self._maintenance = MaintenanceTools(db=db, vault_root=self.vault_root)
+
     def _to_dict(self, obj) -> dict:
         """Convert a dataclass or dict result to a plain dict."""
         if isinstance(obj, dict):
