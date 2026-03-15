@@ -122,15 +122,17 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
 
         # Sensitivity decision: custom dictionary matches always trigger.
         # Presidio NER-only detections (generic names/addresses) do NOT trigger
-        # unless they match structured PII patterns (SSN, credit card, email, phone).
-        # This prevents false positives from author names, publisher addresses,
-        # and organization names in published documents.
-        structured_pii_types = {"ssn", "credit_card", "email", "phone", "account", "employee_id"}
+        # Only YOUR PII triggers sensitivity:
+        # - Custom dictionary matches (your 85 terms — always trigger)
+        # - SSN/credit card patterns (universally sensitive regardless of whose)
+        # Emails, phone numbers, names, and addresses from other people/orgs
+        # are NOT your PII — they stay readable and don't trigger sensitivity.
+        always_sensitive_types = {"ssn", "credit_card"}
         has_custom_match = len(custom_matches) > 0
-        has_structured_pii = any(
-            m.data_type.value.lower() in structured_pii_types for m in high_confidence
+        has_universal_pii = any(
+            m.data_type.value.lower() in always_sensitive_types for m in high_confidence
         )
-        is_sensitive = has_custom_match or has_structured_pii
+        is_sensitive = has_custom_match or has_universal_pii
 
         # Build detection summary for the dashboard (no raw PII values)
         pii_detections = []
