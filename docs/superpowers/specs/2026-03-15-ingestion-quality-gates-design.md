@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-15
 **Author:** Claude Opus 4.6 (Session 31)
-**Status:** Draft
+**Status:** Reviewed (7 edge cases addressed)
 
 ---
 
@@ -98,7 +98,27 @@ At server startup (in `lifespan`), run `validate_database_integrity()`:
 1. Find all parent source_paths not in child source_paths → auto-clean
 2. Log summary: "Startup integrity: cleaned N orphaned parents from M files"
 
-This replaces the manual cleanup done in Session 31.
+This replaces the manual cleanup done in Session 31. Complements (does not replace) the existing `HealthChecker.quick_check()`.
+
+**Note:** The startup check scans parent vs child source_paths across the full DB. At current scale (553 parents, 7,329 children) this is fast (~10ms). Revisit if DB grows to 100k+ chunks.
+
+---
+
+## Edge Cases (from review)
+
+1. **`skip_rag` items:** When users check "Skip RAG" on the dashboard, `execute_approved_item()` skips indexing. `validate_commit()` must check the manifest item's `skip_rag` flag and skip parent-child integrity checks for these items.
+
+2. **`skip_parents` (quick-capture API):** `IngestService.ingest(skip_parents=True)` creates only children, no parents. The startup `validate_database_integrity()` must not flag child-only entries from the API quick-capture path as orphans. Check: if a source_path exists in children but not parents, it's valid IF it was ingested via API.
+
+3. **`_index_in_rag()` return value:** Currently discards `IngestResult`. Modify to return it so `validate_commit()` can use `result.parent_chunks` and `result.child_chunks` directly instead of querying LanceDB again.
+
+4. **Duplicate rate source:** The pre-commit `validate_batch()` reads `duplicate_info` already stored on each manifest item by `processor.py` — it does NOT re-run dedup.
+
+5. **Early termination:** If the batch processor stops early (memory pressure, user stop), `validate_batch()` runs on whatever items have been processed so far. Partial batches still get validated.
+
+6. **Validator errors:** If `validate_batch()` or `validate_commit()` themselves throw, they must be wrapped in try/except and log warnings. Validator failures never block the pipeline.
+
+7. **Report path:** Use `config.STATE_DIR / "batch_quality_report.json"`, not hardcoded `~/.corerag/`.
 
 ---
 
