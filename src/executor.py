@@ -307,6 +307,66 @@ def execute_approved_item(item_id: str):
         except Exception:
             pass  # Non-fatal — already logged inside validate_commit
 
+        # Register in document catalog
+        try:
+            from src.catalog.catalog_manager import CatalogManager, DocumentRecord, ExportRecord
+
+            catalog = CatalogManager()
+            file_size = 0
+            try:
+                file_size = original_path.stat().st_size if original_path.exists() else 0
+            except OSError:
+                pass
+
+            doc_record = DocumentRecord(
+                id=document_id,
+                original_filename=original_path.name,
+                original_path=str(original_path),
+                archive_path=str(config.ARCHIVE_PATH / target_folder / current_path.name),
+                main_rag_doc_id=document_id if not item.get("skip_rag") else None,
+                category=final_metadata.get("category", ""),
+                year=final_metadata.get("year", ""),
+                tags=",".join(final_metadata.get("tags", [])),
+                is_sensitive=is_sensitive,
+                summary=final_metadata.get("summary", ""),
+                file_type=original_path.suffix.lstrip("."),
+                file_size=file_size,
+            )
+            catalog.register(doc_record)
+
+            # Record exports
+            catalog.record_export(
+                ExportRecord(
+                    document_id=document_id,
+                    destination="archive",
+                    path=str(config.ARCHIVE_PATH / target_folder / current_path.name),
+                    redacted=False,
+                )
+            )
+            if not item.get("skip_rag"):
+                catalog.record_export(
+                    ExportRecord(
+                        document_id=document_id,
+                        destination="main_rag",
+                        path=document_id,
+                        redacted=is_sensitive,
+                    )
+                )
+            if not item.get("skip_obsidian"):
+                catalog.record_export(
+                    ExportRecord(
+                        document_id=document_id,
+                        destination="obsidian",
+                        path=str(config.VAULT_PATH / "Ingested" / current_path.name),
+                        redacted=True,
+                    )
+                )
+
+            tag_count = len(final_metadata.get("tags", []))
+            logger.info(f"Catalog: registered {current_path.name} with {tag_count} tags")
+        except Exception as e:
+            logger.warning(f"Catalog registration failed (non-fatal): {e}")
+
         return True
 
     except ProcessingError:
