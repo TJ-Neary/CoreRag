@@ -87,9 +87,50 @@ This batch serves as the test space for the new system.
 3. `/superpowers:writing-plans` — implementation plan
 4. Execute in phases:
    - Phase 1: Skip button + quality banner + LLM tags + year tag (quick wins)
-   - Phase 2: Dual database + export routing + CUI_ logic
-   - Phase 3: Redaction editor UI
-   - Phase 4: Search fan-out + RBAC integration
+   - Phase 2: Document catalog + archive folder consistency
+   - Phase 3: Dual database + export routing + CUI_ logic
+   - Phase 4: Redaction editor UI
+   - Phase 5: Search fan-out + RBAC integration
+
+### E. Document Catalog & Archive Organization
+
+**Problem:** No catalog maps files across the 4 destinations (main RAG, restricted RAG, Obsidian, archive). No way to answer "where did this file end up?" or "what's in folder X?" Post-commit, the only record is the staging manifest (which gets pruned).
+
+**Document Catalog** — persistent SQLite or JSON mapping:
+
+| Field | Description |
+|-------|-------------|
+| `original_filename` | Name of the source file |
+| `original_path` | Where it was ingested from |
+| `archive_path` | Where the original lives in ~/Documents/ |
+| `main_rag_doc_id` | Document ID in main LanceDB (null if skipped) |
+| `restricted_rag_doc_id` | Document ID in restricted LanceDB (null if not sensitive) |
+| `obsidian_path` | Path in Obsidian vault (null if not exported) |
+| `category` | LLM-assigned category |
+| `year` | Extracted year |
+| `tags` | Collection tags |
+| `is_sensitive` | Whether PII was detected |
+| `ingested_at` | Timestamp |
+| `batch_id` | Which batch this came from |
+
+**Archive Folder Consistency:**
+- Current: LLM suggests folders per-batch with no memory of previous structure
+- Fix: Feed existing archive folder tree to the LLM prompt so it reuses existing folders
+- The "AI Suggested Folders" UI should show the existing tree + proposed additions
+- Add CLI tool: `python -m src.cli.main catalog list` — show all cataloged files by folder
+
+**Archive path fix:** Currently `ARCHIVE_PATH = ~/Documents` (dumps files into Documents root). Should be `ARCHIVE_PATH = ~/Documents/Knowledge/` with organized subfolders.
+
+### F. Folder Structure Documentation
+
+The "AI Suggested Folders" feature in the dashboard UI:
+1. Click "Suggest Folders" → LLM analyzes the batch and proposes a folder hierarchy
+2. You can edit folder names and assignments in the UI
+3. Click "Save Structure" → sets the `target_folder` for each file in the batch
+4. When you "Commit All", files are archived to `ARCHIVE_PATH/{target_folder}/`
+5. This only affects the current batch — it does NOT reorganize previously committed files
+
+**When to use it:** Before committing each batch. The structure should be reviewed and saved once per batch.
 
 ## Related Work
 
