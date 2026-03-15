@@ -24,7 +24,6 @@ class TestProcessDocument:
             patch("src.staging.update_item") as mock_update,
             patch("src.processor._pii_scanner") as mock_scanner,
             patch("src.processor._dedup") as mock_dedup,
-            patch("src.processor._get_auto_tagger") as mock_tagger_factory,
         ):
 
             # Configure mocks
@@ -37,6 +36,7 @@ class TestProcessDocument:
                     "summary": "A test document about technology.",
                     "suggested_name": "tech_report",
                     "pii_observations": "",
+                    "tags": ["tech"],
                 },
                 "This is sample document text for testing.",
             )
@@ -50,14 +50,6 @@ class TestProcessDocument:
             # Dedup mock
             mock_dedup.check_file.return_value = []
 
-            # Auto-tagger mock
-            mock_tagger = MagicMock()
-            mock_tag_result = MagicMock()
-            mock_tag_result.assigned_tags = ["tech"]
-            mock_tag_result.suggested_tags = ["report"]
-            mock_tagger.tag.return_value = mock_tag_result
-            mock_tagger_factory.return_value = mock_tagger
-
             yield {
                 "extract": mock_extract,
                 "analyze": mock_analyze,
@@ -65,7 +57,6 @@ class TestProcessDocument:
                 "update": mock_update,
                 "scanner": mock_scanner,
                 "dedup": mock_dedup,
-                "tagger": mock_tagger,
             }
 
     async def test_successful_processing(self, mock_dependencies, tmp_path):
@@ -152,12 +143,12 @@ class TestProcessDocument:
         from src.processor import process_document
         from src.utils.privacy_audit import SensitiveMatch
 
-        # Configure scanner to find PII
+        # Configure scanner to find PII (SSN triggers is_sensitive)
         mock_match = MagicMock(spec=SensitiveMatch)
         mock_match.confidence = 0.95
         mock_match.data_type = MagicMock()
-        mock_match.data_type.value = "EMAIL"
-        mock_match.context = "email: [REDACTED]"
+        mock_match.data_type.value = "SSN"
+        mock_match.context = "SSN: [REDACTED]"
 
         mock_scan_result = MagicMock()
         mock_scan_result.matches = [mock_match]
@@ -202,8 +193,8 @@ class TestProcessDocument:
         assert "duplicate" in final_call
         assert final_call["duplicate"]["is_duplicate"] is True
 
-    async def test_auto_tagging_assigns_tags(self, mock_dependencies, tmp_path):
-        """Test that auto-tagging assigns and suggests tags."""
+    async def test_llm_tagging_assigns_tags_with_year(self, mock_dependencies, tmp_path):
+        """Test that LLM tags are used and year is appended as a tag."""
         from src.processor import process_document
 
         test_file = tmp_path / "document.txt"
@@ -214,6 +205,62 @@ class TestProcessDocument:
         final_call = mock_dependencies["update"].call_args_list[-1][0][1]
         assert "tags" in final_call["metadata"]
         assert "tech" in final_call["metadata"]["tags"]
+        # Year should be appended as a tag
+        assert "2024" in final_call["metadata"]["tags"]
+
+    async def test_llm_tags_string_parsed(self, mock_dependencies, tmp_path):
+        """Test that comma-separated tag strings from LLM are parsed to list."""
+        from src.processor import process_document
+
+        # Override analyze_document to return tags as a string
+        mock_dependencies["analyze"].return_value = (
+            {
+                "category": "Work",
+                "year": "2023",
+                "type": "Report",
+                "summary": "Test.",
+                "suggested_name": "test",
+                "pii_observations": "",
+                "tags": "hr-training, compliance",
+            },
+            "text",
+        )
+
+        test_file = tmp_path / "doc.txt"
+        test_file.write_text("content")
+
+        await process_document(test_file)
+
+        final_call = mock_dependencies["update"].call_args_list[-1][0][1]
+        tags = final_call["metadata"]["tags"]
+        assert "hr-training" in tags
+        assert "compliance" in tags
+        assert "2023" in tags
+
+    async def test_llm_tags_capped_at_five(self, mock_dependencies, tmp_path):
+        """Test that tags are capped at 5 total."""
+        from src.processor import process_document
+
+        mock_dependencies["analyze"].return_value = (
+            {
+                "category": "Work",
+                "year": "2024",
+                "type": "Report",
+                "summary": "Test.",
+                "suggested_name": "test",
+                "pii_observations": "",
+                "tags": ["a", "b", "c", "d", "e", "f"],
+            },
+            "text",
+        )
+
+        test_file = tmp_path / "doc.txt"
+        test_file.write_text("content")
+
+        await process_document(test_file)
+
+        final_call = mock_dependencies["update"].call_args_list[-1][0][1]
+        assert len(final_call["metadata"]["tags"]) <= 5
 
     async def test_low_confidence_pii_not_flagged(self, mock_dependencies, tmp_path):
         """Test that low confidence PII matches don't set is_sensitive."""
@@ -238,46 +285,57 @@ class TestProcessDocument:
         assert final_call["metadata"]["is_sensitive"] is False
 
 
-class TestAutoTagger:
-    """Tests for auto-tagger initialization."""
+class TestIntelligenceHelpers:
+    """Tests for intelligence.py context helper functions."""
 
-    # Note: create_embedding_service is imported inside _get_auto_tagger(), so patch at source
-    @patch("src.embeddings.embedding_service.create_embedding_service")
-    @patch("src.processor.AutoTagger")
-    def test_tagger_initialized_with_embeddings_when_available(
-        self, mock_tagger_class, mock_embedder_factory
-    ):
-        """Test auto-tagger uses embeddings when available."""
-        # Reset singleton
-        import src.processor
-        from src.processor import _get_auto_tagger
+    @patch("src.intelligence._get_existing_tags", return_value="none yet")
+    @patch("src.intelligence._get_archive_folder_tree", return_value="No archive folders yet.")
+    async def test_analyze_document_includes_tags_in_response(self, _mock_tree, _mock_tags):
+        """Test that analyze_document returns tags from LLM."""
+        from src.intelligence import analyze_document
 
-        src.processor._auto_tagger = None
+        mock_provider = MagicMock()
+        mock_provider.generate = AsyncMock(
+            return_value='{"category": "Work", "year": "2024", "type": "Guide", '
+            '"summary": "Test", "suggested_name": "test", '
+            '"pii_observations": "", "tags": ["fitness"]}'
+        )
 
-        mock_svc = MagicMock()
-        mock_svc.embed_query = MagicMock()
-        mock_embedder_factory.return_value = mock_svc
+        with patch("src.intelligence.get_default_provider", return_value=mock_provider):
+            metadata, _ = await analyze_document("Some content")
 
-        _get_auto_tagger()
+        assert metadata["tags"] == ["fitness"]
 
-        mock_tagger_class.assert_called_once()
-        call_kwargs = mock_tagger_class.call_args[1]
-        assert call_kwargs["embedder"] is not None
+    @patch("src.intelligence._get_existing_tags", return_value="none yet")
+    @patch("src.intelligence._get_archive_folder_tree", return_value="No archive folders yet.")
+    async def test_analyze_document_defaults_tags_to_empty_list(self, _mock_tree, _mock_tags):
+        """Test that tags default to empty list when LLM omits them."""
+        from src.intelligence import analyze_document
 
-    @patch("src.embeddings.embedding_service.create_embedding_service")
-    @patch("src.processor.AutoTagger")
-    def test_tagger_falls_back_without_embeddings(self, mock_tagger_class, mock_embedder_factory):
-        """Test auto-tagger works without embeddings (keyword-only mode)."""
-        # Reset singleton
-        import src.processor
-        from src.processor import _get_auto_tagger
+        mock_provider = MagicMock()
+        mock_provider.generate = AsyncMock(
+            return_value='{"category": "Work", "year": "2024", "type": "Guide", '
+            '"summary": "Test", "suggested_name": "test", "pii_observations": ""}'
+        )
 
-        src.processor._auto_tagger = None
+        with patch("src.intelligence.get_default_provider", return_value=mock_provider):
+            metadata, _ = await analyze_document("Some content")
 
-        mock_embedder_factory.side_effect = ImportError("No embedding service")
+        assert metadata["tags"] == []
 
-        _get_auto_tagger()
+    def test_get_existing_tags_graceful_fallback(self):
+        """Test _get_existing_tags returns 'none yet' on failure."""
+        from src.intelligence import _get_existing_tags
 
-        mock_tagger_class.assert_called_once()
-        call_kwargs = mock_tagger_class.call_args[1]
-        assert call_kwargs["embedder"] is None
+        with patch("src.catalog.catalog_manager.CatalogManager", side_effect=Exception("no db")):
+            result = _get_existing_tags()
+        assert result == "none yet"
+
+    def test_get_archive_folder_tree_graceful_fallback(self):
+        """Test _get_archive_folder_tree returns fallback on failure."""
+        from src.intelligence import _get_archive_folder_tree
+
+        with patch("src.config.ARCHIVE_PATH") as mock_path:
+            mock_path.exists.return_value = False
+            result = _get_archive_folder_tree()
+        assert result == "No archive folders yet."

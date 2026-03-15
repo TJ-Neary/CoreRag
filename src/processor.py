@@ -2,7 +2,6 @@ import logging
 import re
 from pathlib import Path
 
-from src.classification.auto_tagger import AutoTagger
 from src.config import PII_CONTEXT_TRUNCATE, PII_MIN_CONFIDENCE, PII_SAMPLE_MAX_CHARS
 from src.exceptions import ProcessingError
 from src.extractor import extract_text
@@ -14,7 +13,6 @@ from src.utils.privacy_audit import PrivacyScanner, load_custom_pii_terms, scan_
 _dedup: DuplicateDetector | None = None
 _pii_scanner: PrivacyScanner | None = None
 _custom_pii_terms: list | None = None
-_auto_tagger: AutoTagger | None = None
 
 
 def _get_dedup() -> DuplicateDetector:
@@ -36,23 +34,6 @@ def _get_custom_pii_terms() -> list:
     if _custom_pii_terms is None:
         _custom_pii_terms = load_custom_pii_terms()
     return _custom_pii_terms
-
-
-def _get_auto_tagger() -> AutoTagger:
-    """Lazy-initialize auto-tagger with embedding support when available."""
-    global _auto_tagger
-    if _auto_tagger is None:
-        embedder = None
-        try:
-            from src.embeddings.embedding_service import create_embedding_service
-
-            svc = create_embedding_service()
-            embedder = svc.embed_query
-            logging.info("Auto-tagger initialized with embedding support (hybrid mode)")
-        except Exception as e:
-            logging.info(f"Auto-tagger using keyword-only mode: {e}")
-        _auto_tagger = AutoTagger(embedder=embedder)
-    return _auto_tagger
 
 
 async def process_document(file_path: Path, tags: list[str] | None = None):
@@ -149,19 +130,24 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
         metadata["pii_detections"] = pii_detections
         metadata["pii_source"] = "auto"
 
-        # 4b. Auto-Tagging (keyword-based classification)
-        # Limit to top 3 tags to prevent over-tagging (the keyword matcher
-        # is too aggressive and assigns 10+ tags to generic documents).
-        try:
-            tag_result = _get_auto_tagger().tag(text, file_path=str(file_path))
-            metadata["tags"] = tag_result.assigned_tags[:3]  # Cap at 3
-            metadata["suggested_tags"] = tag_result.suggested_tags[:5]
-            if metadata["tags"]:
-                logging.info(f"Auto-tagged {file_path.name}: {', '.join(metadata['tags'])}")
-        except Exception as e:
-            logging.warning(f"Auto-tagging failed for {file_path.name}: {e}")
-            metadata["tags"] = []
-            metadata["suggested_tags"] = []
+        # 4b. LLM-Powered Tagging (replaces keyword auto-tagger)
+        # Tags come from the LLM analysis — purpose-driven collection tags,
+        # not keyword-matching shotgun tags
+        llm_tags = metadata.get("tags", [])
+        if isinstance(llm_tags, str):
+            llm_tags = [t.strip() for t in llm_tags.split(",") if t.strip()]
+
+        # Add year as a collection tag if extracted
+        year = metadata.get("year", "")
+        if year and year != "Unknown":
+            if year not in llm_tags:
+                llm_tags.append(year)
+
+        # Cap at 5 tags total
+        metadata["tags"] = llm_tags[:5]
+        metadata["suggested_tags"] = llm_tags  # Keep full list for dashboard suggestions
+        if metadata["tags"]:
+            logging.info(f"LLM-tagged {file_path.name}: {', '.join(metadata['tags'])}")
 
         if is_sensitive:
             logging.info(

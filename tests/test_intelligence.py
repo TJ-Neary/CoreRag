@@ -79,6 +79,16 @@ class TestRepairJson:
         assert _repair_json("[1, 2, 3]") == "[1, 2, 3]"
 
 
+@pytest.fixture(autouse=True)
+def _mock_context_helpers():
+    """Patch context helpers so tests don't hit real catalog/filesystem."""
+    with (
+        patch("src.intelligence._get_existing_tags", return_value="none yet"),
+        patch("src.intelligence._get_archive_folder_tree", return_value="No archive folders yet."),
+    ):
+        yield
+
+
 class TestAnalyzeDocument:
     @pytest.mark.asyncio
     async def test_empty_text_returns_defaults(self):
@@ -112,7 +122,24 @@ class TestAnalyzeDocument:
 
         assert metadata["category"] == "HR"
         assert metadata["year"] == "2024"
+        assert metadata["tags"] == []  # LLM didn't return tags, should default to []
         assert text == "Some document content here."
+
+    @pytest.mark.asyncio
+    async def test_llm_returns_tags(self):
+        from src.intelligence import analyze_document
+
+        mock_provider = MagicMock()
+        mock_provider.generate = AsyncMock(
+            return_value='{"category": "Work", "year": "2024", "type": "Guide", '
+            '"summary": "Test", "suggested_name": "test", '
+            '"pii_observations": "", "tags": ["fitness", "nutrition"]}'
+        )
+
+        with patch("src.intelligence.get_default_provider", return_value=mock_provider):
+            metadata, _ = await analyze_document("Fitness guide content.")
+
+        assert metadata["tags"] == ["fitness", "nutrition"]
 
     @pytest.mark.asyncio
     async def test_llm_returns_markdown_wrapped_json(self):

@@ -27,11 +27,51 @@ def _sample_text(text: str, max_chars: int = 12000) -> str:
     return text[:head] + "\n\n[... middle of document omitted for brevity ...]\n\n" + text[-tail:]
 
 
+# ── Context Helpers ───────────────────────────────────────────────────────────
+
+
+def _get_existing_tags() -> str:
+    """Get existing tags from the catalog for LLM context."""
+    try:
+        from src.catalog.catalog_manager import CatalogManager
+
+        catalog = CatalogManager()
+        stats = catalog.get_stats()
+        tags = list(stats.get("by_tag", {}).keys())
+        if tags:
+            return ", ".join(tags[:30])  # Cap at 30 to avoid prompt bloat
+    except Exception:
+        pass
+    return "none yet"
+
+
+def _get_archive_folder_tree() -> str:
+    """Get existing archive folder structure for LLM context."""
+    try:
+        from src.config import ARCHIVE_PATH
+
+        if not ARCHIVE_PATH.exists():
+            return "No archive folders yet."
+        folders: list[str] = []
+        for p in sorted(ARCHIVE_PATH.rglob("*")):
+            if p.is_dir() and not p.name.startswith("_"):
+                rel = p.relative_to(ARCHIVE_PATH)
+                folders.append(str(rel))
+        if folders:
+            return "\n".join(folders[:30])
+    except Exception:
+        pass
+    return "No archive folders yet."
+
+
 # ── Core Analysis Prompt ──────────────────────────────────────────────────────
 
 _ANALYSIS_PROMPT = """<document>
 {text}
 </document>
+
+Existing archive folder structure (reuse existing folders when the document fits):
+{folder_tree}
 
 Analyze the document above and respond with ONLY a valid JSON object. No markdown, no explanation.
 
@@ -43,9 +83,13 @@ Instructions:
 2. Suggest a concise descriptive filename (no extension, no year, use underscores).
 3. Write a 1-2 sentence summary of what this document is about.
 4. If you notice any specific personal information (real names of private individuals, mailing addresses, account numbers, dates of birth, etc.), briefly describe what you found in pii_observations. If none, set to empty string. Do NOT mention topic words like "salary", "medical", "hospital" — only actual personal data.
+5. Suggest 1-3 collection tags that describe what topic or collection this document belongs to.
+   Tags should be lowercase, hyphenated (e.g., "fitness", "hr-training", "building-codes", "tax-returns").
+   Tags answer "what collection does this belong to?" not "what words appear in it?"
+   Reuse existing tags when appropriate: {existing_tags}
 
 JSON format:
-{{"category": "Work", "year": "2024", "type": "Guide", "suggested_name": "descriptive_filename", "summary": "A concise summary of the document content.", "pii_observations": ""}}"""
+{{"category": "Work", "year": "2024", "type": "Guide", "suggested_name": "descriptive_filename", "summary": "A concise summary of the document content.", "pii_observations": "", "tags": ["fitness", "nutrition"]}}"""
 
 
 async def analyze_document(text: str) -> tuple[dict, str]:
@@ -73,7 +117,12 @@ async def analyze_document(text: str) -> tuple[dict, str]:
 
     sample = _sample_text(text)
     correction_examples = get_recent_examples()
-    prompt = _ANALYSIS_PROMPT.format(text=sample) + correction_examples
+    existing_tags = _get_existing_tags()
+    folder_tree = _get_archive_folder_tree()
+    prompt = (
+        _ANALYSIS_PROMPT.format(text=sample, existing_tags=existing_tags, folder_tree=folder_tree)
+        + correction_examples
+    )
 
     provider = get_default_provider()
     try:
@@ -94,6 +143,7 @@ async def analyze_document(text: str) -> tuple[dict, str]:
         metadata.setdefault("summary", "")
         metadata.setdefault("suggested_name", "")
         metadata.setdefault("pii_observations", "")
+        metadata.setdefault("tags", [])
         # Remove is_sensitive if the LLM included it (no longer its responsibility)
         metadata.pop("is_sensitive", None)
 
