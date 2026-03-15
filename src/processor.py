@@ -120,7 +120,17 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
         all_pii_matches = scan_result.matches + custom_matches
         high_confidence = [m for m in all_pii_matches if m.confidence >= PII_MIN_CONFIDENCE]
 
-        is_sensitive = len(high_confidence) > 0
+        # Sensitivity decision: custom dictionary matches always trigger.
+        # Presidio NER-only detections (generic names/addresses) do NOT trigger
+        # unless they match structured PII patterns (SSN, credit card, email, phone).
+        # This prevents false positives from author names, publisher addresses,
+        # and organization names in published documents.
+        structured_pii_types = {"ssn", "credit_card", "email", "phone", "account", "employee_id"}
+        has_custom_match = len(custom_matches) > 0
+        has_structured_pii = any(
+            m.data_type.value.lower() in structured_pii_types for m in high_confidence
+        )
+        is_sensitive = has_custom_match or has_structured_pii
 
         # Build detection summary for the dashboard (no raw PII values)
         pii_detections = []
@@ -138,12 +148,14 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
         metadata["pii_source"] = "auto"
 
         # 4b. Auto-Tagging (keyword-based classification)
+        # Limit to top 3 tags to prevent over-tagging (the keyword matcher
+        # is too aggressive and assigns 10+ tags to generic documents).
         try:
             tag_result = _get_auto_tagger().tag(text, file_path=str(file_path))
-            metadata["tags"] = tag_result.assigned_tags
-            metadata["suggested_tags"] = tag_result.suggested_tags
-            if tag_result.assigned_tags:
-                logging.info(f"Auto-tagged {file_path.name}: {', '.join(tag_result.assigned_tags)}")
+            metadata["tags"] = tag_result.assigned_tags[:3]  # Cap at 3
+            metadata["suggested_tags"] = tag_result.suggested_tags[:5]
+            if metadata["tags"]:
+                logging.info(f"Auto-tagged {file_path.name}: {', '.join(metadata['tags'])}")
         except Exception as e:
             logging.warning(f"Auto-tagging failed for {file_path.name}: {e}")
             metadata["tags"] = []
