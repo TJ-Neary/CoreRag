@@ -111,6 +111,10 @@ JSON:"""
         else:
             return self._extract_with_patterns(text, document_id)
 
+    def extract_sync(self, text: str, document_id: str) -> Tuple[List[Entity], List[Relationship]]:
+        """Synchronous extraction using regex patterns only (no LLM)."""
+        return self._extract_with_patterns(text, document_id)
+
     async def _extract_with_llm(
         self, text: str, document_id: str
     ) -> Tuple[List[Entity], List[Relationship]]:

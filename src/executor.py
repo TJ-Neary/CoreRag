@@ -245,14 +245,16 @@ def execute_approved_item(item_id: str):
             logger.info(f"Skipping Obsidian export for {current_path.name} (user opted out)")
 
         # Index in RAG vector database (unless user opted out)
+        # Create VersionManager once for both change-check and version tracking
+        from src.utils.versioning import VersionManager
+
+        vm = VersionManager()
+        doc_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
+
         if not item.get("skip_rag"):
             # Check if document content has changed since last indexing
-            doc_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
             try:
-                from src.utils.versioning import VersionManager
-
-                _vm_check = VersionManager()
-                if not _vm_check.is_changed(doc_id, export_text):
+                if not vm.is_changed(doc_id, export_text):
                     logger.info(f"Content unchanged for {current_path.name}, skipping RAG re-index")
                 else:
                     _index_in_rag(export_text, current_path.name, final_metadata)
@@ -265,10 +267,7 @@ def execute_approved_item(item_id: str):
 
         # Track document version
         try:
-            from src.utils.versioning import VersionManager
-
-            vm = VersionManager()
-            document_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
+            document_id = doc_id
             vm.create_version(
                 document_id=document_id,
                 content=export_text,

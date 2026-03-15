@@ -11,6 +11,7 @@ Usage:
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -249,9 +250,9 @@ async def search_knowledge(
     if not _corerag_tools:
         return {"error": "CoreRag tools not initialized"}
 
-    import time as _time
+    # time imported at module level
 
-    _search_start = _time.time()
+    _search_start = time.time()
 
     result = await _corerag_tools.search_knowledge(
         query=query,
@@ -272,7 +273,7 @@ async def search_knowledge(
             tool_name="search_knowledge",
             query=query,
             result_count=len(result.get("results", [])),
-            duration_ms=(_time.time() - _search_start) * 1000,
+            duration_ms=(time.time() - _search_start) * 1000,
         )
 
     return result
@@ -311,9 +312,9 @@ async def answer_question(
     if not _corerag_tools:
         return {"error": "CoreRag tools not initialized"}
 
-    import time as _time
+    # time imported at module level
 
-    _start = _time.time()
+    _start = time.time()
 
     # Step 1: retrieve evidence via existing search pipeline
     search_result = await _corerag_tools.search_knowledge(
@@ -377,7 +378,7 @@ async def answer_question(
             tool_name="answer_question",
             query=query,
             result_count=len(answer_result.claims),
-            duration_ms=(_time.time() - _start) * 1000,
+            duration_ms=(time.time() - _start) * 1000,
         )
 
     return response

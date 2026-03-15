@@ -669,9 +669,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                 if graph_db_path.exists():
                     graph = KnowledgeGraph(graph_db_path)
                     extractor = EntityExtractor()
-                    entities, relationships = extractor._extract_with_patterns(
-                        content[:10000], document_id
-                    )
+                    entities, relationships = extractor.extract_sync(content[:10000], document_id)
                     if entities or relationships:
                         graph.add_from_extraction(entities, relationships)
             except Exception as e:
