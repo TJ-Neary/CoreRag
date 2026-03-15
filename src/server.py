@@ -78,6 +78,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"Manifest cleanup skipped: {e}")
 
+    # Database integrity check — auto-clean orphaned parents
+    try:
+        from src.quality.batch_validator import validate_database_integrity
+
+        integrity = validate_database_integrity()
+        if integrity.get("orphaned_parents_cleaned", 0) > 0:
+            logger.info(
+                f"DB integrity: cleaned {integrity['orphaned_parents_cleaned']} orphaned parents"
+            )
+    except Exception as e:
+        logger.debug(f"Integrity check skipped: {e}")
+
     # Initialize shared services for API routes (same as MCP server does)
     try:
         import lancedb

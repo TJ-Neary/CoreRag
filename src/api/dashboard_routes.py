@@ -236,6 +236,21 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
     async def dashboard(request: Request) -> HTMLResponse:
         return state.templates.TemplateResponse("dashboard.html", {"request": request})
 
+    # ── Quality Gate Routes ─────────────────────────────────────────────
+
+    @router.get("/api/batch-quality")
+    async def get_batch_quality() -> dict:
+        """Get the latest batch quality report."""
+        import json as _json
+
+        report_path = config.STATE_DIR / "batch_quality_report.json"
+        if report_path.exists():
+            try:
+                return _json.loads(report_path.read_text())
+            except Exception:
+                pass
+        return {"passed": True, "warnings": [], "total_items": 0}
+
     # ── Queue Routes ──────────────────────────────────────────────────────
 
     @router.get("/api/queue")

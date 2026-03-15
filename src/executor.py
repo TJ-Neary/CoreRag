@@ -295,6 +295,18 @@ def execute_approved_item(item_id: str):
         log_correction(item)
 
         update_item(item_id, {"status": "completed"})
+
+        # Post-commit integrity validation
+        try:
+            from src.quality.batch_validator import validate_commit
+
+            validate_commit(
+                source_path=current_path.name,
+                skip_rag=item.get("skip_rag", False),
+            )
+        except Exception:
+            pass  # Non-fatal — already logged inside validate_commit
+
         return True
 
     except ProcessingError:

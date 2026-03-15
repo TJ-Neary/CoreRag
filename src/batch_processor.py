@@ -174,6 +174,16 @@ class BatchProcessor:
             # Free extraction buffers between files
             gc.collect()
 
+        # Post-analysis quality gate
+        try:
+            from src.quality.batch_validator import validate_batch
+            from src.staging import load_manifest
+
+            manifest = load_manifest()
+            validate_batch(manifest)
+        except Exception as e:
+            logging.warning(f"Batch validation skipped: {e}")
+
         with self._lock:
             self._progress["status"] = "complete"
             self._progress["current_file"] = ""
