@@ -710,6 +710,86 @@ class KnowledgeGraph:
         finally:
             conn.close()
 
+    def get_all_entities(self) -> List[Dict]:
+        """Return all distinct entities from the graph."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT DISTINCT name, type, confidence_score, mention_count FROM entities"
+            )
+            return [
+                {"name": row[0], "type": row[1], "confidence": row[2], "mention_count": row[3]}
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
+
+    def build_entity_index(self, embedding_service) -> int:
+        """Embed all entity names into a LanceDB table for semantic discovery."""
+        import lancedb
+
+        from src import config
+
+        entities = self.get_all_entities()
+        if not entities:
+            return 0
+
+        texts = [f"{e['name']}: {e.get('type', '')}" for e in entities]
+        vectors = embedding_service.embed_documents(texts, show_progress=False)
+
+        data = [
+            {
+                "id": e["name"],
+                "type": e.get("type", ""),
+                "vector": v,
+                "mention_count": e.get("mention_count", 1),
+            }
+            for e, v in zip(entities, vectors)
+        ]
+
+        db = lancedb.connect(str(config.DB_PATH))
+        try:
+            db.drop_table("entity_vectors")
+        except Exception:
+            pass
+        db.create_table("entity_vectors", data)
+        logger.info(f"Entity index built: {len(data)} entities embedded")
+        return len(data)
+
+    def search_entities_semantic(self, query: str, embedding_service, k: int = 10) -> List[Dict]:
+        """Find entities semantically related to query, then traverse graph from those."""
+        import lancedb
+
+        from src import config
+
+        query_vector = embedding_service.embed_query(query)
+
+        db = lancedb.connect(str(config.DB_PATH))
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if "entity_vectors" not in db.table_names():
+                return []
+
+        table = db.open_table("entity_vectors")
+        results = table.search(query_vector).limit(k).to_list()
+
+        enriched = []
+        for r in results:
+            entity_name = r["id"]
+            neighbors = self.get_neighbors(entity_name)
+            enriched.append(
+                {
+                    "entity": entity_name,
+                    "type": r.get("type", ""),
+                    "similarity": max(0.0, 1.0 - r.get("_distance", 0)),
+                    "relationships": neighbors,
+                }
+            )
+        return enriched
+
     def find_related_documents(self, document_id: str, limit: int = 20) -> List[Dict]:
         """
         Find documents that share entities with the given document.
