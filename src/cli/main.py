@@ -980,6 +980,110 @@ def cmd_memory(args: argparse.Namespace) -> int:
         return 1
 
 
+# === Catalog Command ===
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    """Catalog management commands."""
+    from src.catalog.catalog_manager import CatalogManager
+
+    try:
+        catalog = CatalogManager()
+    except Exception as e:
+        print_error(f"Failed to initialize catalog: {e}")
+        return 1
+
+    action = args.catalog_action
+
+    if action == "list":
+        results = catalog.search(
+            is_sensitive=True if args.sensitive else None,
+            tag=args.tag or None,
+            category=args.category or None,
+        )
+        if not results:
+            print_info("No documents found matching filters.")
+            return 0
+
+        print_header(f"Catalog ({len(results)} documents)")
+        for doc in results:
+            sensitive_marker = " [SENSITIVE]" if doc.is_sensitive else ""
+            tags = doc.tags or ""
+            print(f"  {color(doc.original_filename, Colors.CYAN)}{sensitive_marker}")
+            print(f"    Category: {doc.category or 'Unknown'} | Year: {doc.year or 'Unknown'}")
+            if tags:
+                print(f"    Tags: {tags}")
+            print(f"    Status: {doc.status} | ID: {doc.id[:12]}...")
+            print()
+        return 0
+
+    elif action == "stats":
+        stats = catalog.get_stats()
+        print_header("Catalog Statistics")
+        print(f"  Total documents: {color(str(stats.get('total_documents', 0)), Colors.GREEN)}")
+        print(f"  Sensitive:       {color(str(stats.get('sensitive_count', 0)), Colors.YELLOW)}")
+        print(f"  Total exports:   {stats.get('total_exports', 0)}")
+        print()
+
+        by_cat = stats.get("by_category", {})
+        if by_cat:
+            print(f"  {color('By Category:', Colors.BOLD)}")
+            for cat, count in sorted(by_cat.items(), key=lambda x: -x[1]):
+                print(f"    {cat}: {count}")
+
+        by_status = stats.get("by_status", {})
+        if by_status:
+            print(f"\n  {color('By Status:', Colors.BOLD)}")
+            for status, count in sorted(by_status.items()):
+                print(f"    {status}: {count}")
+
+        by_tag = stats.get("by_tag", {})
+        if by_tag:
+            print(f"\n  {color('By Tag:', Colors.BOLD)}")
+            for tag, count in sorted(by_tag.items(), key=lambda x: -x[1])[:20]:
+                print(f"    {tag}: {count}")
+        return 0
+
+    elif action == "search":
+        query = args.query
+        # Search by tag or general text search
+        results = catalog.search(tag=query)
+        # Also search by category match
+        cat_results = catalog.search(category=query)
+        # Combine unique results
+        seen_ids = {doc.id for doc in results}
+        for doc in cat_results:
+            if doc.id not in seen_ids:
+                results.append(doc)
+                seen_ids.add(doc.id)
+
+        if not results:
+            print_info(f"No documents found matching '{query}'.")
+            return 0
+
+        print_header(f"Search results for '{query}' ({len(results)} matches)")
+        for doc in results:
+            sensitive_marker = " [SENSITIVE]" if doc.is_sensitive else ""
+            print(f"  {color(doc.original_filename, Colors.CYAN)}{sensitive_marker}")
+            if doc.summary:
+                print(f"    {doc.summary[:100]}")
+            print(f"    Category: {doc.category} | Tags: {doc.tags or 'none'}")
+            print()
+        return 0
+
+    elif action == "rebuild":
+        print_warning("Rebuild will re-scan LanceDB and staging data to populate the catalog.")
+        print_info(
+            "Use scripts/rebuild_catalog.py for the full rebuild with LLM re-classification."
+        )
+        print_info("This is a placeholder — Task 7 implements the full rebuild script.")
+        return 0
+
+    else:
+        print_error("Unknown catalog action. Use: list, stats, search, rebuild")
+        return 1
+
+
 # === Main ===
 
 
@@ -1148,6 +1252,28 @@ def create_parser() -> argparse.ArgumentParser:
 
     mem_export = mem_sub.add_parser("export", help="Export profile as JSON")
     mem_export.set_defaults(func=cmd_memory)
+
+    # ── Catalog ────────────────────────────────────────────────────────────
+    catalog_parser = subparsers.add_parser("catalog", help="Document catalog management")
+    catalog_sub = catalog_parser.add_subparsers(dest="catalog_action", help="Catalog actions")
+
+    cat_list = catalog_sub.add_parser("list", help="List cataloged documents")
+    cat_list.add_argument("--sensitive", action="store_true", help="Show sensitive only")
+    cat_list.add_argument("--tag", type=str, default="", help="Filter by tag")
+    cat_list.add_argument("--category", type=str, default="", help="Filter by category")
+    cat_list.set_defaults(func=cmd_catalog)
+
+    cat_stats = catalog_sub.add_parser("stats", help="Show catalog statistics")
+    cat_stats.set_defaults(func=cmd_catalog)
+
+    cat_search = catalog_sub.add_parser("search", help="Search catalog")
+    cat_search.add_argument("query", help="Search query (matches tags, categories)")
+    cat_search.set_defaults(func=cmd_catalog)
+
+    cat_rebuild = catalog_sub.add_parser("rebuild", help="Rebuild catalog from existing data")
+    cat_rebuild.set_defaults(func=cmd_catalog)
+
+    catalog_parser.set_defaults(func=cmd_catalog)
 
     return parser
 
