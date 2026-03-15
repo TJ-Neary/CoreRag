@@ -14,6 +14,26 @@
 
 ---
 
+## MANDATORY: Review Corrections (Read Before Implementing)
+
+### Important (3 issues)
+
+1. **Task 1 (Sparse vectors):** LanceDB does NOT have native sparse vector search. `BGEM3FlagModel` returns `lexical_weights` as `list[dict[int, float]]` (token IDs, not terms). The implementer must research LanceDB's current sparse capabilities before starting. On Apple Silicon (MPS), use `use_fp16=False` — `use_fp16=True` requires CUDA. Consider storing sparse vectors for future use and implementing a custom dot-product scoring layer, OR defer this task until LanceDB adds sparse support.
+
+2. **Task 4 (Decomposition):** Missing 2 methods from the map — `detect_conflicts` → QualityTools, `trigger_reindex` → MaintenanceTools. Also, 10+ tool handlers are implemented directly in `server.py` (not via CoreRagTools): `check_stale_content`, `check_links`, `find_duplicates`, `get_database_health`, `optimize_database`, `create_backup`, `list_backups`, `list_tags`, `manage_tags`, `answer_question`. These stay in `server.py` — they are NOT part of this decomposition.
+
+3. **Task 3 (Semantic entity discovery):** `get_all_entities()` does NOT exist on KnowledgeGraph — must be created (simple SQL: `SELECT DISTINCT name, type, confidence_score, mention_count FROM entities`). Also: use `get_neighbors(entity_name)` not `get_entity_relationships(entity_name)`. The LanceDB path should come from `config.DB_PATH`, not string-replacing `knowledge_graph.db`.
+
+### Minor (5 issues)
+
+4. **Task 7 (Code chunker):** `chunk_python()` drops trailing module-level code after the last definition (e.g., `if __name__ == "__main__":` blocks). Add a capture for lines after the last node's `end_lineno`.
+5. **Task 9 (Lock file):** `pip-compile` requires `pip-tools` — run `pip install pip-tools` first. Already installed this session.
+6. **Task 4:** Plan says "13 injected dependencies" — actual count is 11 (9 constructor + 2 post-init).
+7. **Task 4:** 3 methods in Search group (`get_document`, `get_related_documents`, `get_context_for_topic`) have no `@mcp.tool()` registration — they're dead code candidates.
+8. **Task 1:** `answer_question` handler stays in `server.py` — it calls `SearchTools.search_knowledge()` after refactor.
+
+---
+
 ## File Map
 
 | File | Action | Task | Responsibility |
