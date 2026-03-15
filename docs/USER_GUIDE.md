@@ -27,14 +27,14 @@ CoreRag is a local-first knowledge engine with AI-powered semantic search, PII d
 - **Hardware**: Apple Silicon Mac (M1/M2/M3/M4) with 16GB+ RAM
 - **macOS**: 13.0 or later
 - **Python**: 3.12 or later
-- **Ollama**: Running locally with `qwen2.5:32b` (or set `OLLAMA_MODEL` for alternative)
+- **Ollama**: Running locally with `qwen3:32b` (or set `OLLAMA_MODEL` for alternative)
 - **Storage**: 50GB+ free space recommended
 
 ### Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/CoreRag.git
+   git clone https://github.com/TJ-Neary/CoreRag.git
    cd CoreRag
    ```
 
@@ -172,6 +172,8 @@ python -m src.cli.main memory export        # Export all facts
 |------|-----------|------------|
 | Documents | `.pdf`, `.docx`, `.txt`, `.md` | Text extraction, parent-child chunking |
 | Data | `.json`, `.yaml`, `.csv`, `.log` | Structured parsing |
+| Spreadsheets | `.xlsx`, `.xls`, `.xlsm` | Markdown table output per sheet |
+| Code | `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.go`, `.rs`, `.java`, `.rb` | AST (Python) + line-based chunking |
 | Images | `.png`, `.jpg`, `.webp`, `.heic` | Vision.framework OCR + VLM captioning |
 | Audio | `.mp3`, `.wav`, `.m4a` | mlx-whisper transcription + topic segmentation |
 | Video | `.mp4`, `.mov` | Keyframe extraction + scene detection + audio |
@@ -457,7 +459,7 @@ Error: Cannot connect to Ollama at localhost:11434
 Start Ollama and verify the model is available:
 ```bash
 ollama serve &
-ollama list  # Should show qwen2.5:32b
+ollama list  # Should show qwen3:32b
 ```
 
 ### MCP Server Not Connecting
@@ -522,9 +524,9 @@ CORERAG_LOG_LEVEL=DEBUG python -m src.cli.main search "query"
 | `CORERAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Reranker model |
 | `CORERAG_API_KEY` | *(unset)* | API key for v1 endpoints |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
-| `OLLAMA_MODEL` | `qwen2.5:32b` | Ollama model for analysis |
+| `OLLAMA_MODEL` | `qwen3:32b` | Ollama model for analysis |
 | `CORERAG_LOG_LEVEL` | `INFO` | Logging verbosity |
 
 ---
 
-*CoreRag User Guide | v0.2.0 | Last Updated: 2026-02-27*
+*CoreRag User Guide | v0.3.0 | Last Updated: 2026-03-15*

@@ -66,7 +66,7 @@ C4Container
 |----------|--------|-----|------------------------|
 | Vector database | LanceDB (embedded) | Zero-config, Lance columnar format, native hybrid search | ChromaDB (less mature FTS), Qdrant (server overhead) |
 | Embedding model | BAAI/bge-m3 (1024d) | Strong multilingual, MPS-optimized, good retrieval benchmarks | all-MiniLM-L6-v2 (384d, lower quality), OpenAI ada-002 (cloud dependency) |
-| LLM provider | Ollama (local, qwen2.5:32b) | Privacy-preserving, no API costs, runs well on M4 Max | Claude API (better quality but sends data externally), Gemini API (same concern) |
+| LLM provider | Ollama (local, qwen3:32b) | Privacy-preserving, no API costs, runs well on M4 Max | Claude API (better quality but sends data externally), Gemini API (same concern) |
 | PII detection | Three-layer (Presidio + custom dict + LLM) | Defense in depth — NER catches patterns, dictionary catches known terms, LLM catches context | Single-layer Presidio (misses custom terms), LLM-only (unreliable for structured patterns) |
 | Search fusion | RRF (Reciprocal Rank Fusion) | Simple, effective, no hyperparameter tuning needed | Linear combination (requires weight tuning), Borda count (less robust) |
 | MCP transport | stdio | Claude Desktop native, no network setup | HTTP/SSE (requires server management, port conflicts) |
@@ -147,7 +147,7 @@ flowchart TD
 | Knowledge Graph | SQLite | Bitemporal entity-relationship store |
 | Embeddings | BAAI/bge-m3 (1024d) | Semantic vector representations |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 | Post-retrieval relevance scoring |
-| LLM | Ollama (qwen2.5:32b) | Document classification, contextual retrieval |
+| LLM | Ollama (qwen3:32b) | Document classification, contextual retrieval |
 | PII Detection | Presidio + spaCy (en_core_web_lg) | NER-based entity detection |
 | Audio | mlx-whisper | Apple Silicon speech-to-text |
 | OCR | Vision.framework | Native macOS text extraction |

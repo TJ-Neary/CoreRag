@@ -90,9 +90,10 @@ CoreRag/
 │   ├── processor.py             # Document processing (PII detection, AI classification)
 │   ├── executor.py              # Commit pipeline (archive, redact, export, RAG index)
 │   ├── extractor.py             # Text extraction (PDF, DOCX, images, audio, video)
-│   ├── intelligence.py          # LLM provider (Ollama/Gemini) for classification
+│   ├── intelligence.py          # LLM classification via LLMProvider abstraction
 │   ├── staging.py               # Staging manifest management
 │   ├── exporter.py              # Obsidian markdown export with backlinks
+│   ├── ingest_service.py        # Unified async ingest pipeline
 │   ├── batch_processor.py       # Inbox batch processing with memory safety
 │   ├── watchdog.py              # File watcher for inbox folder
 │   ├── folder_manager.py        # Archive folder structure management
@@ -104,12 +105,16 @@ CoreRag/
 │   │   ├── __init__.py
 │   │   ├── models.py            # Pydantic request/response schemas
 │   │   ├── v1_routes.py         # API v1 (manifest, stats, search, ingest, delete)
-│   │   └── dashboard_routes.py  # Dashboard UI + batch/commit/tag/RAG routes
+│   │   ├── dashboard_routes.py  # Dashboard UI + batch/commit/tag/RAG routes
+│   │   └── dashboard_chat.py   # Chat endpoint (extracted from dashboard_routes)
 │   │
 │   ├── mcp_server/              # MCP interface for Claude Desktop
 │   │   ├── __init__.py
-│   │   ├── server.py            # FastMCP server (stdio transport)
-│   │   └── tools.py             # Tool implementations (19 tools)
+│   │   ├── server.py            # FastMCP server (stdio transport, 32 tools)
+│   │   ├── tools.py             # Core tool implementations
+│   │   ├── memory_tools.py      # Memory/episodic tool group
+│   │   ├── quality_tools.py     # Quality assurance tool group
+│   │   └── maintenance_tools.py # Maintenance tool group
 │   │
 │   ├── embeddings/              # Embedding generation
 │   │   ├── __init__.py
@@ -117,26 +122,38 @@ CoreRag/
 │   │
 │   ├── search/                  # Search functionality
 │   │   ├── __init__.py
-│   │   ├── hybrid_search.py     # Vector + BM25 fusion
+│   │   ├── hybrid_search.py     # Vector + BM25 fusion (+ 3-way RRF infrastructure)
 │   │   ├── hyde.py              # HyDE query expansion
 │   │   ├── reranker.py          # Cross-encoder reranking
 │   │   ├── decay_scoring.py     # Time-weighted relevance
-│   │   └── multi_query.py       # Query decomposition + RRF
+│   │   ├── multi_query.py       # Query decomposition + RRF
+│   │   ├── answer_synthesis.py  # Citation-validated answer generation
+│   │   ├── corrective_rag.py    # Post-retrieval 3-tier relevance filtering
+│   │   └── conversation_manager.py  # Conversational search context
 │   │
 │   ├── chunking/                # Text chunking strategies
 │   │   ├── __init__.py
-│   │   └── parent_child.py      # Hierarchical chunking (512/2048 tokens)
+│   │   ├── parent_child.py      # Hierarchical chunking (512/2048 tokens)
+│   │   ├── code_chunker.py      # AST (Python) + line-based code chunking
+│   │   ├── context_generator.py # LLM contextual retrieval prefixes
+│   │   └── summarizer.py        # Multi-resolution parent summaries
 │   │
 │   ├── quality/                 # Quality assurance
 │   │   ├── __init__.py
 │   │   ├── duplicate_detector.py
 │   │   ├── freshness.py
 │   │   ├── link_checker.py
-│   │   └── conflict_detector.py
+│   │   ├── conflict_detector.py
+│   │   ├── chunk_scorer.py      # Heuristic quality scoring (0.0-1.0)
+│   │   ├── date_extractor.py    # Regex date extraction with confidence
+│   │   ├── golden_set_manager.py # Search quality regression testing
+│   │   └── rag_evaluator.py     # RAGAS-inspired evaluation metrics
 │   │
 │   ├── classification/          # Document classification
 │   │   ├── __init__.py
-│   │   └── auto_tagger.py       # Keyword + embedding tagging
+│   │   ├── auto_tagger.py       # Keyword + embedding tagging
+│   │   ├── learned_rules.py     # Correction pattern learning
+│   │   └── source_authority.py  # Source authority classification
 │   │
 │   ├── analytics/               # Usage analytics
 │   │   ├── __init__.py
@@ -168,7 +185,23 @@ CoreRag/
 │   │
 │   ├── maintenance/             # Database maintenance
 │   │   ├── __init__.py
-│   │   └── db_optimizer.py      # LanceDB index optimization
+│   │   ├── db_optimizer.py      # LanceDB index optimization
+│   │   └── health_check.py      # Unified system health checks
+│   │
+│   ├── llm/                     # LLM provider abstraction
+│   │   ├── __init__.py
+│   │   └── provider.py          # LLMProvider ABC + 6 provider implementations
+│   │
+│   ├── export/                  # Export utilities
+│   │   ├── __init__.py
+│   │   └── backlink_generator.py # Wikilinks + knowledge graph backlinks
+│   │
+│   ├── integrations/            # External data sync
+│   │   ├── __init__.py
+│   │   └── readwise_plugin.py   # Readwise integration
+│   │
+│   ├── auth/                    # Access control (scaffold)
+│   │   └── access_control.py    # RBAC with ADMIN/EDITOR/VIEWER roles
 │   │
 │   ├── cli/                     # Command-line interface
 │   │   ├── __init__.py
@@ -202,7 +235,7 @@ CoreRag/
 │
 ├── tests/
 │   ├── conftest.py              # 25+ shared fixtures
-│   └── test_*.py                # Unit + integration tests (185 passing)
+│   └── test_*.py                # Unit + integration tests (649 passing)
 │
 ├── architecture/                # Design documents (16 docs, indexed in README.md)
 │   ├── README.md                # Table of contents by topic
@@ -214,7 +247,7 @@ CoreRag/
 │   ├── install_menubar.sh       # Menu bar app installer
 │   └── backfill_knowledge_graph.py
 │
-└── _project/
+└── _DEV/
     └── DevPlan.md               # Development history + audit + roadmap
 ```
 
@@ -525,4 +558,4 @@ if __name__ == "__main__":
 ---
 
 *Follow these conventions consistently. Update this file if new patterns emerge.*
-*Last Updated: 2026-02-07*
+*Last Updated: 2026-03-15*

@@ -28,6 +28,8 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 
 ### Multi-Format Support
 - **Documents**: PDF (with OCR fallback), DOCX, TXT, Markdown, JSON, YAML, CSV
+- **Spreadsheets**: XLSX, XLS, XLSM (markdown table output per sheet)
+- **Code**: Python, JavaScript, TypeScript, JSX, TSX, Go, Rust, Java, Ruby (AST + line-based chunking)
 - **Images**: PNG, JPG, WebP, HEIC (Vision.framework OCR + VLM captioning)
 - **Audio**: MP3, WAV, M4A (mlx-whisper transcription + topic segmentation)
 - **Video**: MP4, MOV (keyframe extraction + scene detection + audio)
@@ -154,7 +156,7 @@ Key variables:
 | `ARCHIVE_PATH` | `~/Documents` | Long-term storage for originals |
 | `CORERAG_DB_PATH` | `~/.corerag/lancedb` | LanceDB vector database |
 | `CORERAG_API_KEY` | *(unset)* | API key for v1 endpoints (omit for open access) |
-| `OLLAMA_MODEL` | `qwen2.5:32b` | Local LLM for document analysis |
+| `OLLAMA_MODEL` | `qwen3:32b` | Local LLM for document analysis |
 | `CORERAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model (1024d) |
 
 ## Technology Stack
@@ -164,7 +166,7 @@ Key variables:
 | Vector Database | LanceDB (embedded, Lance format) |
 | Embeddings | BAAI/bge-m3 (1024d, MPS-optimized) |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
-| LLM | Ollama (qwen2.5:32b, local) |
+| LLM | Ollama (qwen3:32b, local) |
 | Audio | mlx-whisper (Apple Silicon) |
 | Video | OpenCV (keyframe + scene detection) |
 | OCR | Vision.framework (native macOS) |
