@@ -38,7 +38,7 @@ from src.folder_manager import (
     save_folder_structure,
 )
 from src.intelligence import suggest_folder_structure
-from src.staging import get_item, get_pending_items, load_manifest, update_item
+from src.staging import batch_update_items, get_item, get_pending_items, load_manifest, update_item
 from src.utils.query_sanitize import build_eq_clause
 from src.utils.tagging import TagManager
 
@@ -338,11 +338,9 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 return {"status": "already_running"}
 
         pending = get_pending_items()
-        item_ids = []
-        for item_id, item in pending.items():
-            if item.get("status") == "pending":
-                update_item(item_id, {"status": "approved"})
-                item_ids.append(item_id)
+        item_ids = [item_id for item_id, item in pending.items() if item.get("status") == "pending"]
+        if item_ids:
+            batch_update_items({item_id: {"status": "approved"} for item_id in item_ids})
 
         if not item_ids:
             return {"status": "no_items", "approved": 0}

@@ -138,6 +138,35 @@ def update_item(item_id: str, updates: dict):
     return result or False
 
 
+def batch_update_items(updates: dict[str, dict]) -> int:
+    """Update multiple items in a single lock-read-modify-write cycle.
+
+    Args:
+        updates: Mapping of item_id -> update dict (same format as update_item).
+
+    Returns:
+        Number of items successfully updated.
+    """
+
+    def _batch(manifest):
+        count = 0
+        for item_id, item_updates in updates.items():
+            if item_id not in manifest:
+                continue
+            if "proposed" in item_updates:
+                manifest[item_id]["proposed"].update(item_updates["proposed"])
+                remaining = {k: v for k, v in item_updates.items() if k != "proposed"}
+                manifest[item_id].update(remaining)
+            else:
+                manifest[item_id].update(item_updates)
+            count += 1
+        return count
+
+    result = _load_modify_save(_batch)
+    logging.info(f"Batch updated {result} items.")
+    return result
+
+
 def get_item(item_id: str):
     manifest = load_manifest()
     return manifest.get(item_id)

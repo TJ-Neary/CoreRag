@@ -727,10 +727,10 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             for table_name in ["parent_chunks", "child_chunks"]:
                 if table_name in db.table_names():
                     tbl = db.open_table(table_name)
-                    before = tbl.count_rows()
+                    # Count matching rows before delete (cheaper than counting all rows twice)
+                    matching = tbl.count_rows(f"document_id = '{document_id}'")
                     tbl.delete(doc_filter)
-                    after = tbl.count_rows()
-                    deleted[table_name] = before - after
+                    deleted[table_name] = matching
 
             graph_deleted = 0
             try:
@@ -875,10 +875,9 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     for table_name in ["parent_chunks", "child_chunks"]:
                         if table_name in db.table_names():
                             tbl = db.open_table(table_name)
-                            before = tbl.count_rows()
+                            matching = tbl.count_rows(f"document_id = '{doc_id}'")
                             tbl.delete(doc_filter)
-                            after = tbl.count_rows()
-                            deleted[table_name] = before - after
+                            deleted[table_name] = matching
 
                     doc_total = deleted["parent_chunks"] + deleted["child_chunks"]
                     total_deleted += doc_total

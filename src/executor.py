@@ -202,13 +202,10 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
                 ctx_gen = ContextGenerator()
                 child_texts_for_ctx = [c.content for c in children]
 
-                loop = asyncio.new_event_loop()
-                try:
-                    context_prefixes = loop.run_until_complete(
+                with asyncio.Runner() as runner:
+                    context_prefixes = runner.run(
                         ctx_gen.generate_contexts_batch(text, child_texts_for_ctx, concurrency=3)
                     )
-                finally:
-                    loop.close()
 
                 ctx_count = sum(1 for cp in context_prefixes if cp)
                 logger.info(f"Context generated for {ctx_count}/{len(children)} chunks")
@@ -231,16 +228,11 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
             from src.chunking.summarizer import MultiResolutionSummarizer
 
             summarizer = MultiResolutionSummarizer()
-            for p in parents:
-                p_children = [c.content for c in children if c.parent_id == p.id]
-                loop = asyncio.new_event_loop()
-                try:
-                    summary = loop.run_until_complete(
-                        summarizer.summarize_parent(p.content, p_children)
-                    )
+            with asyncio.Runner() as runner:
+                for p in parents:
+                    p_children = [c.content for c in children if c.parent_id == p.id]
+                    summary = runner.run(summarizer.summarize_parent(p.content, p_children))
                     parent_summaries[p.id] = summary
-                finally:
-                    loop.close()
         except Exception as e:
             logger.debug(f"Parent summary generation skipped: {e}")
 
@@ -347,13 +339,8 @@ def _extract_entities(text: str, file_name: str) -> None:
         document_id = hashlib.sha256(text[:5000].encode()).hexdigest()[:16]
 
         # Use async extract() which tries LLM first, falls back to regex patterns
-        loop = asyncio.new_event_loop()
-        try:
-            entities, relationships = loop.run_until_complete(
-                extractor.extract(text[:10000], document_id)
-            )
-        finally:
-            loop.close()
+        with asyncio.Runner() as runner:
+            entities, relationships = runner.run(extractor.extract(text[:10000], document_id))
 
         if entities or relationships:
             graph.add_from_extraction(entities, relationships)

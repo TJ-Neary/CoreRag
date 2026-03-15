@@ -509,10 +509,10 @@ class TestDeleteEndpoint:
 
     def test_delete_success(self):
         mock_parent_table = MagicMock()
-        mock_parent_table.count_rows.side_effect = [10, 9]  # before and after
+        mock_parent_table.count_rows.return_value = 1  # 1 matching parent
 
         mock_child_table = MagicMock()
-        mock_child_table.count_rows.side_effect = [50, 47]  # before and after
+        mock_child_table.count_rows.return_value = 3  # 3 matching children
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
@@ -532,10 +532,10 @@ class TestDeleteEndpoint:
 
     def test_delete_not_found(self):
         mock_parent_table = MagicMock()
-        mock_parent_table.count_rows.side_effect = [10, 10]  # no change
+        mock_parent_table.count_rows.return_value = 0  # no matching parents
 
         mock_child_table = MagicMock()
-        mock_child_table.count_rows.side_effect = [50, 50]  # no change
+        mock_child_table.count_rows.return_value = 0  # no matching children
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
@@ -658,10 +658,10 @@ class TestBulkDeleteEndpoint:
 
     def test_bulk_delete_success(self):
         mock_parent_table = MagicMock()
-        mock_parent_table.count_rows.side_effect = [10, 9, 10, 9]  # 2 docs, before/after each
+        mock_parent_table.count_rows.side_effect = [1, 1]  # 1 matching parent per doc
 
         mock_child_table = MagicMock()
-        mock_child_table.count_rows.side_effect = [50, 47, 50, 48]
+        mock_child_table.count_rows.side_effect = [3, 2]  # 3 + 2 matching children
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
@@ -701,10 +701,10 @@ class TestBulkDeleteEndpoint:
     def test_bulk_delete_partial_failure(self):
         """Some documents found, some not."""
         mock_parent_table = MagicMock()
-        mock_parent_table.count_rows.side_effect = [10, 9, 10, 10]  # doc1 deleted, doc2 not found
+        mock_parent_table.count_rows.side_effect = [1, 0]  # doc1 found, doc2 not found
 
         mock_child_table = MagicMock()
-        mock_child_table.count_rows.side_effect = [50, 47, 50, 50]
+        mock_child_table.count_rows.side_effect = [3, 0]  # doc1 children, doc2 none
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
