@@ -312,8 +312,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
             reranker = getattr(request.app.state, "reranker", None)
 
             if hybrid_searcher:
-                # Full hybrid search: vector + BM25 + RRF fusion
-                query_vector = embedder.embed_query(query)
+                # Full hybrid search: vector + BM25 + sparse RRF fusion
+                query_sparse = None
+                if hasattr(embedder, "embed_query_with_sparse"):
+                    try:
+                        query_vector, query_sparse = embedder.embed_query_with_sparse(query)
+                    except Exception:
+                        query_vector = embedder.embed_query(query)
+                else:
+                    query_vector = embedder.embed_query(query)
+
                 filters = {}
                 if tags:
                     filters["tags"] = tags
@@ -324,6 +332,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                 hybrid_results = await hybrid_searcher.search(
                     query=query,
                     query_vector=query_vector,
+                    query_sparse=query_sparse,
                     k=fetch_count,
                     filters=filters if filters else None,
                 )

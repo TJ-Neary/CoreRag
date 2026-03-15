@@ -170,7 +170,18 @@ class IngestService:
         embed_texts = []
         for c, ctx in zip(children, context_prefixes):
             embed_texts.append(f"{ctx}\n\n{c.content}" if ctx else c.content)
-        embeddings = self._embedder.embed_documents(embed_texts, show_progress=False)
+
+        # Dual encoding: dense + sparse if available
+        sparse_vecs = [{}] * len(embed_texts)
+        if hasattr(self._embedder, "embed_with_sparse"):
+            try:
+                embeddings, sparse_vecs = self._embedder.embed_with_sparse(
+                    embed_texts, show_progress=False
+                )
+            except Exception:
+                embeddings = self._embedder.embed_documents(embed_texts, show_progress=False)
+        else:
+            embeddings = self._embedder.embed_documents(embed_texts, show_progress=False)
 
         # ── Parent summaries ──────────────────────────────────────────
         parent_summaries: dict[str, str] = {}
@@ -232,6 +243,7 @@ class IngestService:
                     "source_authority": source_authority,
                     "date_extracted": date_extracted_list[i],
                     "date_confidence": date_confidence_list[i],
+                    "sparse_vector": sparse_vecs[i],
                 }
             )
 

@@ -116,6 +116,7 @@ def migrate_embeddings(
     dry_run: bool = False,
     batch_size: int = 32,
     enrich_only: bool = False,
+    include_sparse: bool = False,
 ) -> dict:
     """Re-embed all chunks with a new embedding model and add enrichment fields.
 
@@ -197,19 +198,30 @@ def migrate_embeddings(
             logger.info(f"  Truncated {long_count} chunks > {max_embed_chars} chars for embedding")
 
         new_embeddings = []
+        new_sparse = [] if include_sparse else None
         for i in range(0, len(embed_texts), batch_size):
             batch = embed_texts[i : i + batch_size]
-            batch_embs = embedder.embed_documents(batch, show_progress=False)
-            new_embeddings.extend(batch_embs)
+
+            if include_sparse and hasattr(embedder, "embed_with_sparse"):
+                batch_dense, batch_sparse = embedder.embed_with_sparse(batch, show_progress=False)
+                new_embeddings.extend(batch_dense)
+                new_sparse.extend(batch_sparse)
+            else:
+                batch_embs = embedder.embed_documents(batch, show_progress=False)
+                new_embeddings.extend(batch_embs)
 
             done = min(i + batch_size, len(texts))
             elapsed = time.time() - start_time
             rate = done / elapsed if elapsed > 0 else 0
-            logger.info(f"  Embedded {done}/{len(texts)} ({rate:.0f} chunks/sec)")
+            mode = "dense+sparse" if include_sparse else "dense"
+            logger.info(f"  Embedded {done}/{len(texts)} ({rate:.0f} chunks/sec, {mode})")
 
             gc.collect()
 
         all_children["vector"] = new_embeddings
+        if new_sparse:
+            all_children["sparse_vector"] = new_sparse
+            logger.info(f"  Sparse vectors generated for {len(new_sparse)} chunks")
 
     # ── Enrich child chunks ───────────────────────────────────────────────
     logger.info("Enriching child chunks...")
@@ -301,6 +313,11 @@ def main() -> None:
         action="store_true",
         help="Add new schema fields without re-embedding vectors",
     )
+    parser.add_argument(
+        "--include-sparse",
+        action="store_true",
+        help="Generate sparse vectors alongside dense (requires FlagEmbedding)",
+    )
     args = parser.parse_args()
 
     result = migrate_embeddings(
@@ -308,6 +325,7 @@ def main() -> None:
         dry_run=args.dry_run,
         batch_size=args.batch_size,
         enrich_only=args.enrich_only,
+        include_sparse=args.include_sparse,
     )
 
     logger.info(f"Result: {result}")

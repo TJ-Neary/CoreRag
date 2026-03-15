@@ -163,6 +163,7 @@ async def _startup():
         conflict_detector=conflict_detector,
     )
     _corerag_tools._query_analytics = _query_analytics
+    _corerag_tools._embedding_service = _embedding_service
 
     # Initialize conversation manager for multi-turn search
     from src.search.conversation_manager import ConversationManager

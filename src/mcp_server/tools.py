@@ -188,10 +188,21 @@ class CoreRagTools:
         # Embed query (or HyDE hypothetical document)
         query_vector = await self.embedder(search_query)
 
+        # Generate sparse query if embedding service supports it
+        query_sparse = None
+        if hasattr(self, "_embedding_service") and hasattr(
+            self._embedding_service, "embed_query_with_sparse"
+        ):
+            try:
+                _, query_sparse = self._embedding_service.embed_query_with_sparse(search_query)
+            except Exception:
+                pass
+
         # Initial retrieval via HybridSearcher
         candidates_raw = await self.retriever.search(
             query=query,  # Use original query for FTS keyword matching
             query_vector=query_vector,
+            query_sparse=query_sparse,
             k=k * 10 if use_reranker else k,
             filters=filters,
         )
