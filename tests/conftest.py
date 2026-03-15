@@ -217,7 +217,7 @@ def mock_lancedb_with_data(mock_lancedb: MagicMock) -> MagicMock:
             "id": "chunk_1",
             "content": "Sample chunk content about Python programming.",
             "document_id": "doc_abc123",
-            "vector": [0.1] * 384,
+            "vector": [0.1] * 1024,
             "source_path": "test_doc.md",
             "section_title": "Introduction",
             "tags": ",python,test,",
@@ -227,7 +227,7 @@ def mock_lancedb_with_data(mock_lancedb: MagicMock) -> MagicMock:
             "id": "chunk_2",
             "content": "Another chunk with different content.",
             "document_id": "doc_abc123",
-            "vector": [0.2] * 384,
+            "vector": [0.2] * 1024,
             "source_path": "test_doc.md",
             "section_title": "Details",
             "tags": ",python,test,",
@@ -246,8 +246,8 @@ def mock_lancedb_with_data(mock_lancedb: MagicMock) -> MagicMock:
 def mock_embedder() -> MagicMock:
     """Provide a mock embedding service."""
     embedder = MagicMock()
-    embedder.embed_documents.return_value = [[0.1] * 384]
-    embedder.embed_query.return_value = [0.1] * 384
+    embedder.embed_documents.return_value = [[0.1] * 1024]
+    embedder.embed_query.return_value = [0.1] * 1024
     return embedder
 
 
@@ -256,7 +256,7 @@ def mock_async_embedder() -> AsyncMock:
     """Provide an async mock embedding function."""
 
     async def embed(text: str) -> list:
-        return [0.1] * 384
+        return [0.1] * 1024
 
     return embed
 

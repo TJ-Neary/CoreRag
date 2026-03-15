@@ -10,17 +10,32 @@ from src.intelligence import analyze_document
 from src.quality.duplicate_detector import DuplicateDetector
 from src.utils.privacy_audit import PrivacyScanner, load_custom_pii_terms, scan_custom_terms
 
-# Singleton detector so state persists across files in a batch
-_dedup = DuplicateDetector()
+# Lazy-initialized singletons — avoids loading spaCy model at import time
+_dedup: DuplicateDetector | None = None
+_pii_scanner: PrivacyScanner | None = None
+_custom_pii_terms: list | None = None
+_auto_tagger: AutoTagger | None = None
 
-# Singleton scanner so Presidio model only loads once
-_pii_scanner = PrivacyScanner()
 
-# Load custom PII terms once at import time
-_custom_pii_terms = load_custom_pii_terms()
+def _get_dedup() -> DuplicateDetector:
+    global _dedup
+    if _dedup is None:
+        _dedup = DuplicateDetector()
+    return _dedup
 
-# Lazy-initialized auto-tagger (loads embedding service on first use for hybrid tagging)
-_auto_tagger = None
+
+def _get_pii_scanner() -> PrivacyScanner:
+    global _pii_scanner
+    if _pii_scanner is None:
+        _pii_scanner = PrivacyScanner()
+    return _pii_scanner
+
+
+def _get_custom_pii_terms() -> list:
+    global _custom_pii_terms
+    if _custom_pii_terms is None:
+        _custom_pii_terms = load_custom_pii_terms()
+    return _custom_pii_terms
 
 
 def _get_auto_tagger() -> AutoTagger:
@@ -77,7 +92,7 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
             return
 
         # 2b. Duplicate check (before expensive AI analysis)
-        dup_matches = _dedup.check_file(file_path)
+        dup_matches = _get_dedup().check_file(file_path)
         duplicate_info = None
         if dup_matches:
             best = dup_matches[0]
@@ -98,8 +113,8 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
 
         # 4. PII Detection (Presidio + custom dictionary — replaces LLM is_sensitive)
         pii_sample = text[:PII_SAMPLE_MAX_CHARS]  # Scan first N chars for speed
-        scan_result = _pii_scanner.scan(pii_sample, file_path=str(file_path))
-        custom_matches = scan_custom_terms(pii_sample, _custom_pii_terms)
+        scan_result = _get_pii_scanner().scan(pii_sample, file_path=str(file_path))
+        custom_matches = scan_custom_terms(pii_sample, _get_custom_pii_terms())
 
         # Merge and filter by confidence
         all_pii_matches = scan_result.matches + custom_matches
@@ -189,8 +204,8 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
         update_item(item_id, update_data)
 
         # Register file in dedup index for future checks
-        _dedup.add_file(file_path)
-        _dedup._save_state()
+        _get_dedup().add_file(file_path)
+        _get_dedup()._save_state()
 
         logging.info(f"--- File Staged for Review: {file_path.name} ---")
 
