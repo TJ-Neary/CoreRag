@@ -251,6 +251,108 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 pass
         return {"passed": True, "warnings": [], "total_items": 0}
 
+    # ── Catalog Routes ─────────────────────────────────────────────────
+
+    @router.get("/api/catalog")
+    async def get_catalog(
+        sensitive: bool | None = None,
+        tag: str = "",
+        category: str = "",
+    ) -> dict:
+        """Paginated catalog listing with filters."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        try:
+            catalog = CatalogManager()
+            filters: dict[str, Any] = {}
+            if sensitive is not None:
+                filters["is_sensitive"] = sensitive
+            if tag:
+                filters["tag"] = tag
+            if category:
+                filters["category"] = category
+
+            results = catalog.search(**filters)
+            return {
+                "documents": [
+                    {
+                        "id": doc.id,
+                        "original_filename": doc.original_filename,
+                        "category": doc.category,
+                        "year": doc.year,
+                        "tags": doc.tags,
+                        "is_sensitive": bool(doc.is_sensitive),
+                        "summary": doc.summary,
+                        "status": doc.status,
+                        "file_type": doc.file_type,
+                        "storage_location": doc.storage_location,
+                        "storage_accessible": bool(doc.storage_accessible),
+                        "ingested_at": doc.ingested_at,
+                    }
+                    for doc in results
+                ],
+                "total": len(results),
+            }
+        except Exception as e:
+            return {"documents": [], "total": 0, "error": str(e)}
+
+    @router.get("/api/catalog/stats")
+    async def get_catalog_stats() -> dict:
+        """Catalog summary for dashboard widget."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        try:
+            catalog = CatalogManager()
+            return catalog.get_stats()
+        except Exception as e:
+            return {"error": str(e), "total_documents": 0}
+
+    @router.get("/api/catalog/{doc_id}")
+    async def get_catalog_entry(doc_id: str) -> dict:
+        """Single document with all exports."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        try:
+            catalog = CatalogManager()
+            doc = catalog.get(doc_id)
+            if not doc:
+                return {"error": "Not found"}
+
+            exports = catalog.get_exports(doc_id)
+            return {
+                "document": {
+                    "id": doc.id,
+                    "original_filename": doc.original_filename,
+                    "original_path": doc.original_path,
+                    "archive_path": doc.archive_path,
+                    "category": doc.category,
+                    "year": doc.year,
+                    "tags": doc.tags,
+                    "is_sensitive": bool(doc.is_sensitive),
+                    "summary": doc.summary,
+                    "status": doc.status,
+                    "file_type": doc.file_type,
+                    "file_size": doc.file_size,
+                    "chunk_count": doc.chunk_count,
+                    "storage_location": doc.storage_location,
+                    "storage_device": doc.storage_device,
+                    "storage_accessible": bool(doc.storage_accessible),
+                    "ingested_at": doc.ingested_at,
+                    "updated_at": doc.updated_at,
+                },
+                "exports": [
+                    {
+                        "destination": exp.destination,
+                        "path": exp.path,
+                        "exported_at": exp.exported_at,
+                        "redacted": bool(exp.redacted),
+                    }
+                    for exp in exports
+                ],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
     # ── Queue Routes ──────────────────────────────────────────────────────
 
     @router.get("/api/queue")

@@ -1048,6 +1048,82 @@ async def sync_integration(name: str) -> dict:
     return await _corerag_tools.sync_integration(name=name)
 
 
+# === CATALOG TOOLS ===
+
+
+@mcp.tool()
+async def catalog_search(
+    query: str,
+    tags: str = "",
+    sensitive_only: bool = False,
+) -> dict:
+    """Search the document catalog for files by tag, category, or keyword.
+
+    Args:
+        query: Search term (matches tags and categories)
+        tags: Comma-separated tags to filter by
+        sensitive_only: If True, only return sensitive documents
+
+    Returns:
+        Matching documents with metadata and export history
+    """
+    from src.catalog.catalog_manager import CatalogManager
+
+    try:
+        catalog = CatalogManager()
+        filters: dict = {}
+        if tags:
+            filters["tag"] = tags.split(",")[0].strip()
+        if sensitive_only:
+            filters["is_sensitive"] = True
+        if query:
+            filters["tag"] = query  # Search by tag match
+
+        results = catalog.search(**filters)
+        # Also search by category
+        if query:
+            cat_results = catalog.search(category=query)
+            seen_ids = {doc.id for doc in results}
+            for doc in cat_results:
+                if doc.id not in seen_ids:
+                    results.append(doc)
+
+        return {
+            "total": len(results),
+            "documents": [
+                {
+                    "id": doc.id,
+                    "filename": doc.original_filename,
+                    "category": doc.category,
+                    "year": doc.year,
+                    "tags": doc.tags,
+                    "is_sensitive": bool(doc.is_sensitive),
+                    "summary": doc.summary,
+                    "storage_location": doc.storage_location,
+                    "storage_accessible": bool(doc.storage_accessible),
+                }
+                for doc in results
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e), "total": 0, "documents": []}
+
+
+@mcp.tool()
+async def catalog_stats() -> dict:
+    """Get document catalog statistics.
+
+    Returns summary counts by category, status, tags, and sensitivity.
+    """
+    from src.catalog.catalog_manager import CatalogManager
+
+    try:
+        catalog = CatalogManager()
+        return catalog.get_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # === RESOURCE ENDPOINTS ===
 
 
