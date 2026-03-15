@@ -68,6 +68,16 @@ async def lifespan(app: FastAPI):
             "Set CORERAG_API_KEY in .env to enable authentication."
         )
 
+    # Prune completed items from staging manifest
+    try:
+        from src.staging import cleanup_manifest
+
+        pruned = cleanup_manifest()
+        if pruned:
+            logger.info(f"Staging manifest: pruned {pruned} completed items")
+    except Exception as e:
+        logger.debug(f"Manifest cleanup skipped: {e}")
+
     # Initialize shared services for API routes (same as MCP server does)
     try:
         import lancedb

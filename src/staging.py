@@ -170,3 +170,38 @@ def batch_update_items(updates: dict[str, dict]) -> int:
 def get_item(item_id: str):
     manifest = load_manifest()
     return manifest.get(item_id)
+
+
+def cleanup_manifest(
+    keep_statuses: list[str] | None = None, archive_dir: Path | None = None
+) -> int:
+    """Remove completed/error items from manifest, archiving them to a monthly file.
+
+    Called on server startup to prevent unbounded manifest growth.
+    Returns the number of pruned items.
+    """
+    if keep_statuses is None:
+        keep_statuses = ["pending", "processing", "approved"]
+
+    _archive_dir = archive_dir or (config.STATE_DIR / "manifest_archive")
+    _archive_dir.mkdir(parents=True, exist_ok=True)
+
+    def _cleanup(manifest):
+        to_archive = {k: v for k, v in manifest.items() if v.get("status") not in keep_statuses}
+        if to_archive:
+            month = datetime.now().strftime("%Y-%m")
+            archive_file = _archive_dir / f"manifest_{month}.json"
+            existing = {}
+            if archive_file.exists():
+                try:
+                    existing = json.loads(archive_file.read_text())
+                except Exception:
+                    pass
+            existing.update(to_archive)
+            archive_file.write_text(json.dumps(existing, indent=2))
+
+            for k in to_archive:
+                del manifest[k]
+        return len(to_archive)
+
+    return _load_modify_save(_cleanup)

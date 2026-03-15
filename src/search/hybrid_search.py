@@ -5,7 +5,9 @@ Combines vector search with full-text search using Reciprocal Rank Fusion (RRF).
 CRITICAL: FTS index MUST be created for hybrid search to work correctly.
 """
 
+import hashlib
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +15,38 @@ from src.exceptions import SearchError
 from src.utils.query_sanitize import build_filter_clause
 
 logger = logging.getLogger(__name__)
+
+
+class _ResultCache:
+    """TTL-based search result cache. Invalidated on ingest/delete."""
+
+    def __init__(self, max_size: int = 128, ttl_seconds: int = 300):
+        self._cache: dict[str, tuple[float, list]] = {}
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+
+    def _key(self, query: str, k: int, filters: dict | None) -> str:
+        raw = f"{query}|{k}|{sorted(filters.items()) if filters else ''}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    def get(self, query: str, k: int, filters: dict | None) -> list | None:
+        key = self._key(query, k, filters)
+        if key in self._cache:
+            ts, results = self._cache[key]
+            if time.time() - ts < self._ttl:
+                return results
+            del self._cache[key]
+        return None
+
+    def put(self, query: str, k: int, filters: dict | None, results: list) -> None:
+        key = self._key(query, k, filters)
+        if len(self._cache) >= self._max_size:
+            oldest = min(self._cache, key=lambda k: self._cache[k][0])
+            del self._cache[oldest]
+        self._cache[key] = (time.time(), results)
+
+    def invalidate(self) -> None:
+        self._cache.clear()
 
 
 @dataclass
@@ -47,6 +81,7 @@ class HybridSearcher:
         self.db = db
         self.table_name = table_name
         self._table = None
+        self._result_cache = _ResultCache()
         self._fts_verified = False
 
     @property
@@ -129,11 +164,19 @@ class HybridSearcher:
         Returns:
             List of SearchResult sorted by RRF score
         """
+        # Check result cache
+        cached = self._result_cache.get(query, k, filters)
+        if cached is not None:
+            logger.debug(f"Search cache hit for query: {query[:50]}...")
+            return cached
+
         # Validate FTS index
         if not self._fts_verified:
             if not self.verify_fts_index():
                 logger.warning("FTS index not available, falling back to vector-only search")
-                return await self._vector_only_search(query_vector, k, filters, debug)
+                results = await self._vector_only_search(query_vector, k, filters, debug)
+                self._result_cache.put(query, k, filters, results)
+                return results
 
         # Oversample for fusion
         oversample = k * 3
@@ -149,7 +192,9 @@ class HybridSearcher:
             vector_results, fts_results, vector_weight, fts_weight, debug
         )
 
-        return fused[:k]
+        results = fused[:k]
+        self._result_cache.put(query, k, filters, results)
+        return results
 
     def _build_filter_clause(self, filters: Dict[str, Any]) -> str:
         """Build a WHERE clause from filters dict.
