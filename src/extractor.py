@@ -16,6 +16,9 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 # Spreadsheet extensions
 _SPREADSHEET_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
 
+# Code file extensions (read as text — code_chunker handles structure)
+_CODE_EXTENSIONS = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".rb"}
+
 # Minimum characters from pypdf before we consider a PDF "text-based"
 # Below this threshold, we assume it's scanned and fall back to OCR
 _PDF_TEXT_THRESHOLD = 50
@@ -46,6 +49,8 @@ def extract_text(file_path: Path) -> str:
         elif ext in _VIDEO_EXTENSIONS:
             return _extract_video(file_path)
         elif ext in [".txt", ".md", ".log", ".csv", ".json", ".yaml"]:
+            return file_path.read_text(errors="replace")
+        elif ext in _CODE_EXTENSIONS:
             return file_path.read_text(errors="replace")
         else:
             logger.warning(f"Unsupported file type: {ext}. Skipping extraction.")
