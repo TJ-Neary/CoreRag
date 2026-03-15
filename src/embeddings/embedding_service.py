@@ -447,6 +447,12 @@ class EmbeddingService:
             return dense, [{}] * len(documents)
 
         if not hasattr(self, "_flag_model"):
+            # Patch missing import for transformers 5.0+ compatibility
+            import transformers.utils.import_utils as _iu
+
+            if not hasattr(_iu, "is_torch_fx_available"):
+                _iu.is_torch_fx_available = lambda: False
+
             from FlagEmbedding import BGEM3FlagModel
 
             device = "mps" if self.device == "mps" else "cpu"
