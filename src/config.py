@@ -20,7 +20,7 @@ def get_path_var(var_name: str, required: bool = True) -> Path:
         if var_name == "VAULT_PATH":
             return Path.home() / "Documents" / "ObsidianVault"
         if var_name == "ARCHIVE_PATH":
-            return Path.home() / "Documents"
+            return Path.home() / "Documents" / "PKM"
 
         if required:
             print(
