@@ -144,8 +144,10 @@ class HybridSearcher:
         query: str,
         query_vector: List[float],
         k: int = 10,
-        vector_weight: float = 0.7,
-        fts_weight: float = 0.3,
+        vector_weight: float = 0.5,
+        fts_weight: float = 0.2,
+        sparse_weight: float = 0.3,
+        query_sparse: Optional[Dict[int, float]] = None,
         filters: Optional[Dict[str, Any]] = None,
         debug: bool = False,
     ) -> List[SearchResult]:
@@ -187,10 +189,27 @@ class HybridSearcher:
         # Full-text search
         fts_results = await self._fts_search(query, oversample, filters)
 
-        # Fuse with RRF
-        fused = self._reciprocal_rank_fusion(
-            vector_results, fts_results, vector_weight, fts_weight, debug
-        )
+        # Sparse search (if query_sparse provided)
+        sparse_results = []
+        if query_sparse:
+            sparse_results = await self._sparse_search(query_sparse, oversample, filters)
+
+        # Fuse with RRF (3-way if sparse available, 2-way otherwise)
+        if sparse_results:
+            fused = self._reciprocal_rank_fusion_3way(
+                vector_results,
+                fts_results,
+                sparse_results,
+                vector_weight,
+                fts_weight,
+                sparse_weight,
+                debug,
+            )
+        else:
+            # Fall back to 2-way with adjusted weights
+            adj_v = vector_weight + sparse_weight * 0.7  # Redistribute sparse weight
+            adj_f = fts_weight + sparse_weight * 0.3
+            fused = self._reciprocal_rank_fusion(vector_results, fts_results, adj_v, adj_f, debug)
 
         results = fused[:k]
         self._result_cache.put(query, k, filters, results)
@@ -231,6 +250,21 @@ class HybridSearcher:
             return search.to_list()
         except Exception as e:
             logger.warning(f"FTS search failed: {e}")
+            return []
+
+    async def _sparse_search(
+        self, query_sparse: Dict[int, float], k: int, filters: Optional[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Perform sparse vector search using learned lexical weights."""
+        try:
+            search = self.table.search(query_sparse, vector_column_name="sparse_vector").limit(k)
+
+            if filters:
+                search = search.where(self._build_filter_clause(filters))
+
+            return search.to_list()
+        except Exception as e:
+            logger.debug(f"Sparse search not available: {e}")
             return []
 
     async def _vector_only_search(
@@ -314,6 +348,60 @@ class HybridSearcher:
         # Sort by RRF score (descending)
         scored.sort(key=lambda x: x.rrf_score, reverse=True)
 
+        return scored
+
+    def _reciprocal_rank_fusion_3way(
+        self,
+        vector_results: List[Dict],
+        fts_results: List[Dict],
+        sparse_results: List[Dict],
+        vector_weight: float,
+        fts_weight: float,
+        sparse_weight: float,
+        debug: bool,
+    ) -> List[SearchResult]:
+        """3-way RRF fusion: dense + FTS + sparse."""
+        v_ranks = {r.get("id", str(i)): i + 1 for i, r in enumerate(vector_results)}
+        f_ranks = {r.get("id", str(i)): i + 1 for i, r in enumerate(fts_results)}
+        s_ranks = {r.get("id", str(i)): i + 1 for i, r in enumerate(sparse_results)}
+
+        all_ids = set(v_ranks) | set(f_ranks) | set(s_ranks)
+        doc_data: Dict[str, Dict] = {}
+        for r in vector_results + fts_results + sparse_results:
+            rid = r.get("id", "")
+            if rid and rid not in doc_data:
+                doc_data[rid] = r
+
+        scored = []
+        for doc_id in all_ids:
+            score = 0.0
+            if doc_id in v_ranks:
+                score += vector_weight / (self.RRF_K + v_ranks[doc_id])
+            if doc_id in f_ranks:
+                score += fts_weight / (self.RRF_K + f_ranks[doc_id])
+            if doc_id in s_ranks:
+                score += sparse_weight / (self.RRF_K + s_ranks[doc_id])
+
+            r = doc_data.get(doc_id, {})
+            metadata = {
+                k: v
+                for k, v in r.items()
+                if k not in ("content", "vector", "sparse_vector", "_distance", "_score", "_rowid")
+            }
+
+            scored.append(
+                SearchResult(
+                    id=doc_id,
+                    content=r.get("content", ""),
+                    document_id=r.get("document_id", ""),
+                    vector_score=r.get("_distance", 0),
+                    fts_score=r.get("_score"),
+                    rrf_score=score,
+                    metadata=metadata,
+                )
+            )
+
+        scored.sort(key=lambda x: x.rrf_score, reverse=True)
         return scored
 
 

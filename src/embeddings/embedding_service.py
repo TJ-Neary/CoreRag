@@ -432,6 +432,44 @@ class EmbeddingService:
         if self._cache:
             self._cache.clear()
 
+    def embed_with_sparse(
+        self,
+        documents: List[str],
+        show_progress: bool = True,
+    ) -> tuple:
+        """Return (dense_vectors, sparse_vectors) using BGE-M3's dual output.
+
+        Sparse vectors are dicts of {token_id: weight}. Only available for BGE-M3.
+        For other models, returns empty dicts as sparse vectors.
+        """
+        if "bge-m3" not in self.model_name.lower():
+            dense = self.embed_documents(documents, show_progress=show_progress)
+            return dense, [{}] * len(documents)
+
+        if not hasattr(self, "_flag_model"):
+            from FlagEmbedding import BGEM3FlagModel
+
+            device = "mps" if self.device == "mps" else "cpu"
+            self._flag_model = BGEM3FlagModel(
+                self.model_name, use_fp16=(device != "cpu"), devices=device
+            )
+
+        output = self._flag_model.encode(
+            documents, return_dense=True, return_sparse=True, batch_size=32
+        )
+
+        dense_vecs = output["dense_vecs"].tolist()
+        sparse_vecs = [
+            {int(k): float(v) for k, v in weights.items()} for weights in output["lexical_weights"]
+        ]
+
+        return dense_vecs, sparse_vecs
+
+    def embed_query_with_sparse(self, query: str) -> tuple:
+        """Embed a query returning both dense vector and sparse weights."""
+        dense_list, sparse_list = self.embed_with_sparse([query], show_progress=False)
+        return dense_list[0], sparse_list[0]
+
     def get_info(self) -> dict:
         """Get service information."""
         return {
