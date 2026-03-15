@@ -258,7 +258,7 @@ class IngestService:
                 if graph_db_path.exists():
                     graph = KnowledgeGraph(graph_db_path)
 
-                    from src.graph.entity_extractor import EntityExtractor
+                    from src.graph.knowledge_graph import EntityExtractor
 
                     llm = None
                     try:
