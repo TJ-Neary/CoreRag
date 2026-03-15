@@ -197,6 +197,13 @@ class CatalogManager:
             record.ingested_at = now
         record.updated_at = now
 
+        # Normalize tags to comma-delimited with leading/trailing commas
+        # e.g., "fitness,nutrition" -> ",fitness,nutrition,"
+        # This enables delimiter-aware LIKE '%,tag,%' searches
+        tags_normalized = record.tags
+        if tags_normalized and not tags_normalized.startswith(","):
+            tags_normalized = f",{tags_normalized},"
+
         try:
             conn = self._get_conn()
             conn.execute(
@@ -222,7 +229,7 @@ class CatalogManager:
                     record.obsidian_path,
                     record.category,
                     record.year,
-                    record.tags,
+                    tags_normalized,
                     int(record.is_sensitive),
                     record.summary,
                     record.file_type,
@@ -372,9 +379,10 @@ class CatalogManager:
 
         if tag is not None:
             # Tags are stored comma-delimited: ",tag1,tag2,"
-            # Match substring for flexible tag search
+            # Use delimiter-aware matching to avoid substring false positives
+            # e.g., searching "study" should not match "sphr-study"
             conditions.append("tags LIKE ?")
-            params.append(f"%{tag}%")
+            params.append(f"%,{tag},%")
 
         if is_sensitive is not None:
             conditions.append("is_sensitive = ?")

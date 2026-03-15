@@ -129,6 +129,19 @@ class TestSearch:
         results = catalog.search(tag="sphr-study")
         assert len(results) == 2
 
+    def test_search_by_tag_boundary(self, catalog: CatalogManager) -> None:
+        """Tag search should not match partial tag names."""
+        catalog.register(_make_record(tags="sphr-study,cert-prep"))
+        catalog.register(_make_record(tags="general"))
+
+        # "study" should NOT match "sphr-study" (boundary-aware)
+        results = catalog.search(tag="study")
+        assert len(results) == 0
+
+        # "sphr-study" should match exactly
+        results = catalog.search(tag="sphr-study")
+        assert len(results) == 1
+
     def test_search_by_sensitive(self, catalog: CatalogManager) -> None:
         """Filter sensitive documents only."""
         catalog.register(_make_record(is_sensitive=True))
