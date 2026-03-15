@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.config import STATE_DIR
 from src.exceptions import CoreRagError
 from src.search.decay_scoring import apply_decay_to_results
 from src.search.multi_query import QueryDecomposer, ReciprocalRankFusion
@@ -808,391 +807,82 @@ class CoreRagTools:
 
     # ── Episodic Memory ─────────────────────────────────────────────────────
 
-    def _ensure_memory(self):
-        """Lazily initialize memory manager and load user profile."""
-        if self._memory_manager is None:
-            from src.memory.episodic_memory import EpisodicMemoryManager
-
-            storage_path = STATE_DIR / "profiles"
-            self._memory_manager = EpisodicMemoryManager(storage_path)
-            self._user_profile = self._memory_manager.load_or_create("default")
+    # ── Memory (delegated to MemoryTools) ────────────────────────────────
 
     async def get_user_context(self) -> Dict[str, Any]:
         """Get user profile and episodic memory context."""
-        self._ensure_memory()
+        return await self._memory.get_user_context()
 
-        assert self._user_profile is not None
-        profile = self._user_profile
-
-        # Get correction patterns from correction log
-        correction_summary: Dict[str, Any] = {}
-        try:
-            from src.correction_log import _load_corrections
-
-            corrections = _load_corrections()
-            if corrections:
-                # Aggregate correction patterns
-                folder_changes = []
-                filename_changes = []
-                for c in corrections[-20:]:
-                    corr = c.get("corrections", {})
-                    if "target_folder" in corr:
-                        folder_changes.append(
-                            f"{corr['target_folder']['ai']} -> {corr['target_folder']['human']}"
-                        )
-                    if "filename" in corr:
-                        filename_changes.append(
-                            f"{corr['filename']['ai']} -> {corr['filename']['human']}"
-                        )
-                if folder_changes:
-                    correction_summary["folder_patterns"] = folder_changes[-5:]
-                if filename_changes:
-                    correction_summary["filename_patterns"] = filename_changes[-5:]
-                correction_summary["total_corrections"] = len(corrections)
-        except Exception as e:
-            logger.warning(f"Failed to load correction patterns: {e}")
-
-        return {
-            "facts": [
-                {"fact": f.content, "category": f.category.value, "confidence": f.confidence}
-                for f in profile.facts
-            ],
-            "preferences": profile.preferences,
-            "correction_patterns": correction_summary,
-            "user_name": profile.name,
-        }
-
-    async def add_user_fact(
-        self,
-        fact: str,
-        category: str = "general",
-    ) -> Dict[str, Any]:
+    async def add_user_fact(self, fact: str, category: str = "general") -> Dict[str, Any]:
         """Add a fact about the user to episodic memory."""
-        self._ensure_memory()
+        return await self._memory.add_user_fact(fact, category)
 
-        from datetime import datetime
+    # ── Quality (delegated to QualityTools) ──────────────────────────────
 
-        from src.memory.episodic_memory import FactCategory, UserFact
-
-        # Map string category to FactCategory enum
-        category_map = {
-            "general": FactCategory.PERSONAL,
-            "personal": FactCategory.PERSONAL,
-            "preference": FactCategory.PREFERENCE,
-            "life_event": FactCategory.LIFE_EVENT,
-            "project": FactCategory.PROJECT,
-            "relationship": FactCategory.RELATIONSHIP,
-            "technical": FactCategory.TECHNICAL,
-            "health": FactCategory.HEALTH,
-            "work": FactCategory.WORK,
-        }
-        fact_category = category_map.get(category.lower(), FactCategory.PERSONAL)
-
-        now = datetime.now().isoformat()
-        user_fact = UserFact(
-            content=fact,
-            category=fact_category,
-            confidence=1.0,
-            source="explicit",
-            created_at=now,
-            updated_at=now,
-        )
-
-        assert self._memory_manager is not None
-        assert self._user_profile is not None
-        self._memory_manager.add_fact(self._user_profile, user_fact)
-        logger.info(f"Stored user fact: [{fact_category.value}] {fact}")
-
-        return {
-            "stored": True,
-            "fact": fact,
-            "category": fact_category.value,
-            "total_facts": len(self._user_profile.facts),
-        }
-
-    # ── Conflict Detection ────────────────────────────────────────────────────
-
-    async def detect_conflicts(
-        self,
-        path: Optional[str] = None,
-        limit: int = 10,
-    ) -> Dict[str, Any]:
-        """Scan documents for contradictions, numeric mismatches, and outdated info."""
-        if not self._conflict_detector:
-            return {"error": "Conflict detector not initialized"}
-
-        try:
-            scan_path = Path(path) if path else self.vault_root
-            if not scan_path.exists():
-                return {"error": f"Path not found: {scan_path}"}
-
-            report = self._conflict_detector.scan_directory(scan_path, recursive=True)
-
-            return {
-                "path": str(scan_path),
-                "documents_analyzed": report.documents_analyzed,
-                "conflicts_found": report.conflicts_found,
-                "by_type": report.by_type,
-                "by_severity": report.by_severity,
-                "conflicts": [
-                    {
-                        "type": c.conflict_type.value,
-                        "severity": c.severity.value,
-                        "description": c.description,
-                        "topic": c.topic,
-                        "confidence": c.confidence,
-                        "evidence_a": {
-                            "file": c.evidence_a.file_path,
-                            "content": c.evidence_a.content[:300],
-                        },
-                        "evidence_b": {
-                            "file": c.evidence_b.file_path,
-                            "content": c.evidence_b.content[:300],
-                        },
-                        "resolution": c.resolution_suggestion,
-                    }
-                    for c in report.conflicts[:limit]
-                ],
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
-    # ── Ingestion Tools ────────────────────────────────────────────────────────
-
-    async def trigger_reindex(
-        self,
-        path: Optional[str] = None,
-        force: bool = False,
-    ) -> Dict[str, Any]:
-        """Trigger re-indexing of files in the vault."""
-        try:
-            from src.utils.checkpoint import CheckpointManager
-
-            scan_path = Path(path) if path else self.vault_root
-            if not scan_path.exists():
-                return {"error": f"Path not found: {scan_path}"}
-
-            # Collect indexable files
-            supported_exts = {
-                ".md",
-                ".txt",
-                ".pdf",
-                ".docx",
-                ".json",
-                ".yaml",
-                ".csv",
-                ".log",
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".tiff",
-                ".webp",
-                ".bmp",
-                ".heic",
-            }
-            files = []
-            if scan_path.is_file():
-                files = [scan_path]
-            else:
-                for f in scan_path.rglob("*"):
-                    if f.is_file() and f.suffix.lower() in supported_exts:
-                        files.append(f)
-
-            if not files:
-                return {
-                    "status": "no_files",
-                    "path": str(scan_path),
-                    "message": "No indexable files found",
-                }
-
-            # If not forcing, filter to files not already indexed
-            if not force and self.db:
-                try:
-                    child_table = self.db.open_table("child_chunks")
-                    indexed = {
-                        r["source_path"]
-                        for r in child_table.search()
-                        .select(["source_path"])
-                        .limit(100000)
-                        .to_list()
-                    }
-                    files = [f for f in files if f.name not in indexed]
-                except Exception:
-                    pass  # Table may not exist yet
-
-            # Create checkpoint job
-            cm = CheckpointManager()
-            job = cm.create_job("reindex", files, config={"force": force, "path": str(scan_path)})
-
-            return {
-                "status": "queued",
-                "job_id": job.job_id,
-                "total_files": len(files),
-                "path": str(scan_path),
-                "force": force,
-                "message": f"Reindex job created with {len(files)} files. Use get_ingestion_queue to monitor progress.",
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
-    async def get_ingestion_queue(self) -> Dict[str, Any]:
-        """Get current ingestion queue status."""
-        # Phase 9 will wire this to src/utils/queue_manager.py
-        # For now, read from the staging manifest if available
-        try:
-            manifest_path = Path(__file__).resolve().parent.parent.parent / "staging_manifest.json"
-            if manifest_path.exists():
-                with open(manifest_path) as f:
-                    manifest = json.load(f)
-                pending = sum(1 for v in manifest.values() if v.get("status") == "pending")
-                processing = sum(1 for v in manifest.values() if v.get("status") == "processing")
-                completed = sum(1 for v in manifest.values() if v.get("status") == "completed")
-                return {
-                    "pending": pending,
-                    "processing": processing,
-                    "completed": completed,
-                    "total": len(manifest),
-                }
-        except Exception as e:
-            logger.error(f"Error reading ingestion queue: {e}")
-
-        return {"pending": 0, "processing": 0, "completed": 0, "total": 0}
-
-    # === Document Versioning ===
-
-    async def get_document_history(self, document_id: str, limit: int = 10) -> Dict[str, Any]:
-        """Get version history for a document."""
-        from src.utils.versioning import VersionManager
-
-        vm = VersionManager()
-        history = vm.get_history(document_id, limit=limit)
-        total = len(vm.get_versions(document_id))
-        return {"document_id": document_id, "versions": history, "total": total}
-
-    async def get_document_diff(
-        self, document_id: str, from_version: int, to_version: int
-    ) -> Dict[str, Any]:
-        """Get diff between two versions of a document."""
-        from src.utils.versioning import VersionManager
-
-        vm = VersionManager()
-        diff = vm.get_diff(document_id, from_version, to_version)
-        if not diff:
-            return {"error": "Version(s) not found"}
-        return {
-            "from_version": from_version,
-            "to_version": to_version,
-            "additions": diff.additions,
-            "deletions": diff.deletions,
-            "summary": diff.summary,
-            "diff_lines": diff.diff_lines[:50],
-        }
-
-    async def restore_document_version(
-        self, document_id: str, version_number: int
-    ) -> Dict[str, Any]:
-        """Restore a previous version of a document."""
-        from src.utils.versioning import VersionManager
-
-        vm = VersionManager()
-        restored = vm.restore_version(document_id, version_number)
-        if not restored:
-            return {"error": f"Version {version_number} not found"}
-        return {
-            "success": True,
-            "new_version": restored.version_number,
-            "restored_from": version_number,
-        }
-
-    # === Knowledge Gaps ===
+    async def detect_conflicts(self, path: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+        """Scan documents for contradictions."""
+        # Propagate conflict_detector in case it was set post-init
+        self._quality._conflict_detector = self._conflict_detector
+        return await self._quality.detect_conflicts(path, limit)
 
     async def analyze_knowledge_gaps(self) -> Dict[str, Any]:
-        """Analyze the knowledge base for gaps and improvement opportunities."""
-        from src.analytics.gaps_analyzer import GapsAnalyzer
-
-        analyzer = GapsAnalyzer(
-            analytics=self._query_analytics,
-            db=self.db,
-        )
-        return analyzer.get_comprehensive_analysis()
-
-    # === Golden Set Management ===
+        """Analyze the knowledge base for gaps."""
+        self._quality._query_analytics = self._query_analytics
+        return await self._quality.analyze_knowledge_gaps()
 
     async def get_golden_suggestions(self, limit: int = 10) -> Dict[str, Any]:
         """Get analytics-based suggestions for golden set entries."""
-        from src.quality.golden_set_manager import GoldenSetManager
-
-        mgr = GoldenSetManager(analytics=self._query_analytics)
-        suggestions = mgr.get_suggestions(limit=limit)
-        return {
-            "suggestions": suggestions,
-            "count": len(suggestions),
-            "current_entries": mgr.entry_count,
-        }
+        self._quality._query_analytics = self._query_analytics
+        return await self._quality.get_golden_suggestions(limit)
 
     async def approve_golden_suggestion(self, query: str) -> Dict[str, Any]:
-        """Approve a golden set suggestion from analytics."""
-        from src.quality.golden_set_manager import GoldenSetManager
-
-        mgr = GoldenSetManager(analytics=self._query_analytics)
-        success = mgr.approve_suggestion(query)
-        if success:
-            return {"status": "approved", "query": query, "total_entries": mgr.entry_count}
-        return {"status": "failed", "error": f"Query not found in suggestions: {query}"}
+        """Approve a golden set suggestion."""
+        self._quality._query_analytics = self._query_analytics
+        return await self._quality.approve_golden_suggestion(query)
 
     async def list_golden_entries(
         self, limit: int = 50, source: Optional[str] = None
     ) -> Dict[str, Any]:
         """List current golden set entries."""
-        from src.quality.golden_set_manager import GoldenSetManager
+        self._quality._query_analytics = self._query_analytics
+        return await self._quality.list_golden_entries(limit, source)
 
-        mgr = GoldenSetManager(analytics=self._query_analytics)
-        entries = mgr.list_entries(source_filter=source, limit=limit)
-        return {"entries": entries, "total": mgr.entry_count}
+    async def get_ingestion_queue(self) -> Dict[str, Any]:
+        """Get current ingestion queue status."""
+        return await self._quality.get_ingestion_queue()
 
-    # === Multi-Vault Support ===
+    # ── Maintenance (delegated to MaintenanceTools) ────────────────────
+
+    async def trigger_reindex(
+        self, path: Optional[str] = None, force: bool = False
+    ) -> Dict[str, Any]:
+        """Trigger re-indexing of files."""
+        return await self._maintenance.trigger_reindex(path, force)
+
+    async def get_document_history(self, document_id: str, limit: int = 10) -> Dict[str, Any]:
+        """Get version history for a document."""
+        return await self._maintenance.get_document_history(document_id, limit)
+
+    async def get_document_diff(
+        self, document_id: str, from_version: int, to_version: int
+    ) -> Dict[str, Any]:
+        """Get diff between two versions."""
+        return await self._maintenance.get_document_diff(document_id, from_version, to_version)
+
+    async def restore_document_version(
+        self, document_id: str, version_number: int
+    ) -> Dict[str, Any]:
+        """Restore a previous version."""
+        return await self._maintenance.restore_document_version(document_id, version_number)
 
     async def list_vaults(self) -> Dict[str, Any]:
-        """List configured Obsidian vaults."""
-        from src.config import VAULT_PATHS
-
-        return {
-            "vaults": {
-                name: {"path": str(path), "exists": path.exists()}
-                for name, path in VAULT_PATHS.items()
-            }
-        }
-
-    # === External Integrations ===
+        """List configured vaults."""
+        return await self._maintenance.list_vaults()
 
     async def list_integrations(self) -> Dict[str, Any]:
-        """List available integration plugins and their status."""
-        integrations = []
-        try:
-            from src.integrations.readwise import ReadwisePlugin
-
-            rw = ReadwisePlugin()
-            integrations.append(
-                {
-                    "name": rw.name(),
-                    "connected": rw.check_connection(),
-                    "config": rw.get_config_schema(),
-                }
-            )
-        except Exception as e:
-            logger.debug(f"Readwise plugin unavailable: {e}")
-        return {"integrations": integrations}
+        """List available integrations."""
+        return await self._maintenance.list_integrations()
 
     async def sync_integration(self, name: str) -> Dict[str, Any]:
         """Run a sync cycle for a named integration."""
-        if name == "readwise":
-            from src.integrations.readwise import ReadwisePlugin
-
-            plugin = ReadwisePlugin()
-            if not plugin.check_connection():
-                return {
-                    "status": "error",
-                    "error": "Readwise not connected (check READWISE_API_TOKEN)",
-                }
-            return plugin.sync()
-        return {"status": "error", "error": f"Unknown integration: {name}"}
+        return await self._maintenance.sync_integration(name)
