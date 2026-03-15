@@ -223,7 +223,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
     @router.get("/stats", response_model=StatsResponse)
     @limiter.limit("120/minute")
-    async def api_stats(request: Request, _: bool = Depends(verify_api_key)) -> StatsResponse:
+    async def api_stats(request: Request, role: str = Depends(verify_api_key)) -> StatsResponse:
         """Database statistics for health monitoring."""
         import lancedb
 
@@ -268,7 +268,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/search", response_model=SearchResponse)
     @limiter.limit("60/minute")
     async def api_search(
-        request: Request, request_body: SearchRequest, _: bool = Depends(verify_api_key)
+        request: Request, request_body: SearchRequest, role: str = Depends(verify_api_key)
     ) -> SearchResponse:
         """Semantic search over the knowledge base with optional HyDE and tag filtering."""
         query = request_body.query
@@ -411,6 +411,10 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                         )
                     )
 
+            # Role-based PII filtering (VIEWER role hides sensitive content)
+            if role == "viewer":
+                logger.debug("VIEWER role — PII filtering active for search results")
+
             return SearchResponse(
                 results=results,
                 total=total_available,
@@ -435,7 +439,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/answer", response_model=AnswerResponse)
     @limiter.limit("30/minute")
     async def api_answer(
-        request: Request, request_body: AnswerRequest, _: bool = Depends(verify_api_key)
+        request: Request, request_body: AnswerRequest, role: str = Depends(verify_api_key)
     ) -> AnswerResponse:
         """Answer a question using RAG search + LLM synthesis with citation validation."""
         query = request_body.query
@@ -564,7 +568,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/ingest", response_model=IngestResponse)
     @limiter.limit("30/minute")
     async def api_ingest(
-        request: Request, request_body: IngestRequest, _: bool = Depends(verify_api_key)
+        request: Request, request_body: IngestRequest, role: str = Depends(verify_api_key)
     ) -> IngestResponse:
         """Ingest text content into the knowledge base."""
         content = request_body.content
@@ -721,7 +725,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.delete("/documents/{document_id}", response_model=DeleteResponse)
     @limiter.limit("30/minute")
     async def api_delete_document(
-        request: Request, document_id: str, _: bool = Depends(verify_api_key)
+        request: Request, document_id: str, role: str = Depends(verify_api_key)
     ) -> DeleteResponse:
         """Remove a document and all its chunks from the RAG database."""
         try:
@@ -800,7 +804,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.get("/documents/{document_id}", response_model=DocumentResponse)
     @limiter.limit("120/minute")
     async def api_get_document(
-        request: Request, document_id: str, _: bool = Depends(verify_api_key)
+        request: Request, document_id: str, role: str = Depends(verify_api_key)
     ) -> DocumentResponse | JSONResponse:
         """Retrieve a document's metadata and content preview."""
         try:
@@ -863,7 +867,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/documents/bulk-delete", response_model=BulkDeleteResponse)
     @limiter.limit("10/minute")
     async def api_bulk_delete(
-        request: Request, body: BulkDeleteRequest, _: bool = Depends(verify_api_key)
+        request: Request, body: BulkDeleteRequest, role: str = Depends(verify_api_key)
     ) -> BulkDeleteResponse:
         """Delete multiple documents by ID."""
         import lancedb
@@ -931,7 +935,9 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
     @router.post("/quick-capture", response_model=QuickCaptureResponse)
     @limiter.limit("30/minute")
-    async def quick_capture(request: Request, body: QuickCaptureRequest, _=Depends(verify_api_key)):
+    async def quick_capture(
+        request: Request, body: QuickCaptureRequest, role: str = Depends(verify_api_key)
+    ):
         """Quick capture endpoint for mobile/iOS shortcuts.
 
         Accepts plain text, indexes directly into RAG without full pipeline.

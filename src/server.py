@@ -129,18 +129,31 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> bool:
-    """
-    Verify API key for protected endpoints.
+_access_control = None
 
-    If CORERAG_API_KEY is not set, authentication is disabled (local dev mode).
-    If set, the X-API-Key header must match.
+
+def _get_access_control():
+    """Lazy-init AccessControl singleton."""
+    global _access_control
+    if _access_control is None:
+        from src.auth.access_control import AccessControl
+
+        _access_control = AccessControl()
+    return _access_control
+
+
+async def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> str:
+    """
+    Verify API key for protected endpoints. Returns the caller's role as a string.
+
+    If CORERAG_API_KEY is not set, authentication is disabled (local dev mode) → "admin".
+    If set, the X-API-Key header must match → role resolved from access_control.yaml.
     """
     expected_key = os.getenv("CORERAG_API_KEY")
 
     # No key configured = auth disabled (local dev mode)
     if not expected_key:
-        return True
+        return "admin"
 
     # Key configured but not provided
     if not api_key:
@@ -154,7 +167,9 @@ async def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> bool
     if not secrets.compare_digest(api_key.encode(), expected_key.encode()):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
-    return True
+    # Resolve role from access control config
+    ac = _get_access_control()
+    return ac.get_role_for_key(api_key).value
 
 
 # ── Initialization ────────────────────────────────────────────────────────────

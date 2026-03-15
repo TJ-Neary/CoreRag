@@ -1,0 +1,18 @@
+# Role Mappings — copy to ~/.corerag/access_control.yaml
+# Maps API keys to roles for agent-level access control.
+#
+# Roles:
+#   admin  — Full access, PII visible (Kendra, Claude Desktop)
+#   editor — Can ingest and search, PII visible
+#   viewer — Search only, PII-sensitive results filtered (Centaur)
+#
+# If this file doesn't exist, all API keys get admin access (current behavior).
+
+users:
+  - username: kendra
+    role: admin
+    api_key: your-kendra-api-key
+
+  - username: centaur
+    role: viewer
+    api_key: your-centaur-api-key

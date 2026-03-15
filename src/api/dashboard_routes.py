@@ -12,7 +12,6 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import psutil
@@ -28,7 +27,6 @@ from src.config import (
     COMMIT_BATCH_SIZE,
     DB_PATH,
     MEMORY_CHECK_INTERVAL_SEC,
-    STATE_DIR,
 )
 from src.executor import execute_approved_item
 from src.folder_manager import (
@@ -221,12 +219,16 @@ class DashboardState:
 
 def create_dashboard_router(state: DashboardState) -> APIRouter:
     """Create the dashboard router with all internal routes."""
+    from src.api.dashboard_analytics import create_analytics_router
     from src.api.dashboard_chat import create_chat_router
+    from src.api.dashboard_memory import create_memory_router
 
     router = APIRouter()
 
     # Mount sub-routers
     router.include_router(create_chat_router(DB_PATH))
+    router.include_router(create_memory_router())
+    router.include_router(create_analytics_router())
 
     # ── Dashboard HTML ────────────────────────────────────────────────────
 
@@ -518,261 +520,9 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             logger.error(f"RAG verification failed: {e}", exc_info=True)
             return {"error": str(e), "summary": {}, "files": []}
 
-    # ── Episodic Memory Routes ────────────────────────────────────────────
-
-    @router.get("/api/user-facts")
-    async def get_user_facts() -> dict:
-        """Get user facts and correction patterns for dashboard display."""
-        try:
-            from src.memory.episodic_memory import EpisodicMemoryManager
-
-            storage_path = STATE_DIR / "profiles"
-            manager = EpisodicMemoryManager(storage_path)
-            profile = manager.load_or_create("default")
-
-            facts = [
-                {
-                    "content": f.content,
-                    "category": f.category.value,
-                    "confidence": f.confidence,
-                    "source": f.source,
-                    "created_at": f.created_at,
-                }
-                for f in profile.facts
-            ]
-
-            corrections = []
-            try:
-                from src.correction_log import _load_corrections
-
-                raw = _load_corrections()
-                for c in raw[-20:]:
-                    corrections.append(
-                        {
-                            "file": c.get("original_filename", ""),
-                            "corrections": c.get("corrections", {}),
-                            "timestamp": c.get("timestamp", ""),
-                        }
-                    )
-            except Exception:
-                pass
-
-            return {
-                "user_name": profile.name,
-                "facts": facts,
-                "corrections": corrections,
-                "total_facts": len(facts),
-                "total_corrections": len(corrections),
-            }
-        except Exception as e:
-            return {"error": str(e), "facts": [], "corrections": []}
-
-    @router.delete("/api/user-facts/{index}")
-    async def delete_user_fact(index: int) -> dict:
-        """Delete a user fact by index."""
-        try:
-            from src.memory.episodic_memory import EpisodicMemoryManager
-
-            storage_path = STATE_DIR / "profiles"
-            manager = EpisodicMemoryManager(storage_path)
-            profile = manager.load_or_create("default")
-
-            if 0 <= index < len(profile.facts):
-                removed = profile.facts.pop(index)
-                manager.save(profile)
-                return {"success": True, "removed": removed.content}
-            return {"success": False, "error": "Index out of range"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    @router.post("/api/user-facts")
-    async def add_user_fact(request: Request) -> dict:
-        """Add a new user fact."""
-        try:
-            from src.memory.episodic_memory import (
-                EpisodicMemoryManager,
-                FactCategory,
-                UserFact,
-            )
-
-            body = await request.json()
-            content = body.get("content", "").strip()
-            category = body.get("category", "personal")
-            source = body.get("source", "explicit")
-
-            if not content:
-                return {"success": False, "error": "Content is required"}
-
-            try:
-                cat = FactCategory(category)
-            except ValueError:
-                valid = [c.value for c in FactCategory]
-                return {"success": False, "error": f"Invalid category. Valid: {valid}"}
-
-            storage_path = STATE_DIR / "profiles"
-            manager = EpisodicMemoryManager(storage_path)
-            profile = manager.load_or_create("default")
-
-            now = datetime.now().isoformat()
-            fact = UserFact(
-                content=content,
-                category=cat,
-                confidence=1.0,
-                source=source,
-                created_at=now,
-                updated_at=now,
-            )
-            manager.add_fact(profile, fact)
-
-            return {"success": True, "content": content, "category": category}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    @router.get("/api/user-facts/stats")
-    async def get_user_facts_stats() -> dict:
-        """Get category breakdown and summary stats for user facts."""
-        try:
-            from src.memory.episodic_memory import EpisodicMemoryManager
-
-            storage_path = STATE_DIR / "profiles"
-            manager = EpisodicMemoryManager(storage_path)
-            profile = manager.load_or_create("default")
-
-            categories: dict[str, int] = {}
-            sources: dict[str, int] = {}
-            for f in profile.facts:
-                cat = f.category.value
-                categories[cat] = categories.get(cat, 0) + 1
-                sources[f.source] = sources.get(f.source, 0) + 1
-
-            return {
-                "total_facts": len(profile.facts),
-                "categories": categories,
-                "sources": sources,
-                "user_name": profile.name,
-            }
-        except Exception as e:
-            return {"error": str(e), "total_facts": 0, "categories": {}, "sources": {}}
-
-    @router.get("/api/user-facts/export")
-    async def export_user_profile() -> dict:
-        """Export user profile as JSON."""
-        try:
-            from src.memory.episodic_memory import EpisodicMemoryManager
-
-            storage_path = STATE_DIR / "profiles"
-            manager = EpisodicMemoryManager(storage_path)
-            profile = manager.load_or_create("default")
-            return profile.to_dict()
-        except Exception as e:
-            return {"error": str(e)}
-
-    # ── Query Analytics Routes ─────────────────────────────────────────────
-
-    @router.get("/api/analytics/summary")
-    async def get_analytics_summary(days: int = 7) -> dict:
-        """Get query analytics summary."""
-        try:
-            from src.analytics.query_analytics import QueryAnalytics
-
-            analytics = QueryAnalytics(state_dir=STATE_DIR / "analytics")
-            summary = analytics.get_summary(days=days)
-            return {
-                "total_queries": summary.total_queries,
-                "unique_queries": summary.unique_queries,
-                "avg_latency_ms": round(summary.avg_latency_ms, 1),
-                "avg_results_count": round(summary.avg_results_count, 1),
-                "avg_top_score": round(summary.avg_top_score, 3),
-                "failed_queries": summary.failed_queries,
-                "top_queries": [{"query": q, "count": c} for q, c in summary.top_queries],
-                "quality_trend": summary.quality_trend,
-                "period_days": days,
-            }
-        except Exception as e:
-            return {"error": str(e), "total_queries": 0}
-
-    @router.get("/api/analytics/failed")
-    async def get_failed_queries(limit: int = 20) -> dict:
-        """Get queries with poor results."""
-        try:
-            from src.analytics.query_analytics import QueryAnalytics
-
-            analytics = QueryAnalytics(state_dir=STATE_DIR / "analytics")
-            failed = analytics.get_failed_queries(limit=limit)
-            return {
-                "failed_queries": [
-                    {
-                        "query": e.query,
-                        "timestamp": e.timestamp,
-                        "results_count": e.results_count,
-                        "top_score": e.top_result_score,
-                        "top_file": e.top_result_file,
-                    }
-                    for e in failed
-                ],
-                "total": len(failed),
-            }
-        except Exception as e:
-            return {"error": str(e), "failed_queries": [], "total": 0}
-
-    @router.get("/api/analytics/golden-suggestions")
-    async def get_golden_suggestions(limit: int = 10) -> dict:
-        """Get suggested additions to the Golden Set."""
-        try:
-            from src.analytics.query_analytics import QueryAnalytics
-
-            analytics = QueryAnalytics(state_dir=STATE_DIR / "analytics")
-            suggestions = analytics.get_golden_set_suggestions(limit=limit)
-            return {"suggestions": suggestions, "total": len(suggestions)}
-        except Exception as e:
-            return {"error": str(e), "suggestions": [], "total": 0}
-
-    @router.get("/api/analytics/patterns")
-    async def get_query_patterns() -> dict:
-        """Get detected query patterns."""
-        try:
-            from src.analytics.query_analytics import QueryAnalytics
-
-            analytics = QueryAnalytics(state_dir=STATE_DIR / "analytics")
-            patterns = analytics.get_patterns()
-            return {
-                "patterns": [
-                    {
-                        "pattern": p.pattern,
-                        "frequency": p.frequency,
-                        "avg_results": round(p.avg_results, 1),
-                        "avg_score": round(p.avg_score, 3),
-                        "last_seen": p.last_seen,
-                        "examples": p.example_queries[:3],
-                    }
-                    for p in sorted(patterns, key=lambda x: -x.frequency)
-                ],
-                "total": len(patterns),
-            }
-        except Exception as e:
-            return {"error": str(e), "patterns": [], "total": 0}
-
-    @router.post("/api/analytics/feedback")
-    async def log_query_feedback(request: Request) -> dict:
-        """Log user feedback for a search query."""
-        try:
-            from src.analytics.query_analytics import QueryAnalytics
-
-            body = await request.json()
-            query = body.get("query", "")
-            feedback = body.get("feedback", "")
-
-            if not query or feedback not in ("good", "bad"):
-                return {"success": False, "error": "Requires query and feedback (good/bad)"}
-
-            analytics = QueryAnalytics(state_dir=STATE_DIR / "analytics")
-            analytics.log_feedback(query, feedback)
-            analytics.flush()
-            return {"success": True, "query": query, "feedback": feedback}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    # ── Chat Routes — extracted to dashboard_chat.py (mounted as sub-router above)
+    # ── Episodic Memory Routes — extracted to dashboard_memory.py (sub-router above)
+    # ── Query Analytics Routes — extracted to dashboard_analytics.py (sub-router above)
+    # ── Chat Routes — extracted to dashboard_chat.py (sub-router above)
 
     # ── Tag Management Routes ─────────────────────────────────────────────
 

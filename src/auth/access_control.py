@@ -100,6 +100,13 @@ class AccessControl:
             return False
         return user.role == Role.ADMIN
 
+    def get_role_for_key(self, api_key: str) -> Role:
+        """Resolve role for an API key. Returns ADMIN if no mappings configured."""
+        for user in self._users.values():
+            if user.api_key == api_key:
+                return user.role
+        return Role.ADMIN  # Backward compatible default
+
     def filter_results(self, results: list[dict], username: str) -> list[dict]:
         """Filter search results based on user permissions.
 
