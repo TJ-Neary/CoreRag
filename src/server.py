@@ -21,6 +21,7 @@ from slowapi.errors import RateLimitExceeded
 
 from src import config
 from src.api.dashboard_routes import DashboardState, create_dashboard_router
+from src.api.settings_routes import create_settings_router
 from src.api.v1_routes import create_v1_router, limiter
 from src.batch_processor import BatchProcessor
 from src.config import validate_config
@@ -203,6 +204,8 @@ _dashboard_state = DashboardState(
 
 app.include_router(create_dashboard_router(_dashboard_state))
 app.include_router(create_v1_router(check_permissions))
+
+app.include_router(create_settings_router())
 
 # ── Port Discovery ────────────────────────────────────────────────────────────
 
