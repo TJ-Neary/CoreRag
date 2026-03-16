@@ -192,3 +192,6 @@ security_scan.sh
 
 # Worktrees
 .worktrees/
+
+# Superpowers brainstorm
+.superpowers/

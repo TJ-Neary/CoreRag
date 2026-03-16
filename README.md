@@ -20,9 +20,13 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 
 ### Ingestion Pipeline
 - **Inbox Workflow**: Drop files, auto-process via watchdog or dashboard batch
-- **Human-in-the-Loop**: Web dashboard for reviewing AI proposals before commit
-- **Three-Layer PII Detection**: Presidio NER + custom dictionary + LLM advisory
-- **Smart Filing**: Archive originals, export redacted markdown to Obsidian vault
+- **Human-in-the-Loop**: Web dashboard with skip/error management, quality report banner, per-detection redaction editor
+- **Dual RAG Databases**: Main (redacted for cloud-safe search) + Restricted (unredacted for local-only access)
+- **Document Catalog**: SQLite catalog tracking every file across all destinations (RAG, Obsidian, archive)
+- **Three-Layer PII Detection**: Presidio NER + custom dictionary + LLM advisory, with per-detection Keep/Redact toggles
+- **Smart Filing**: Archive to `~/Documents/PKM/`, export markdown with LLM tags + summaries to Obsidian vault
+- **Per-Agent Access Control**: Settings tab with per-action permission toggles per agent, API key management
+- **Archive Manager**: Browse, search, filter cataloged documents; cold storage migration with folder structure replication
 - **Parent-Child Chunking**: Context-preserving hierarchical chunks with quality scoring
 - **Corrective RAG**: Post-retrieval relevance filtering (correct/ambiguous/incorrect)
 
@@ -35,7 +39,7 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 - **Video**: MP4, MOV (keyframe extraction + scene detection + audio)
 
 ### Quality Assurance
-- **Auto-Tagging**: Keyword + embedding-based classification
+- **LLM-Powered Tagging**: Purpose-driven collection tags (replaces keyword auto-tagger), year as tag
 - **Duplicate Detection**: Content hash + MinHash/LSH + semantic similarity
 - **Link Checker**: Async URL validation with caching
 - **Freshness Indicators**: Age classification + staleness warnings

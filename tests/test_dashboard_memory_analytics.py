@@ -19,7 +19,7 @@ def client():
 class TestUserFactsRoutes:
     """Tests for user facts dashboard endpoints."""
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_memory.STATE_DIR")
     def test_add_user_fact(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -32,7 +32,7 @@ class TestUserFactsRoutes:
         assert data["content"] == "Lives in Springfield"
         assert data["category"] == "personal"
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_memory.STATE_DIR")
     def test_add_user_fact_empty_content(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -44,7 +44,7 @@ class TestUserFactsRoutes:
         assert data["success"] is False
         assert "required" in data["error"].lower()
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_memory.STATE_DIR")
     def test_add_user_fact_invalid_category(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -56,7 +56,7 @@ class TestUserFactsRoutes:
         assert data["success"] is False
         assert "Invalid category" in data["error"]
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_memory.STATE_DIR")
     def test_get_user_facts_stats(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -76,7 +76,7 @@ class TestUserFactsRoutes:
         assert "personal" in data["categories"]
         assert "preference" in data["categories"]
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_memory.STATE_DIR")
     def test_export_user_profile(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -99,7 +99,7 @@ class TestUserFactsRoutes:
 class TestAnalyticsRoutes:
     """Tests for query analytics dashboard endpoints."""
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_get_analytics_summary(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -109,7 +109,7 @@ class TestAnalyticsRoutes:
         assert "quality_trend" in data
         assert data["total_queries"] >= 0
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_get_analytics_summary_with_days(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -117,7 +117,7 @@ class TestAnalyticsRoutes:
         data = response.json()
         assert data["period_days"] == 30
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_get_failed_queries(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -126,7 +126,7 @@ class TestAnalyticsRoutes:
         assert "failed_queries" in data
         assert "total" in data
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_get_golden_suggestions(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -135,7 +135,7 @@ class TestAnalyticsRoutes:
         assert "suggestions" in data
         assert "total" in data
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_get_query_patterns(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -144,7 +144,7 @@ class TestAnalyticsRoutes:
         assert "patterns" in data
         assert "total" in data
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_log_feedback_good(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
@@ -156,7 +156,7 @@ class TestAnalyticsRoutes:
         assert data["success"] is True
         assert data["feedback"] == "good"
 
-    @patch("src.api.dashboard_routes.STATE_DIR")
+    @patch("src.api.dashboard_analytics.STATE_DIR")
     def test_log_feedback_invalid(self, mock_state_dir, client, tmp_path):
         mock_state_dir.__truediv__ = lambda self, x: tmp_path / x
 
