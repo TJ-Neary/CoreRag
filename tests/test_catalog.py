@@ -1,6 +1,7 @@
 """Tests for CatalogManager — SQLite-backed document catalog."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -331,3 +332,97 @@ class TestStorageLocationFields:
         assert retrieved.storage_location == "cloud"
         assert retrieved.storage_device == "iCloud"
         assert retrieved.storage_accessible is True
+
+
+class TestFolderTreeAndDevices:
+    """Test get_folder_tree() and get_devices() methods."""
+
+    def test_get_folder_tree(self, catalog: CatalogManager) -> None:
+        """Folder tree returns category counts and totals."""
+        catalog.register(_make_record(category="Work"))
+        catalog.register(_make_record(category="Work"))
+        catalog.register(_make_record(category="Personal"))
+        tree = catalog.get_folder_tree()
+        assert tree["total"] == 3
+        cats = {c["name"]: c["count"] for c in tree["categories"]}
+        assert cats["Work"] == 2
+        assert cats["Personal"] == 1
+
+    def test_get_folder_tree_empty(self, catalog: CatalogManager) -> None:
+        """Folder tree on empty catalog returns zeroes."""
+        tree = catalog.get_folder_tree()
+        assert tree["total"] == 0
+        assert tree["categories"] == []
+        assert tree["no_archive_path"] == 0
+        assert tree["offline"] == 0
+
+    def test_get_folder_tree_no_archive(self, catalog: CatalogManager) -> None:
+        """Folder tree counts documents with no archive path."""
+        catalog.register(_make_record(archive_path=""))
+        catalog.register(_make_record(archive_path="/some/path"))
+        tree = catalog.get_folder_tree()
+        assert tree["no_archive_path"] == 1
+
+    def test_get_devices(self, catalog: CatalogManager) -> None:
+        """get_devices groups by device and location with file counts."""
+        catalog.register(_make_record(storage_device="WD_Passport", storage_location="external_hd"))
+        catalog.register(_make_record(storage_device="WD_Passport", storage_location="external_hd"))
+        catalog.register(_make_record(storage_device="NAS_01", storage_location="cloud"))
+        devices = catalog.get_devices()
+        assert len(devices) == 2
+        wd = next(d for d in devices if d["device"] == "WD_Passport")
+        assert wd["file_count"] == 2
+
+    def test_get_devices_empty(self, catalog: CatalogManager) -> None:
+        """get_devices returns empty list when no devices are set."""
+        catalog.register(_make_record())  # no storage_device set
+        devices = catalog.get_devices()
+        assert devices == []
+
+
+class TestMigrateToCold:
+    """Test migrate_to_cold() cold storage migration."""
+
+    def test_migrate_success(self, catalog: CatalogManager, tmp_path: Path) -> None:
+        """Successful migration moves file, updates catalog entry."""
+        # Create source file
+        archive_dir = tmp_path / "archive" / "Certs"
+        archive_dir.mkdir(parents=True)
+        src_file = archive_dir / "test.pdf"
+        src_file.write_text("content")
+
+        doc_id = catalog.register(_make_record(archive_path=str(src_file)))
+        cold_dest = tmp_path / "cold_storage"
+
+        with patch("src.catalog.catalog_manager.ARCHIVE_PATH", tmp_path / "archive"):
+            result = catalog.migrate_to_cold([doc_id], "WD_Passport", str(cold_dest))
+
+        assert result["succeeded"] == [doc_id]
+        assert result["failed"] == []
+        assert (cold_dest / "PKM" / "Certs" / "test.pdf").exists()
+        assert not src_file.exists()
+
+        updated = catalog.get(doc_id)
+        assert updated is not None
+        assert updated.storage_device == "WD_Passport"
+        assert updated.storage_location == "external_hd"
+        assert not updated.storage_accessible
+
+    def test_migrate_partial_failure(self, catalog: CatalogManager, tmp_path: Path) -> None:
+        """Partial failure: successful moves persist, failures are reported."""
+        # One file exists, one doesn't
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+        src_file = archive_dir / "exists.pdf"
+        src_file.write_text("content")
+
+        id1 = catalog.register(_make_record(archive_path=str(src_file)))
+        id2 = catalog.register(_make_record(archive_path="/nonexistent/missing.pdf"))
+        cold_dest = tmp_path / "cold_storage"
+
+        with patch("src.catalog.catalog_manager.ARCHIVE_PATH", archive_dir):
+            result = catalog.migrate_to_cold([id1, id2], "WD_Passport", str(cold_dest))
+
+        assert id1 in result["succeeded"]
+        assert len(result["failed"]) == 1
+        assert result["failed"][0]["id"] == id2

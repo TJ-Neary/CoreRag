@@ -11,12 +11,14 @@ they live" across the entire CoreRag system.
 
 import datetime
 import logging
+import shutil
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from src.config import ARCHIVE_PATH
 from src.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
@@ -550,3 +552,118 @@ class CatalogManager:
             "sensitive_count": sensitive_count,
             "total_exports": export_count,
         }
+
+    def get_folder_tree(self) -> dict[str, Any]:
+        """Get category/folder hierarchy with counts for archive sidebar.
+
+        Returns:
+            Dictionary with categories (name + count), no_archive_path count,
+            offline count, and total active documents.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM documents "
+            "WHERE status != 'deleted' GROUP BY category ORDER BY cnt DESC"
+        ).fetchall()
+        categories = [{"name": row["category"] or "Unsorted", "count": row["cnt"]} for row in rows]
+
+        no_archive = conn.execute(
+            "SELECT COUNT(*) as cnt FROM documents "
+            "WHERE status != 'deleted' AND (archive_path IS NULL OR archive_path = '')"
+        ).fetchone()["cnt"]
+        offline = conn.execute(
+            "SELECT COUNT(*) as cnt FROM documents "
+            "WHERE status != 'deleted' AND storage_accessible = 0"
+        ).fetchone()["cnt"]
+        total = conn.execute(
+            "SELECT COUNT(*) as cnt FROM documents WHERE status != 'deleted'"
+        ).fetchone()["cnt"]
+
+        conn.close()
+        return {
+            "categories": categories,
+            "no_archive_path": no_archive,
+            "offline": offline,
+            "total": total,
+        }
+
+    def get_devices(self) -> list[dict[str, Any]]:
+        """List known storage devices from catalog.
+
+        Returns:
+            List of dicts with device name, location_type, and file_count.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT DISTINCT storage_device, storage_location, "
+            "COUNT(*) as file_count FROM documents "
+            "WHERE storage_device IS NOT NULL AND storage_device != '' "
+            "GROUP BY storage_device, storage_location"
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "device": row["storage_device"],
+                "location_type": row["storage_location"],
+                "file_count": row["file_count"],
+            }
+            for row in rows
+        ]
+
+    def migrate_to_cold(
+        self, doc_ids: list[str], device_name: str, destination_root: str
+    ) -> dict[str, Any]:
+        """Move files to cold storage, replicate folder structure, update catalog.
+
+        Partial failure: successfully-moved files stay at destination with
+        updated catalog entries. Failed files remain at original path.
+
+        Args:
+            doc_ids: List of document IDs to migrate.
+            device_name: Name of the target storage device (e.g., 'WD_Passport').
+            destination_root: Root path on the destination device.
+
+        Returns:
+            Dictionary with 'succeeded' (list of doc IDs) and 'failed'
+            (list of dicts with 'id' and 'error').
+        """
+        dest_base = Path(destination_root) / "PKM"
+        succeeded: list[str] = []
+        failed: list[dict[str, str]] = []
+
+        for doc_id in doc_ids:
+            doc = self.get(doc_id)
+            if not doc:
+                failed.append({"id": doc_id, "error": "Document not found in catalog"})
+                continue
+            if not doc.archive_path:
+                failed.append({"id": doc_id, "error": "No archive path recorded"})
+                continue
+
+            src_path = Path(doc.archive_path)
+            if not src_path.exists():
+                failed.append({"id": doc_id, "error": f"File not found: {src_path}"})
+                continue
+
+            try:
+                rel = src_path.relative_to(ARCHIVE_PATH)
+            except ValueError:
+                rel = Path(src_path.name)
+
+            dest_path = dest_base / rel
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                shutil.move(str(src_path), str(dest_path))
+                self.update(
+                    doc_id,
+                    archive_path=str(dest_path),
+                    storage_location="external_hd",
+                    storage_device=device_name,
+                    storage_accessible=False,
+                )
+                succeeded.append(doc_id)
+            except Exception as e:
+                failed.append({"id": doc_id, "error": str(e)})
+
+        return {"succeeded": succeeded, "failed": failed}
