@@ -4,12 +4,11 @@ Core Memory API v1 Routes
 External-facing stateless API for AI systems and external consumers.
 Endpoints: manifest, stats, search, ingest, delete.
 
-All endpoints except manifest require API key authentication.
+All endpoints except manifest require per-agent permission checks.
 """
 
 import hashlib
 import logging
-import os
 from datetime import datetime
 from typing import Callable
 
@@ -54,8 +53,8 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 
-def create_v1_router(verify_api_key: Callable) -> APIRouter:
-    """Create API v1 router with 5 endpoints for external consumers."""
+def create_v1_router(check_permissions: Callable) -> APIRouter:
+    """Create API v1 router with endpoints for external consumers."""
     router = APIRouter(prefix="/api/v1", tags=["v1"])
 
     @router.get("/manifest")
@@ -210,12 +209,13 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                 "dedup_check": False,
             },
             "authentication": {
-                "enabled": bool(os.getenv("CORERAG_API_KEY")),
-                "type": "api_key",
+                "type": "per_agent_api_key",
                 "header": "X-API-Key",
                 "note": (
-                    "This manifest endpoint is always public. All other endpoints require "
-                    "X-API-Key header when CORERAG_API_KEY is set."
+                    "This manifest endpoint is always public. Other endpoints require "
+                    "an X-API-Key header mapped to a registered agent with appropriate "
+                    "permissions. If no external agents are configured, the API runs "
+                    "in open mode."
                 ),
             },
             "stats": stats,
@@ -223,8 +223,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
 
     @router.get("/stats", response_model=StatsResponse)
     @limiter.limit("120/minute")
-    async def api_stats(request: Request, role: str = Depends(verify_api_key)) -> StatsResponse:
+    async def api_stats(
+        request: Request,
+        permissions: dict[str, bool] = Depends(check_permissions),
+    ) -> StatsResponse:
         """Database statistics for health monitoring."""
+        if not permissions.get("search_main"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "search_main permission required"},
+            )
         import lancedb
 
         documents = 0
@@ -268,9 +276,22 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/search", response_model=SearchResponse)
     @limiter.limit("60/minute")
     async def api_search(
-        request: Request, request_body: SearchRequest, role: str = Depends(verify_api_key)
+        request: Request,
+        request_body: SearchRequest,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> SearchResponse:
         """Semantic search over the knowledge base with optional HyDE and tag filtering."""
+        if not permissions.get("search_main"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "search_main permission required"},
+            )
+        if request_body.search_scope in ("restricted", "all"):
+            if not permissions.get("search_restricted"):
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "search_restricted permission required"},
+                )
         query = request_body.query
         k = request_body.k
         offset = request_body.offset
@@ -413,10 +434,6 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                         )
                     )
 
-            # Role-based PII filtering (VIEWER role hides sensitive content)
-            if role == "viewer":
-                logger.debug("VIEWER role — PII filtering active for search results")
-
             return SearchResponse(
                 results=results,
                 total=total_available,
@@ -441,9 +458,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/answer", response_model=AnswerResponse)
     @limiter.limit("30/minute")
     async def api_answer(
-        request: Request, request_body: AnswerRequest, role: str = Depends(verify_api_key)
+        request: Request,
+        request_body: AnswerRequest,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> AnswerResponse:
         """Answer a question using RAG search + LLM synthesis with citation validation."""
+        if not permissions.get("search_main"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "search_main permission required"},
+            )
         query = request_body.query
         if not query:
             return JSONResponse(
@@ -570,9 +594,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/ingest", response_model=IngestResponse)
     @limiter.limit("30/minute")
     async def api_ingest(
-        request: Request, request_body: IngestRequest, role: str = Depends(verify_api_key)
+        request: Request,
+        request_body: IngestRequest,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> IngestResponse:
         """Ingest text content into the knowledge base."""
+        if not permissions.get("ingest"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "ingest permission required"},
+            )
         content = request_body.content
         source = request_body.source
         metadata = request_body.metadata
@@ -727,9 +758,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.delete("/documents/{document_id}", response_model=DeleteResponse)
     @limiter.limit("30/minute")
     async def api_delete_document(
-        request: Request, document_id: str, role: str = Depends(verify_api_key)
+        request: Request,
+        document_id: str,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> DeleteResponse:
         """Remove a document and all its chunks from the RAG database."""
+        if not permissions.get("delete"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "delete permission required"},
+            )
         try:
             import lancedb
 
@@ -806,9 +844,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.get("/documents/{document_id}", response_model=DocumentResponse)
     @limiter.limit("120/minute")
     async def api_get_document(
-        request: Request, document_id: str, role: str = Depends(verify_api_key)
+        request: Request,
+        document_id: str,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> DocumentResponse | JSONResponse:
         """Retrieve a document's metadata and content preview."""
+        if not permissions.get("catalog_read"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "catalog_read permission required"},
+            )
         try:
             import lancedb
 
@@ -869,9 +914,16 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/documents/bulk-delete", response_model=BulkDeleteResponse)
     @limiter.limit("10/minute")
     async def api_bulk_delete(
-        request: Request, body: BulkDeleteRequest, role: str = Depends(verify_api_key)
+        request: Request,
+        body: BulkDeleteRequest,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ) -> BulkDeleteResponse:
         """Delete multiple documents by ID."""
+        if not permissions.get("delete"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "delete permission required"},
+            )
         import lancedb
 
         results = []
@@ -938,12 +990,19 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
     @router.post("/quick-capture", response_model=QuickCaptureResponse)
     @limiter.limit("30/minute")
     async def quick_capture(
-        request: Request, body: QuickCaptureRequest, role: str = Depends(verify_api_key)
+        request: Request,
+        body: QuickCaptureRequest,
+        permissions: dict[str, bool] = Depends(check_permissions),
     ):
         """Quick capture endpoint for mobile/iOS shortcuts.
 
         Accepts plain text, indexes directly into RAG without full pipeline.
         """
+        if not permissions.get("ingest"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "ingest permission required"},
+            )
         import hashlib
 
         try:

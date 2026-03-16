@@ -2,6 +2,10 @@
 
 Covers all 7 endpoints: manifest, stats, search, ingest, delete, vaults, quick-capture.
 Tests auth, validation, error responses, and happy paths.
+
+NOTE: Auth tests have moved to test_permissions.py.  This file validates endpoint
+behaviour in open mode (no external agents configured), which is the default for
+local development and test environments.
 """
 
 from unittest.mock import MagicMock, patch
@@ -12,57 +16,9 @@ from src.server import app
 
 client = TestClient(app)
 
+# In open mode (default — no external agents), no key is needed.
+# But passing the legacy key still works (resolved via _legacy agent).
 API_KEY = {"X-API-Key": "test_api_key_not_real"}
-
-
-# =============================================================================
-# Authentication Tests
-# =============================================================================
-
-
-class TestAuthentication:
-    """Test API key authentication across all protected endpoints."""
-
-    def test_manifest_no_auth_required(self):
-        """Manifest endpoint should be public."""
-        with patch("lancedb.connect") as mock_connect:
-            mock_db = MagicMock()
-            mock_db.table_names.return_value = []
-            mock_connect.return_value = mock_db
-            response = client.get("/api/v1/manifest")
-        assert response.status_code == 200
-
-    def test_stats_requires_auth(self):
-        response = client.get("/api/v1/stats")
-        assert response.status_code == 401
-
-    def test_search_requires_auth(self):
-        response = client.post("/api/v1/search", json={"query": "test"})
-        assert response.status_code == 401
-
-    def test_ingest_requires_auth(self):
-        response = client.post("/api/v1/ingest", json={"content": "test content"})
-        assert response.status_code == 401
-
-    def test_delete_requires_auth(self):
-        response = client.delete("/api/v1/documents/abc123")
-        assert response.status_code == 401
-
-    def test_quick_capture_requires_auth(self):
-        response = client.post("/api/v1/quick-capture", json={"text": "test"})
-        assert response.status_code == 401
-
-    def test_invalid_api_key(self):
-        response = client.get("/api/v1/stats", headers={"X-API-Key": "wrong_key"})
-        assert response.status_code == 403
-
-    def test_valid_api_key(self):
-        with patch("lancedb.connect") as mock_connect:
-            mock_db = MagicMock()
-            mock_db.table_names.return_value = []
-            mock_connect.return_value = mock_db
-            response = client.get("/api/v1/stats", headers=API_KEY)
-        assert response.status_code == 200
 
 
 # =============================================================================
@@ -643,9 +599,7 @@ class TestDocumentEndpoint:
 
         assert response.status_code == 404
 
-    def test_get_document_requires_auth(self):
-        response = client.get("/api/v1/documents/abc123")
-        assert response.status_code == 401
+    # Auth enforcement tests have moved to test_permissions.py
 
 
 # =============================================================================
@@ -691,12 +645,7 @@ class TestBulkDeleteEndpoint:
         )
         assert response.status_code == 422
 
-    def test_bulk_delete_requires_auth(self):
-        response = client.post(
-            "/api/v1/documents/bulk-delete",
-            json={"document_ids": ["doc1"]},
-        )
-        assert response.status_code == 401
+    # Auth enforcement tests have moved to test_permissions.py
 
     def test_bulk_delete_partial_failure(self):
         """Some documents found, some not."""

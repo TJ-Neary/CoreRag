@@ -8,16 +8,13 @@ Run with: python -m src.server
 
 import atexit
 import logging
-import os
-import secrets
 import socket
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Security
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -27,6 +24,7 @@ from src.api.dashboard_routes import DashboardState, create_dashboard_router
 from src.api.v1_routes import create_v1_router, limiter
 from src.batch_processor import BatchProcessor
 from src.config import validate_config
+from src.settings.settings_manager import DEFAULT_PERMISSIONS, SettingsManager
 from src.utils.logging_config import setup_logging
 from src.utils.tagging import TagManager
 
@@ -62,11 +60,10 @@ async def lifespan(app: FastAPI):
             backup_name="startup",
         )
 
-    if not os.getenv("CORERAG_API_KEY"):
-        logger.warning(
-            "API authentication disabled — all /api/v1/ endpoints are open. "
-            "Set CORERAG_API_KEY in .env to enable authentication."
-        )
+    settings = _get_settings_mgr()
+    registered_agents = settings.get_agents()
+    if not any(n for n in registered_agents if not n.startswith("_")):
+        logger.warning("No external agents configured — API running in open mode")
 
     # Prune completed items from staging manifest
     try:
@@ -135,54 +132,52 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
-# ── API Key Authentication ────────────────────────────────────────────────────
-# Set CORERAG_API_KEY in .env or environment to enable authentication.
-# If not set, API endpoints are open (for local development).
+# ── Per-Agent Permission Middleware ───────────────────────────────────────────
+# Agents authenticate via API key; permissions are resolved from settings.yaml.
+# If no external agents are configured, the API runs in "open mode" for
+# localhost development.
 
-API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-_access_control = None
+_settings_mgr: SettingsManager | None = None
 
 
-def _get_access_control():
-    """Lazy-init AccessControl singleton."""
-    global _access_control
-    if _access_control is None:
-        from src.auth.access_control import AccessControl
-
-        _access_control = AccessControl()
-    return _access_control
+def _get_settings_mgr() -> SettingsManager:
+    """Lazy-init SettingsManager singleton."""
+    global _settings_mgr
+    if _settings_mgr is None:
+        _settings_mgr = SettingsManager()
+    return _settings_mgr
 
 
-async def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> str:
+async def check_permissions(request: Request) -> dict[str, bool]:
+    """Resolve agent permissions from API key. Returns permissions dict.
+
+    If no external agents are configured, runs in "open mode" with full
+    permissions (localhost trust). Otherwise requires a valid X-API-Key header
+    that maps to a registered agent.
     """
-    Verify API key for protected endpoints. Returns the caller's role as a string.
+    api_key = request.headers.get("X-API-Key", "")
+    mgr = _get_settings_mgr()
 
-    If CORERAG_API_KEY is not set, authentication is disabled (local dev mode) → "admin".
-    If set, the X-API-Key header must match → role resolved from access_control.yaml.
-    """
-    expected_key = os.getenv("CORERAG_API_KEY")
-
-    # No key configured = auth disabled (local dev mode)
-    if not expected_key:
-        return "admin"
-
-    # Key configured but not provided
     if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing API key. Provide X-API-Key header.",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+        # No key — check if open mode (no external agents configured)
+        agents = mgr.get_agents()
+        external_agents = [n for n in agents if not n.startswith("_")]
+        if not external_agents:
+            # Open mode: localhost trust, full permissions
+            request.state.agent_name = "_open"
+            perms: dict[str, bool] = {p: True for p in DEFAULT_PERMISSIONS}
+            request.state.permissions = perms
+            return perms
+        raise HTTPException(status_code=401, detail="API key required")
 
-    # Constant-time comparison to prevent timing attacks
-    if not secrets.compare_digest(api_key.encode(), expected_key.encode()):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+    agent = mgr.get_agent_by_key(api_key)
+    if not agent:
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
-    # Resolve role from access control config
-    ac = _get_access_control()
-    return ac.get_role_for_key(api_key).value
+    request.state.agent_name = agent["name"]
+    perms = dict(agent.get("permissions", DEFAULT_PERMISSIONS))
+    request.state.permissions = perms
+    return perms
 
 
 # ── Initialization ────────────────────────────────────────────────────────────
@@ -207,7 +202,7 @@ _dashboard_state = DashboardState(
 )
 
 app.include_router(create_dashboard_router(_dashboard_state))
-app.include_router(create_v1_router(verify_api_key))
+app.include_router(create_v1_router(check_permissions))
 
 # ── Port Discovery ────────────────────────────────────────────────────────────
 
