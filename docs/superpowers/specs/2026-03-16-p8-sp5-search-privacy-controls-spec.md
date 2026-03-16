@@ -138,7 +138,7 @@ New "Settings" tab in the dashboard (alongside Ingestion, Archive). Four section
 **Agent table:** Name | API Key (masked) | Permissions Summary | Last Seen | Actions
 
 **Add Agent flow:**
-1. Click "Add Agent" → form: agent name (required)
+1. Click "Add Agent" → form: agent name (required, validated: `[a-zA-Z0-9_-]{1,64}`, backend returns 422 on violation)
 2. Click "Create" → backend generates unique API key, saves to `.env` as `CORERAG_AGENT_{NAME}_KEY`, adds entry to `settings.yaml` with all permissions `false`
 3. UI updates immediately — new agent appears with full key visible + "Copy Key" button
 4. Warning: "Save this key — it won't be shown again"
@@ -217,15 +217,39 @@ Actions call existing endpoints/CLI commands. Results shown inline.
 | `GET /api/settings/db-stats` | GET | Database sizes and counts |
 | `POST /api/settings/db-action` | POST | Optimize/backup/health-check |
 
-**Security:** These endpoints reject any request that includes an `X-API-Key` header. They are only accessible from the dashboard browser session.
+**Security:** These endpoints reject any request that includes an `X-API-Key` header. The security boundary is localhost trust — CoreRag binds to `127.0.0.1` only (never `0.0.0.0`). Any process on the local machine can access the dashboard. This is consistent with the project's local-first posture and matches how the dashboard already works. No browser session tokens or CSRF protection needed — the threat model is network isolation, not multi-user web security.
 
-### Permission Middleware
+**`restart_required` field:** `GET /api/settings` and `GET /api/settings/model-status` include a `restart_required: bool` field. This compares the running provider/model (from the live singleton) against the saved `settings.yaml` value, giving the frontend a clean signal to show the "Restart Required" banner.
 
-New middleware in `server.py` that runs on every `/api/v1/*` request:
-1. Extract API key from `X-API-Key` header
-2. Look up agent in `settings.yaml` by matching key
-3. Store permissions on `request.state.permissions`
-4. Each endpoint checks `request.state.permissions[action]` before executing
+### Permission Middleware — Replacing verify_api_key
+
+The existing `verify_api_key()` in `server.py` (a FastAPI dependency using `secrets.compare_digest` against a single `CORERAG_API_KEY`) is **replaced** by a new `SettingsManager`-backed dependency:
+
+1. The existing `verify_api_key` function and all `Depends(verify_api_key)` annotations on v1 routes are removed
+2. A new `check_permissions` dependency is created that:
+   - Extracts API key from `X-API-Key` header
+   - Calls `SettingsManager.get_agent_by_key(key)` to resolve the agent
+   - Stores `request.state.agent_name` and `request.state.permissions` dict
+   - Returns 401 if key is unknown (not defaulted to any permission set)
+3. Each v1 endpoint checks the specific permission it needs: `if not request.state.permissions.get("ingest"): return 403`
+4. The startup warning about missing `CORERAG_API_KEY` is updated to check for agents in `settings.yaml` instead
+5. `src/auth/access_control.py` is **deprecated** — its `get_role_for_key()` method (which defaults unknown keys to ADMIN) is no longer used. The file remains but is not imported by any active code path.
+
+### Key Lookup Strategy
+
+Agent API keys are loaded into a `dict[str, str]` mapping `(api_key_value → agent_name)` at settings load time. This dict is cached alongside `settings.yaml` with the same mtime check. When `.env` changes (mtime on `.env` file), the key cache is invalidated and rebuilt. This avoids disk I/O on every authenticated request.
+
+### MCP Permission Enforcement
+
+The MCP server (`src/mcp_server/server.py`) reads `_mcp` agent permissions once at startup from `SettingsManager`. Permissions are stored on the `CoreRagTools` instance. Each tool method checks the relevant permission before executing (e.g., `search_knowledge` checks `search_main`, `trigger_reindex` checks `server_admin`). MCP permissions are per-startup — changes to `_mcp` permissions in `settings.yaml` take effect on next server restart.
+
+### LLM Config Canonical Source
+
+`.env` is the canonical runtime source for LLM provider and model settings. `settings.yaml` mirrors these values for UI display. `PUT /api/settings/llm` writes to BOTH files: `.env` (what the process reads on restart) and `settings.yaml.llm.*` (what the UI displays). This prevents drift between the two files.
+
+### No-Auth Open Mode
+
+When no agents are configured and no `CORERAG_API_KEY` exists, the server operates in **local-only open mode** (localhost trust boundary). All requests are treated as having full permissions. First-run setup in the dashboard prompts the user to configure agents via Settings.
 
 ---
 
@@ -244,6 +268,10 @@ New module: `src/settings/settings_manager.py`
 - `update_llm_config(provider, model, api_key)` — write to .env/settings.yaml
 - `get_ollama_models()` — fetch from Ollama API
 
+**First-run behavior:** If `settings.yaml` does not exist, `load()` creates it with factory defaults: `_dashboard` and `_mcp` special agents with sensible permissions, `default_permissions` block with all `false`. This is distinct from the migration path (Section 8) which handles existing single-key installs.
+
+**Note on `catalog_write`:** This permission is reserved for the cold storage migration feature (SP2 archive manager). For SP5, define it in the permission model but do not add enforcement checks — the archive manager endpoints do not check permissions yet.
+
 ---
 
 ## 6. File Map
@@ -251,16 +279,18 @@ New module: `src/settings/settings_manager.py`
 | File | Action | Responsibility |
 |------|--------|---------------|
 | `src/settings/__init__.py` | Create | Package init |
-| `src/settings/settings_manager.py` | Create | SettingsManager class — YAML read/write, agent CRUD, .env management |
-| `src/server.py` | Modify | Permission middleware, settings endpoint mounting |
-| `src/api/settings_routes.py` | Create | Settings API endpoints (dashboard-only) |
-| `src/api/v1_routes.py` | Modify | Permission checks on all endpoints |
-| `src/mcp_server/server.py` | Modify | Load permissions for MCP tools |
+| `src/settings/settings_manager.py` | Create | SettingsManager class — YAML read/write, agent CRUD, .env management, key cache |
+| `src/server.py` | Modify | Replace verify_api_key with check_permissions dependency, mount settings routes |
+| `src/config.py` | Modify | Add SETTINGS_PATH constant |
+| `src/auth/access_control.py` | Deprecate | No longer imported by active code. get_role_for_key() is replaced by SettingsManager |
+| `src/api/settings_routes.py` | Create | Settings API endpoints (dashboard-only, reject API key requests) |
+| `src/api/v1_routes.py` | Modify | Replace Depends(verify_api_key) with check_permissions, add per-endpoint permission checks |
+| `src/mcp_server/server.py` | Modify | Load _mcp permissions at startup from SettingsManager |
 | `src/mcp_server/tools.py` | Modify | Permission checks on tool execution |
 | `src/ui/templates/dashboard.html` | Modify | Settings tab UI (agents, LLM, models, DB management) |
-| `tests/test_settings.py` | Create | Tests for SettingsManager |
-| `tests/test_permissions.py` | Create | Tests for permission enforcement |
-| `settings.example.yaml` | Create | Example settings file (committed, gitignored real one) |
+| `tests/test_settings.py` | Create | Tests for SettingsManager (CRUD, key lookup, caching, first-run) |
+| `tests/test_permissions.py` | Create | Tests for permission enforcement (v1 routes, unknown keys, open mode) |
+| `settings.example.yaml` | Create | Example settings file at project root (committed). Real file at ~/.corerag/settings.yaml (gitignored via STATE_DIR) |
 
 ---
 
@@ -280,6 +310,7 @@ New module: `src/settings/settings_manager.py`
 12. Database stats and management actions work from UI
 13. Existing tests pass unchanged
 14. Unknown API keys are rejected (not defaulted)
+15. When no agents configured and no API key set, server operates in open mode (localhost trust). Settings UI prompts first-run setup.
 
 ---
 
