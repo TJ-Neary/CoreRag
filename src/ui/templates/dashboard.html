@@ -117,6 +117,26 @@
             </div>
         </div>
 
+        <!-- Quality Report Banner -->
+        <div id="quality-banner" class="hidden mb-6 rounded-lg border overflow-hidden">
+            <div id="quality-banner-header" onclick="toggleQualityDetails()"
+                class="flex justify-between items-center px-4 py-3 cursor-pointer">
+                <div class="flex items-center gap-2">
+                    <span id="quality-icon" class="text-lg"></span>
+                    <span id="quality-summary" class="text-sm font-medium"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="quality-chevron" class="text-gray-400 transition-transform text-xs">&#9660;</span>
+                    <button onclick="event.stopPropagation(); dismissBanner()"
+                        class="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
+                </div>
+            </div>
+            <div id="quality-details" class="hidden px-4 pb-4">
+                <div id="quality-detail-rows" class="space-y-2 text-sm"></div>
+                <div id="quality-actions" class="mt-3"></div>
+            </div>
+        </div>
+
         <!-- State 1: Ready -->
         <div id="state-ready" class="hidden">
             <div class="bg-gray-800 rounded-lg p-12 text-center border border-gray-700">
@@ -387,6 +407,7 @@
                 pollProgress();
             } else if (state === 'review') {
                 loadReviewData();
+                loadQualityBanner();
             }
         }
 
@@ -528,6 +549,153 @@
             } catch (e) {
                 console.error('Progress poll error', e);
             }
+        }
+
+        // ── Quality Report Banner ───────────────────────────────────────
+
+        async function loadQualityBanner() {
+            try {
+                const resp = await fetch('/api/batch-quality');
+                const report = await resp.json();
+                if (!report.total_items) return;
+
+                const banner = document.getElementById('quality-banner');
+                const header = document.getElementById('quality-banner-header');
+                const icon = document.getElementById('quality-icon');
+                const summary = document.getElementById('quality-summary');
+                const detailRows = document.getElementById('quality-detail-rows');
+                const actions = document.getElementById('quality-actions');
+
+                // Determine color tier
+                let tier = 'green';
+                if (report.error_count > 0) tier = 'red';
+                else if ((report.extraction_warnings && report.extraction_warnings.length > 0) ||
+                         (report.extraction_details && report.extraction_details.length > 0)) tier = 'orange';
+                else if (report.sensitive_rate > 0.5) tier = 'yellow';
+
+                const colors = {
+                    green:  { bg: 'bg-green-900/40',  border: 'border-green-700', text: 'text-green-300',  icon: '\u2713' },
+                    yellow: { bg: 'bg-yellow-900/40', border: 'border-yellow-700', text: 'text-yellow-300', icon: '\u26A0' },
+                    orange: { bg: 'bg-orange-900/40', border: 'border-orange-700', text: 'text-orange-300', icon: '\u26A0' },
+                    red:    { bg: 'bg-red-900/40',    border: 'border-red-700',    text: 'text-red-300',    icon: '\u2715' },
+                };
+                const c = colors[tier];
+
+                // Apply styling
+                header.className = 'flex justify-between items-center px-4 py-3 cursor-pointer ' + c.bg;
+                banner.className = 'mb-6 rounded-lg border ' + c.border + ' overflow-hidden';
+                icon.textContent = c.icon;
+                icon.className = 'text-lg ' + c.text;
+
+                // Summary text
+                const readyCount = report.total_items - (report.error_count || 0);
+                if (tier === 'green') {
+                    summary.textContent = 'Batch analysis complete: ' + report.total_items + ' files ready for review';
+                } else if (tier === 'yellow') {
+                    summary.textContent = report.sensitive_count + ' of ' + report.total_items + ' files flagged as sensitive';
+                } else if (tier === 'orange') {
+                    const warnCount = (report.extraction_details || report.extraction_warnings || []).length;
+                    summary.textContent = warnCount + ' files had extraction problems';
+                } else {
+                    summary.textContent = report.error_count + ' files caused pipeline errors';
+                }
+                summary.className = 'text-sm font-medium ' + c.text;
+
+                // Build detail rows using safe DOM methods
+                detailRows.textContent = '';  // Clear
+
+                // PII summary (always show if >0)
+                if (report.sensitive_count > 0) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 text-yellow-300';
+                    row.textContent = '\u{1F512} ' + report.sensitive_count + ' sensitive files detected (PII flagged)';
+                    detailRows.appendChild(row);
+                }
+
+                // Extraction details
+                const extDetails = report.extraction_details || [];
+                for (const detail of extDetails) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 text-orange-300';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'font-mono text-xs';
+                    nameSpan.textContent = detail.filename;
+                    const msgSpan = document.createElement('span');
+                    msgSpan.className = 'text-gray-400';
+                    msgSpan.textContent = ' \u2014 ' + detail.message;
+                    row.appendChild(nameSpan);
+                    row.appendChild(msgSpan);
+                    detailRows.appendChild(row);
+                }
+
+                // Error details
+                const errDetails = report.error_details || [];
+                for (const detail of errDetails) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 text-red-300';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'font-mono text-xs';
+                    nameSpan.textContent = detail.filename;
+                    const msgSpan = document.createElement('span');
+                    msgSpan.className = 'text-gray-400';
+                    msgSpan.textContent = ' \u2014 ' + detail.message;
+                    row.appendChild(nameSpan);
+                    row.appendChild(msgSpan);
+                    detailRows.appendChild(row);
+                }
+
+                // Guidance text
+                if (tier === 'orange') {
+                    const guidance = document.createElement('p');
+                    guidance.className = 'text-xs text-gray-400 mt-2';
+                    guidance.textContent = 'These files could not be fully processed. They may be corrupted, password-protected, or in an unsupported format. Skip these files and re-add corrected versions to the inbox.';
+                    detailRows.appendChild(guidance);
+                } else if (tier === 'red') {
+                    const guidance = document.createElement('p');
+                    guidance.className = 'text-xs text-gray-400 mt-2';
+                    guidance.textContent = 'Pipeline errors occurred. Check: (1) Is Ollama running? ollama serve (2) Is qwen3:32b loaded? ollama list (3) Check server logs for details. After fixing, re-run analysis.';
+                    detailRows.appendChild(guidance);
+                }
+
+                // Move to _Error/ button for orange/red
+                actions.textContent = '';
+                if (tier === 'orange' || tier === 'red') {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded text-sm border border-gray-600';
+                    btn.textContent = 'Move problem files to _Error/';
+                    btn.onclick = async function() {
+                        const r = await fetch('/api/queue/move-errors', { method: 'POST' });
+                        const d = await r.json();
+                        btn.textContent = 'Moved ' + d.moved + ' files to _Error/';
+                        btn.disabled = true;
+                        btn.className = 'bg-gray-800 text-gray-500 px-3 py-1.5 rounded text-sm border border-gray-700';
+                    };
+                    actions.appendChild(btn);
+                }
+
+                // Duplicate count
+                if (report.duplicate_count > 0) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 text-gray-400';
+                    row.textContent = '\u{1F4CB} ' + report.duplicate_count + ' potential duplicates detected';
+                    detailRows.appendChild(row);
+                }
+
+                banner.classList.remove('hidden');
+            } catch (e) {
+                console.error('Quality banner load failed:', e);
+            }
+        }
+
+        function toggleQualityDetails() {
+            const details = document.getElementById('quality-details');
+            const chevron = document.getElementById('quality-chevron');
+            details.classList.toggle('hidden');
+            chevron.style.transform = details.classList.contains('hidden') ? '' : 'rotate(180deg)';
+        }
+
+        function dismissBanner() {
+            document.getElementById('quality-banner').classList.add('hidden');
         }
 
         // ── State 3: Review ──────────────────────────────────────────────
