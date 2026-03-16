@@ -22,6 +22,10 @@ class SearchRequest(BaseModel):
     )
     tags: List[str] = Field(default=[], description="Filter results to documents with these tags")
     category: Optional[str] = Field(default=None, description="Filter by document category")
+    search_scope: str = Field(
+        default="main",
+        description="Which DB to search: 'main' (redacted), 'restricted' (full-text), or 'all'",
+    )
 
     class Config:
         json_schema_extra = {

@@ -99,9 +99,10 @@ async def lifespan(app: FastAPI):
         from src.search.reranker import CrossEncoderReranker
 
         db = lancedb.connect(str(config.DB_PATH))
+        restricted_db = lancedb.connect(str(config.RESTRICTED_DB_PATH))
         embedding_service = create_embedding_service()
         reranker = CrossEncoderReranker()
-        hybrid_searcher = HybridSearcher(db=db, embedder=embedding_service)
+        hybrid_searcher = HybridSearcher(db=db, restricted_db=restricted_db)
         hybrid_searcher.ensure_fts_index()
 
         app.state.db = db

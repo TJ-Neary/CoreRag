@@ -116,6 +116,7 @@ class CoreRagTools:
         use_hyde: bool = False,
         use_multi_query: bool = False,
         conversational: bool = False,
+        search_scope: str = "main",
         debug: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -130,6 +131,7 @@ class CoreRagTools:
             use_hyde: Whether to use HyDE query expansion
             use_multi_query: Decompose complex queries into sub-queries and fuse
             conversational: Enable multi-turn context-aware query rewriting
+            search_scope: Which DB to search — "main", "restricted", or "all"
             debug: Include raw retrieval context for debugging
 
         Returns:
@@ -204,6 +206,7 @@ class CoreRagTools:
             query_sparse=query_sparse,
             k=k * 10 if use_reranker else k,
             filters=filters,
+            search_scope=search_scope,
         )
 
         # Normalize candidates to dicts

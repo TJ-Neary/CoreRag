@@ -72,6 +72,11 @@ async def _startup():
     db = lancedb.connect(db_path)
     logger.info(f"Connected to LanceDB at {db_path}")
 
+    from src.config import RESTRICTED_DB_PATH
+
+    restricted_db = lancedb.connect(str(RESTRICTED_DB_PATH))
+    logger.info(f"Connected to restricted LanceDB at {RESTRICTED_DB_PATH}")
+
     # Initialize embedding service
     _embedding_service = EmbeddingService(
         model_name=config["embedding_model"],
@@ -79,7 +84,7 @@ async def _startup():
     )
 
     # Initialize hybrid searcher (vector + FTS)
-    searcher = HybridSearcher(db, table_name="child_chunks")
+    searcher = HybridSearcher(db, table_name="child_chunks", restricted_db=restricted_db)
     try:
         searcher.ensure_fts_index()
         logger.info("FTS index verified on child_chunks")
@@ -230,6 +235,7 @@ async def search_knowledge(
     conversational: bool = False,
     filters: Optional[dict] = None,
     tags: Optional[list] = None,
+    search_scope: str = "main",
     debug: bool = False,
 ) -> dict:
     """
@@ -243,6 +249,7 @@ async def search_knowledge(
         use_multi_query: Decompose complex queries into sub-queries and fuse results (default: False)
         filters: Optional filters (e.g., {"file_type": "md", "category": "work"})
         tags: Optional collection tags to filter by (e.g., ["sphr-study"]). Only returns documents with ALL specified tags.
+        search_scope: Which DB to search — "main" (redacted), "restricted" (full-text), or "all" (default: "main")
         debug: Return detailed debug information (default: False)
 
     Returns:
@@ -264,6 +271,7 @@ async def search_knowledge(
         conversational=conversational,
         filters=filters,
         tags=tags,
+        search_scope=search_scope,
         debug=debug,
     )
 

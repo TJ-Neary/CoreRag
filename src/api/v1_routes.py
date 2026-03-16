@@ -277,6 +277,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
         use_hyde = request_body.use_hyde
         tags = request_body.tags
         category = request_body.category
+        search_scope = request_body.search_scope
 
         if not query:
             return JSONResponse(
@@ -335,6 +336,7 @@ def create_v1_router(verify_api_key: Callable) -> APIRouter:
                     query_sparse=query_sparse,
                     k=fetch_count,
                     filters=filters if filters else None,
+                    search_scope=search_scope,
                 )
 
                 # Apply reranker if available
