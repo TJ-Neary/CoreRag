@@ -401,6 +401,7 @@
         let currentState = 'ready';
         let folderChoices = [];
         let pollTimer = null;
+        let queueData = {};
         let skipCount = 0;
 
         // ── Tab Navigation ──────────────────────────────────────────────
@@ -1102,6 +1103,7 @@
             try {
                 const res = await fetch('/api/queue');
                 const items = await res.json();
+                queueData = items;
                 renderReviewCards(items);
             } catch (e) {
                 console.error('Error loading pending items', e);
@@ -1207,6 +1209,12 @@
                                 </span>
                             </label>
                             ${renderPiiDetails(item)}
+                            <button onclick="toggleRedactionEditor('${id}')"
+                                id="redaction-btn-${id}"
+                                class="text-blue-400 hover:text-blue-300 text-sm mt-2 ${(item.metadata?.pii_detections?.length > 0) ? '' : 'hidden'}">
+                                Edit Redactions (${item.metadata?.pii_detections?.length || 0} detections)
+                            </button>
+                            <div id="redaction-editor-${id}" class="hidden mt-3 space-y-1 border-t border-gray-700 pt-3"></div>
                             <label class="block text-xs font-medium text-gray-400 mt-3 mb-1">Export Destinations</label>
                             <label class="flex items-center space-x-2 mt-1 cursor-pointer">
                                 <input type="checkbox" id="obsidian-${id}" checked
@@ -1407,6 +1415,92 @@
 
             html += '</div>';
             return html;
+        }
+
+        function toggleRedactionEditor(itemId) {
+            const editor = document.getElementById('redaction-editor-' + itemId);
+            if (editor.classList.contains('hidden')) {
+                editor.classList.remove('hidden');
+                renderRedactionEditor(itemId);
+            } else {
+                editor.classList.add('hidden');
+            }
+        }
+
+        function renderRedactionEditor(itemId) {
+            const editor = document.getElementById('redaction-editor-' + itemId);
+            editor.textContent = '';
+            const item = queueData[itemId];
+            const detections = item?.metadata?.pii_detections || [];
+
+            if (detections.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-gray-500 text-sm';
+                empty.textContent = 'No PII detections to edit.';
+                editor.appendChild(empty);
+                return;
+            }
+
+            for (let i = 0; i < detections.length; i++) {
+                const det = detections[i];
+                const isRedact = det.action !== 'keep';
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2 py-1.5 px-2 rounded bg-gray-900';
+
+                // Type badge
+                const badge = document.createElement('span');
+                badge.className = 'text-xs px-1.5 py-0.5 rounded font-mono flex-shrink-0 ' +
+                    (isRedact ? 'bg-red-900 text-red-200' : 'bg-gray-700 text-gray-300');
+                badge.textContent = det.type;
+                row.appendChild(badge);
+
+                // Confidence
+                const conf = document.createElement('span');
+                conf.className = 'text-xs text-gray-500 w-10 flex-shrink-0';
+                conf.textContent = Math.round(det.confidence * 100) + '%';
+                row.appendChild(conf);
+
+                // Source
+                const src = document.createElement('span');
+                src.className = 'text-xs text-gray-500 w-20 flex-shrink-0';
+                src.textContent = det.source === 'custom_dict' ? 'Custom Dict' : 'Presidio';
+                row.appendChild(src);
+
+                // Context snippet
+                const ctx = document.createElement('span');
+                ctx.className = 'text-xs text-gray-400 flex-1 truncate min-w-0';
+                ctx.textContent = det.context || '';
+                row.appendChild(ctx);
+
+                // Keep/Redact toggle button
+                const toggle = document.createElement('button');
+                toggle.className = isRedact
+                    ? 'text-xs px-3 py-1 rounded bg-red-800 text-red-200 hover:bg-red-700 flex-shrink-0'
+                    : 'text-xs px-3 py-1 rounded bg-green-800 text-green-200 hover:bg-green-700 flex-shrink-0';
+                toggle.textContent = isRedact ? 'Redact' : 'Keep';
+                toggle.onclick = function() {
+                    det.action = det.action === 'keep' ? 'redact' : 'keep';
+                    saveRedactionOverride(itemId, detections);
+                    renderRedactionEditor(itemId);
+                };
+                row.appendChild(toggle);
+
+                editor.appendChild(row);
+            }
+        }
+
+        async function saveRedactionOverride(itemId, detections) {
+            try {
+                await fetch('/api/update/' + itemId, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        metadata: { pii_detections: detections }
+                    })
+                });
+            } catch (e) {
+                console.error('Failed to save redaction override:', e);
+            }
         }
 
         async function commitAll() {
