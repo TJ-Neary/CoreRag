@@ -1,7 +1,6 @@
-"""Role-based access control for PII content.
+"""DEPRECATED: Replaced by src.settings.settings_manager.SettingsManager in P8 SP5.
 
-Scaffold — provides role definitions and permission checks
-but is not yet wired into API routes.
+This module is no longer imported by active code paths. Retained for reference only.
 """
 
 import logging
