@@ -181,7 +181,7 @@ def cleanup_manifest(
     Returns the number of pruned items.
     """
     if keep_statuses is None:
-        keep_statuses = ["pending", "processing", "approved"]
+        keep_statuses = ["pending", "processing", "approved", "skipped"]
 
     _archive_dir = archive_dir or (config.STATE_DIR / "manifest_archive")
     _archive_dir.mkdir(parents=True, exist_ok=True)
