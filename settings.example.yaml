@@ -1,0 +1,50 @@
+# CoreRag Settings — managed via dashboard Settings tab
+# Real file location: ~/.corerag/settings.yaml
+
+agents:
+  _dashboard:
+    permissions:
+      search_main: true
+      search_restricted: false
+      ingest: false
+      delete: false
+      server_admin: true
+      catalog_read: true
+      catalog_write: true
+    chat_provider: ""  # Uses global LLM provider if empty
+
+  _mcp:
+    permissions:
+      search_main: true
+      search_restricted: false
+      ingest: true
+      delete: false
+      server_admin: true
+      catalog_read: true
+      catalog_write: false
+
+  # Example agent (uncomment and configure):
+  # kendra:
+  #   api_key_env: CORERAG_AGENT_KENDRA_KEY
+  #   permissions:
+  #     search_main: true
+  #     search_restricted: false
+  #     ingest: true
+  #     delete: false
+  #     server_admin: false
+  #     catalog_read: true
+  #     catalog_write: false
+
+llm:
+  provider: ""  # Auto-detect if empty
+  model: ""     # Provider default if empty
+  ollama_model: qwen3:32b
+
+default_permissions:
+  search_main: false
+  search_restricted: false
+  ingest: false
+  delete: false
+  server_admin: false
+  catalog_read: false
+  catalog_write: false

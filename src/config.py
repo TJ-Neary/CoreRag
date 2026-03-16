@@ -54,6 +54,7 @@ if _vault_paths_raw:
 # ── CoreRag Data Paths ────────────────────────────────────────────────────────
 
 STATE_DIR = Path(os.getenv("CORERAG_STATE_DIR", str(Path.home() / ".corerag")))
+SETTINGS_PATH = STATE_DIR / "settings.yaml"
 DB_PATH = Path(os.getenv("CORERAG_DB_PATH", str(STATE_DIR / "lancedb")))
 RESTRICTED_DB_PATH = Path(
     os.getenv("CORERAG_RESTRICTED_DB_PATH", str(STATE_DIR / "lancedb-restricted"))
