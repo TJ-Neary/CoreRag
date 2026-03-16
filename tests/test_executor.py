@@ -460,3 +460,141 @@ class TestExecuteApprovedItem:
 
         mock_rag.assert_not_called()
         mock_entities.assert_not_called()
+
+
+class TestSelectiveRedaction:
+    """Tests for _redact_pii selective redaction via detection_overrides."""
+
+    def _make_match(self, start_pos: int, end_pos: int, data_type: str, confidence: float = 0.95):
+        """Helper to create a mock SensitiveMatch."""
+        m = MagicMock()
+        m.start_pos = start_pos
+        m.end_pos = end_pos
+        m.confidence = confidence
+        m.data_type = MagicMock()
+        m.data_type.value = data_type
+        return m
+
+    def _make_scan_result(self, matches):
+        """Helper to create a mock ScanResult."""
+        result = MagicMock()
+        result.matches = matches
+        result.privacy_tier = MagicMock()
+        result.privacy_tier.value = "SENSITIVE"
+        return result
+
+    @patch("src.utils.privacy_audit.PrivacyScanner")
+    @patch("src.utils.privacy_audit.load_custom_pii_terms")
+    @patch("src.utils.privacy_audit.scan_custom_terms")
+    def test_no_overrides_redacts_all(self, mock_custom_scan, mock_load_terms, mock_scanner_class):
+        """Without overrides, all PII matches are redacted (legacy behavior)."""
+        from src.executor import _redact_pii
+
+        # Text: "Call 555-12-3456 or email user@example.com today"
+        text = "Call 555-12-3456 or email user@example.com today"
+        ssn_match = self._make_match(5, 16, "SSN")
+        email_match = self._make_match(26, 42, "EMAIL")
+
+        mock_scanner = MagicMock()
+        mock_scanner.scan.return_value = self._make_scan_result([ssn_match, email_match])
+        mock_scanner_class.return_value = mock_scanner
+        mock_load_terms.return_value = []
+        mock_custom_scan.return_value = []
+
+        result = _redact_pii(text, "test.txt")
+
+        assert "555-12-3456" not in result
+        assert "user@example.com" not in result
+        assert "[REDACTED-SSN]" in result
+        assert "[REDACTED-EMAIL]" in result
+
+    @patch("src.utils.privacy_audit.PrivacyScanner")
+    @patch("src.utils.privacy_audit.load_custom_pii_terms")
+    @patch("src.utils.privacy_audit.scan_custom_terms")
+    def test_keep_override_preserves_match(
+        self, mock_custom_scan, mock_load_terms, mock_scanner_class
+    ):
+        """Detection with action='keep' is NOT redacted."""
+        from src.executor import _redact_pii
+
+        text = "Call 555-12-3456 or email user@example.com today"
+        ssn_match = self._make_match(5, 16, "SSN")
+        email_match = self._make_match(26, 42, "EMAIL")
+
+        mock_scanner = MagicMock()
+        mock_scanner.scan.return_value = self._make_scan_result([ssn_match, email_match])
+        mock_scanner_class.return_value = mock_scanner
+        mock_load_terms.return_value = []
+        mock_custom_scan.return_value = []
+
+        overrides = [
+            {"start_pos": 5, "end_pos": 16, "type": "SSN", "action": "keep"},
+        ]
+
+        result = _redact_pii(text, "test.txt", detection_overrides=overrides)
+
+        # SSN should be preserved (kept)
+        assert "555-12-3456" in result
+        # Email should still be redacted
+        assert "user@example.com" not in result
+        assert "[REDACTED-EMAIL]" in result
+
+    @patch("src.utils.privacy_audit.PrivacyScanner")
+    @patch("src.utils.privacy_audit.load_custom_pii_terms")
+    @patch("src.utils.privacy_audit.scan_custom_terms")
+    def test_redact_override_applies(self, mock_custom_scan, mock_load_terms, mock_scanner_class):
+        """Detection with action='redact' IS redacted (explicit redact behaves like default)."""
+        from src.executor import _redact_pii
+
+        text = "Call 555-12-3456 today"
+        ssn_match = self._make_match(5, 16, "SSN")
+
+        mock_scanner = MagicMock()
+        mock_scanner.scan.return_value = self._make_scan_result([ssn_match])
+        mock_scanner_class.return_value = mock_scanner
+        mock_load_terms.return_value = []
+        mock_custom_scan.return_value = []
+
+        overrides = [
+            {"start_pos": 5, "end_pos": 16, "type": "SSN", "action": "redact"},
+        ]
+
+        result = _redact_pii(text, "test.txt", detection_overrides=overrides)
+
+        assert "555-12-3456" not in result
+        assert "[REDACTED-SSN]" in result
+
+    @patch("src.utils.privacy_audit.PrivacyScanner")
+    @patch("src.utils.privacy_audit.load_custom_pii_terms")
+    @patch("src.utils.privacy_audit.scan_custom_terms")
+    def test_mixed_overrides(self, mock_custom_scan, mock_load_terms, mock_scanner_class):
+        """Some keep, some redact — each applied correctly."""
+        from src.executor import _redact_pii
+
+        text = "SSN 555-12-3456 email user@example.com phone 555-867-5309"
+        ssn_match = self._make_match(4, 15, "SSN")
+        email_match = self._make_match(22, 38, "EMAIL")
+        phone_match = self._make_match(45, 57, "PHONE")
+
+        mock_scanner = MagicMock()
+        mock_scanner.scan.return_value = self._make_scan_result(
+            [ssn_match, email_match, phone_match]
+        )
+        mock_scanner_class.return_value = mock_scanner
+        mock_load_terms.return_value = []
+        mock_custom_scan.return_value = []
+
+        overrides = [
+            {"start_pos": 4, "end_pos": 15, "type": "SSN", "action": "keep"},
+            {"start_pos": 22, "end_pos": 38, "type": "EMAIL", "action": "redact"},
+            {"start_pos": 45, "end_pos": 57, "type": "PHONE", "action": "keep"},
+        ]
+
+        result = _redact_pii(text, "test.txt", detection_overrides=overrides)
+
+        # SSN and PHONE kept
+        assert "555-12-3456" in result
+        assert "555-867-5309" in result
+        # EMAIL redacted
+        assert "user@example.com" not in result
+        assert "[REDACTED-EMAIL]" in result

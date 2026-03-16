@@ -13,7 +13,7 @@ from src.staging import get_item, update_item
 logger = logging.getLogger(__name__)
 
 
-def _redact_pii(text: str, file_name: str) -> str:
+def _redact_pii(text: str, file_name: str, detection_overrides: list[dict] | None = None) -> str:
     """Apply PII redaction for Obsidian and RAG exports.
 
     Uses three detection layers:
@@ -56,6 +56,23 @@ def _redact_pii(text: str, file_name: str) -> str:
                 continue
             filtered.append(match)
             last_start = match.start_pos
+
+        # Build keep set from user overrides (selective redaction)
+        keep_ranges: set[tuple[int, int, str]] = set()
+        if detection_overrides:
+            for det in detection_overrides:
+                if det.get("action") == "keep":
+                    keep_ranges.add(
+                        (det.get("start_pos", -1), det.get("end_pos", -1), det.get("type", ""))
+                    )
+
+        # Filter out matches that user chose to keep
+        if keep_ranges:
+            filtered = [
+                match
+                for match in filtered
+                if (match.start_pos, match.end_pos, match.data_type.value) not in keep_ranges
+            ]
 
         redacted = text
         for match in filtered:
@@ -273,7 +290,10 @@ def execute_approved_item(item_id: str):
                 logger.warning(f"Restricted RAG indexing failed (non-fatal): {e}")
 
         if is_sensitive:
-            export_text = _redact_pii(export_text, current_path.name)
+            detection_overrides = item.get("metadata", {}).get("pii_detections", [])
+            export_text = _redact_pii(
+                export_text, current_path.name, detection_overrides=detection_overrides
+            )
             logger.info(f"PII-redacted text will be used for exports of {current_path.name}")
 
         # Archive (moves original file to target folder — always unredacted)
