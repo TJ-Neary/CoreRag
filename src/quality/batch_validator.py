@@ -5,6 +5,7 @@ Post-commit: validate_commit() — integrity check after each file commit.
 Startup: validate_database_integrity() — orphan cleanup on server start.
 """
 
+import dataclasses
 import json
 import logging
 from dataclasses import dataclass, field
@@ -26,6 +27,8 @@ class BatchQualityReport:
     duplicate_count: int = 0
     error_count: int = 0
     error_files: list[str] = field(default_factory=list)
+    extraction_details: list[dict] = field(default_factory=list)  # NEW
+    error_details: list[dict] = field(default_factory=list)  # NEW
     warnings: list[str] = field(default_factory=list)
     passed: bool = True
 
@@ -74,7 +77,13 @@ def validate_batch(manifest: dict) -> BatchQualityReport:
                 except Exception:
                     file_size = 0
                 if file_size > 10240 and len(redacted) < 100:
-                    report.extraction_warnings.append(Path(orig_path).name)
+                    filename = Path(orig_path).name
+                    report.extraction_warnings.append(filename)
+                    report.extraction_details.append({
+                        "filename": filename,
+                        "error_type": "extraction_failed",
+                        "message": f"Extracted only {len(redacted)} chars from {file_size}+ byte file",
+                    })
 
             # Duplicate check (reads existing duplicate_info from processor)
             if meta.get("duplicate_info"):
@@ -83,7 +92,13 @@ def validate_batch(manifest: dict) -> BatchQualityReport:
             # Error check
             if item.get("status") == "error":
                 report.error_count += 1
-                report.error_files.append(Path(orig_path).name if orig_path else "unknown")
+                error_filename = Path(orig_path).name if orig_path else "unknown"
+                report.error_files.append(error_filename)
+                report.error_details.append({
+                    "filename": error_filename,
+                    "error_type": "pipeline_error",
+                    "message": item.get("error", "Unknown error"),
+                })
 
         report.sensitive_rate = (
             report.sensitive_count / report.total_items if report.total_items else 0
@@ -117,22 +132,7 @@ def validate_batch(manifest: dict) -> BatchQualityReport:
 
         # Save report
         report_path = config.STATE_DIR / "batch_quality_report.json"
-        report_path.write_text(
-            json.dumps(
-                {
-                    "total_items": report.total_items,
-                    "sensitive_count": report.sensitive_count,
-                    "sensitive_rate": report.sensitive_rate,
-                    "extraction_warnings": report.extraction_warnings,
-                    "duplicate_count": report.duplicate_count,
-                    "error_count": report.error_count,
-                    "error_files": report.error_files,
-                    "warnings": report.warnings,
-                    "passed": report.passed,
-                },
-                indent=2,
-            )
-        )
+        report_path.write_text(json.dumps(dataclasses.asdict(report), indent=2))
 
         if report.warnings:
             for w in report.warnings:
