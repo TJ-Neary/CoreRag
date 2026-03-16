@@ -1214,9 +1214,14 @@
                                 <span class="text-sm text-gray-300">Send to Obsidian</span>
                             </label>
                             <label class="flex items-center space-x-2 mt-1 cursor-pointer">
-                                <input type="checkbox" id="rag-${id}" checked
+                                <input type="checkbox" id="main-rag-${id}" checked
                                     class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500">
-                                <span class="text-sm text-gray-300">Send to RAG</span>
+                                <span class="text-sm text-gray-300">Main RAG (redacted if sensitive)</span>
+                            </label>
+                            <label class="flex items-center space-x-2 mt-1 cursor-pointer">
+                                <input type="checkbox" id="restricted-rag-${id}" ${isSensitive ? 'checked' : ''}
+                                    class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-purple-500">
+                                <span class="text-sm text-gray-300">Restricted RAG (unredacted)</span>
                             </label>
                         </div>
                     </div>
@@ -1265,6 +1270,7 @@
             const label = document.getElementById(`pii-label-${id}`);
             const badge = document.getElementById(`badge-${id}`);
             const filenameInput = document.getElementById(`filename-${id}`);
+            const restrictedCb = document.getElementById('restricted-rag-' + id);
             if (checked) {
                 label.textContent = 'Sensitive — exports will be redacted';
                 label.className = 'text-sm text-red-400';
@@ -1273,6 +1279,7 @@
                 if (filenameInput && !filenameInput.value.startsWith('CUI_')) {
                     filenameInput.value = 'CUI_' + filenameInput.value;
                 }
+                if (restrictedCb) restrictedCb.checked = true;
             } else {
                 label.textContent = 'Clear — exports use original text';
                 label.className = 'text-sm text-green-400';
@@ -1281,6 +1288,7 @@
                 if (filenameInput && filenameInput.value.startsWith('CUI_')) {
                     filenameInput.value = filenameInput.value.replace(/^CUI_/, '');
                 }
+                if (restrictedCb) restrictedCb.checked = false;
             }
         }
 
@@ -1427,7 +1435,8 @@
                 const folder = document.getElementById(`folder-${id}`)?.value;
                 const piiChecked = document.getElementById(`pii-${id}`)?.checked ?? false;
                 const obsidianChecked = document.getElementById(`obsidian-${id}`)?.checked ?? true;
-                const ragChecked = document.getElementById(`rag-${id}`)?.checked ?? true;
+                const mainRagChecked = document.getElementById(`main-rag-${id}`)?.checked ?? true;
+                const restrictedRagChecked = document.getElementById(`restricted-rag-${id}`)?.checked ?? false;
                 const parts = (folder || '').split('/');
                 const category = parts[0] || 'Unsorted';
                 const year = card.querySelector('.bg-purple-900')?.textContent.trim() || 'Unknown';
@@ -1445,7 +1454,8 @@
                             metadata: { is_sensitive: piiChecked, pii_source: 'manual' },
                             use_original_text: !piiChecked,
                             skip_obsidian: !obsidianChecked,
-                            skip_rag: !ragChecked
+                            skip_rag: !mainRagChecked,
+                            skip_restricted_rag: !restrictedRagChecked
                         })
                     });
                 }
