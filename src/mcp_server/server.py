@@ -27,6 +27,7 @@ from src.mcp_server.tools import CoreRagTools
 from src.search.hybrid_search import HybridSearcher
 from src.search.hyde import create_hyde_expander
 from src.search.reranker import CrossEncoderReranker
+from src.settings.settings_manager import DEFAULT_PERMISSIONS, SettingsManager
 from src.utils.safe_processor import SafeProcessor, get_ingestion_controller
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,14 @@ async def _startup():
     )
     logger.info("Conflict detector initialized (semantic + numeric modes)")
 
+    # Load _mcp agent permissions from settings
+    settings = SettingsManager()
+    mcp_agent = settings.get_agent("_mcp")
+    mcp_permissions: dict = (
+        mcp_agent["permissions"] if mcp_agent else {k: True for k in DEFAULT_PERMISSIONS}
+    )
+    logger.info(f"MCP agent permissions loaded: {mcp_permissions}")
+
     # Initialize CoreRag tools with correct constructor signature
     _corerag_tools = CoreRagTools(
         retriever=searcher,
@@ -166,6 +175,7 @@ async def _startup():
         knowledge_graph=knowledge_graph,
         semantic_cache=semantic_cache,
         conflict_detector=conflict_detector,
+        permissions=mcp_permissions,
     )
     _corerag_tools._query_analytics = _query_analytics
     _corerag_tools._embedding_service = _embedding_service

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.exceptions import CoreRagError
 from src.search.decay_scoring import apply_decay_to_results
 from src.search.multi_query import QueryDecomposer, ReciprocalRankFusion
+from src.settings.settings_manager import DEFAULT_PERMISSIONS
 from src.utils.query_sanitize import build_eq_clause
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,11 @@ class CoreRagTools:
         knowledge_graph=None,
         semantic_cache=None,
         conflict_detector=None,
+        permissions: Optional[Dict[str, bool]] = None,
     ):
+        self.permissions: Dict[str, bool] = (
+            permissions if permissions is not None else {k: True for k in DEFAULT_PERMISSIONS}
+        )
         self.retriever = retriever
         self.embedder = embedder
         self.reranker = reranker
@@ -95,6 +100,15 @@ class CoreRagTools:
             query_analytics=None,
         )
         self._maintenance = MaintenanceTools(db=db, vault_root=self.vault_root)
+
+    def _check_permission(self, action: str) -> Optional[Dict[str, Any]]:
+        """Check if the MCP agent has the required permission.
+
+        Returns an error dict if denied, or None if the action is allowed.
+        """
+        if not self.permissions.get(action, False):
+            return {"error": f"Permission denied: {action} not granted for MCP agent"}
+        return None
 
     def _to_dict(self, obj) -> dict:
         """Convert a dataclass or dict result to a plain dict."""
@@ -138,6 +152,16 @@ class CoreRagTools:
             Dict with 'results' list and optional '_debug' context
         """
         import time
+
+        # Permission check — restricted scope requires search_restricted
+        if search_scope == "restricted":
+            denied = self._check_permission("search_restricted")
+            if denied:
+                return denied
+        else:
+            denied = self._check_permission("search_main")
+            if denied:
+                return denied
 
         start_time = time.time()
 
@@ -818,6 +842,9 @@ class CoreRagTools:
 
     async def add_user_fact(self, fact: str, category: str = "general") -> Dict[str, Any]:
         """Add a fact about the user to episodic memory."""
+        denied = self._check_permission("ingest")
+        if denied:
+            return denied
         return await self._memory.add_user_fact(fact, category)
 
     # ── Quality (delegated to QualityTools) ──────────────────────────────
@@ -860,6 +887,9 @@ class CoreRagTools:
         self, path: Optional[str] = None, force: bool = False
     ) -> Dict[str, Any]:
         """Trigger re-indexing of files."""
+        denied = self._check_permission("server_admin")
+        if denied:
+            return denied
         return await self._maintenance.trigger_reindex(path, force)
 
     async def get_document_history(self, document_id: str, limit: int = 10) -> Dict[str, Any]:
