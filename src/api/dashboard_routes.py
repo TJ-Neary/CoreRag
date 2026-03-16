@@ -9,9 +9,11 @@ All routes are internal (no API key auth) — the dashboard runs on localhost.
 
 import gc
 import logging
+import shutil
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -360,9 +362,45 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         return get_pending_items()
 
     @router.post("/api/update/{item_id}")
-    async def update_queue_item(item_id: str, updates: dict) -> dict:
-        success = update_item(item_id, updates)
-        return {"success": success}
+    async def update_queue_item(item_id: str, request: Request) -> dict:
+        data = await request.json()
+        action = data.get("action")
+
+        if action == "skip":
+            item = get_item(item_id)
+            if not item:
+                return {"error": "Item not found"}
+            original_path = Path(item["original_path"])
+            skipped_dir = Path(config.INBOX_PATH) / "_Skipped"
+            skipped_dir.mkdir(exist_ok=True)
+            if original_path.exists():
+                dest = skipped_dir / original_path.name
+                shutil.move(str(original_path), str(dest))
+            update_item(item_id, {"status": "skipped"})
+            return {"status": "skipped", "moved_to": str(skipped_dir / original_path.name)}
+
+        elif action == "restore":
+            item = get_item(item_id)
+            if not item:
+                return {"error": "Item not found"}
+            original_name = Path(item["original_path"]).name
+            skipped_path = Path(config.INBOX_PATH) / "_Skipped" / original_name
+            restore_dest = Path(config.INBOX_PATH) / original_name
+            if restore_dest.exists():
+                from datetime import datetime as _dt
+
+                ts = int(_dt.now().timestamp())
+                stem = restore_dest.stem
+                restore_dest = Path(config.INBOX_PATH) / f"{stem}_{ts}{restore_dest.suffix}"
+            if skipped_path.exists():
+                shutil.move(str(skipped_path), str(restore_dest))
+            update_item(item_id, {"status": "pending"})
+            return {"status": "restored", "path": str(restore_dest)}
+
+        else:
+            # Existing behavior — metadata update
+            update_item(item_id, data)
+            return {"status": "updated"}
 
     @router.post("/api/approve/{item_id}")
     async def approve_queue_item(item_id: str, background_tasks: BackgroundTasks) -> dict:
@@ -412,6 +450,24 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             update_item(item_id, {"proposed": {"target_folder": target_folder}})
             updated += 1
         return {"status": "ok", "updated": updated, "target_folder": target_folder}
+
+    # ── Error File Management ────────────────────────────────────────────
+
+    @router.post("/api/queue/move-errors")
+    async def move_error_files() -> dict:
+        """Bulk-move all error-status files to _Error/ folder."""
+        error_dir = Path(config.INBOX_PATH) / "_Error"
+        error_dir.mkdir(exist_ok=True)
+        manifest = load_manifest()
+        moved: list[str] = []
+        for _item_id, item in manifest.items():
+            if isinstance(item, dict) and item.get("status") == "error":
+                original_path = Path(item.get("original_path", ""))
+                if original_path.exists():
+                    dest = error_dir / original_path.name
+                    shutil.move(str(original_path), str(dest))
+                    moved.append(original_path.name)
+        return {"moved": len(moved), "files": moved, "destination": str(error_dir)}
 
     # ── Batch Analysis Routes ─────────────────────────────────────────────
 
