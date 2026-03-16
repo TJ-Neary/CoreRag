@@ -25,12 +25,14 @@ class _ResultCache:
         self._max_size = max_size
         self._ttl = ttl_seconds
 
-    def _key(self, query: str, k: int, filters: dict | None) -> str:
-        raw = f"{query}|{k}|{sorted(filters.items()) if filters else ''}"
+    def _key(self, query: str, k: int, filters: dict | None, search_scope: str = "main") -> str:
+        raw = f"{query}|{k}|{sorted(filters.items()) if filters else ''}|{search_scope}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-    def get(self, query: str, k: int, filters: dict | None) -> list | None:
-        key = self._key(query, k, filters)
+    def get(
+        self, query: str, k: int, filters: dict | None, search_scope: str = "main"
+    ) -> list | None:
+        key = self._key(query, k, filters, search_scope)
         if key in self._cache:
             ts, results = self._cache[key]
             if time.time() - ts < self._ttl:
@@ -38,8 +40,15 @@ class _ResultCache:
             del self._cache[key]
         return None
 
-    def put(self, query: str, k: int, filters: dict | None, results: list) -> None:
-        key = self._key(query, k, filters)
+    def put(
+        self,
+        query: str,
+        k: int,
+        filters: dict | None,
+        results: list,
+        search_scope: str = "main",
+    ) -> None:
+        key = self._key(query, k, filters, search_scope)
         if len(self._cache) >= self._max_size:
             oldest = min(self._cache, key=lambda k: self._cache[k][0])
             del self._cache[oldest]
@@ -65,6 +74,9 @@ class SearchResult:
     vector_rank: Optional[int] = None
     fts_rank: Optional[int] = None
 
+    # Source tracking for dual-DB fan-out
+    source_db: str = "main"
+
 
 class HybridSearcher:
     """
@@ -77,8 +89,9 @@ class HybridSearcher:
     # RRF constant (standard value from research)
     RRF_K = 60
 
-    def __init__(self, db, table_name: str = "child_chunks"):
+    def __init__(self, db, table_name: str = "child_chunks", restricted_db=None):
         self.db = db
+        self.restricted_db = restricted_db
         self.table_name = table_name
         self._table = None
         self._result_cache = _ResultCache()
@@ -150,6 +163,7 @@ class HybridSearcher:
         query_sparse: Optional[Dict[int, float]] = None,
         filters: Optional[Dict[str, Any]] = None,
         debug: bool = False,
+        search_scope: str = "main",
     ) -> List[SearchResult]:
         """
         Perform hybrid search with RRF fusion.
@@ -162,37 +176,126 @@ class HybridSearcher:
             fts_weight: Weight for FTS (0-1)
             filters: Optional metadata filters
             debug: Include ranking debug info
+            search_scope: "main" (default), "restricted", or "all" (fan-out both DBs)
 
         Returns:
             List of SearchResult sorted by RRF score
         """
-        # Check result cache
-        cached = self._result_cache.get(query, k, filters)
+        # Check result cache (scope-aware)
+        cached = self._result_cache.get(query, k, filters, search_scope)
         if cached is not None:
             logger.debug(f"Search cache hit for query: {query[:50]}...")
             return cached
 
-        # Validate FTS index
-        if not self._fts_verified:
-            if not self.verify_fts_index():
-                logger.warning("FTS index not available, falling back to vector-only search")
-                results = await self._vector_only_search(query_vector, k, filters, debug)
-                self._result_cache.put(query, k, filters, results)
-                return results
+        search_kwargs = dict(
+            query=query,
+            query_vector=query_vector,
+            k=k,
+            vector_weight=vector_weight,
+            fts_weight=fts_weight,
+            sparse_weight=sparse_weight,
+            query_sparse=query_sparse,
+            filters=filters,
+            debug=debug,
+        )
+
+        if search_scope == "restricted":
+            if not self.restricted_db:
+                return []
+            results = await self._search_single(
+                self.restricted_db, source_db="restricted", **search_kwargs
+            )
+        elif search_scope == "all":
+            main_results = await self._search_single(self.db, source_db="main", **search_kwargs)
+            if not self.restricted_db:
+                results = main_results
+            else:
+                restricted_results = await self._search_single(
+                    self.restricted_db, source_db="restricted", **search_kwargs
+                )
+                results = self._merge_results(main_results, restricted_results, k)
+        else:
+            # Default: "main"
+            results = await self._search_single(self.db, source_db="main", **search_kwargs)
+
+        self._result_cache.put(query, k, filters, results, search_scope)
+        return results
+
+    async def _search_single(
+        self,
+        db,
+        query: str,
+        query_vector: List[float],
+        k: int = 10,
+        vector_weight: float = 0.5,
+        fts_weight: float = 0.2,
+        sparse_weight: float = 0.3,
+        query_sparse: Optional[Dict[int, float]] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        debug: bool = False,
+        source_db: str = "main",
+    ) -> List[SearchResult]:
+        """Run hybrid search against a single LanceDB instance."""
+        try:
+            table = db.open_table(self.table_name)
+        except Exception:
+            logger.warning(f"Could not open table '{self.table_name}' in {source_db} DB")
+            return []
+
+        # Validate FTS index — for main DB use cached state; for others probe lazily
+        fts_available = False
+        if db is self.db:
+            # Main DB: use the cached _fts_verified flag
+            if not self._fts_verified:
+                if not self.verify_fts_index():
+                    logger.warning(
+                        "FTS index not available on main DB, falling back to vector-only"
+                    )
+                    results = await self._vector_only_search_on(
+                        table, query_vector, k, filters, debug, source_db
+                    )
+                    return results
+            fts_available = True
+        else:
+            # Non-main DB: probe FTS lazily
+            try:
+                table.search("test", query_type="fts").limit(1).to_list()
+                fts_available = True
+            except Exception:
+                logger.debug(f"FTS not available on {source_db} DB, using vector-only")
 
         # Oversample for fusion
         oversample = k * 3
 
         # Vector search
-        vector_results = await self._vector_search(query_vector, oversample, filters)
+        vector_results = await self._vector_search_on(table, query_vector, oversample, filters)
+
+        if not fts_available:
+            # Vector-only fallback
+            results = [
+                SearchResult(
+                    id=r["id"],
+                    content=r["content"],
+                    document_id=r["document_id"],
+                    vector_score=r.get("_distance", 0),
+                    fts_score=None,
+                    rrf_score=1 / (self.RRF_K + i + 1),
+                    metadata=r.get("metadata", {}),
+                    vector_rank=i + 1 if debug else None,
+                    fts_rank=None,
+                    source_db=source_db,
+                )
+                for i, r in enumerate(vector_results)
+            ]
+            return results[:k]
 
         # Full-text search
-        fts_results = await self._fts_search(query, oversample, filters)
+        fts_results = await self._fts_search_on(table, query, oversample, filters)
 
         # Sparse search (if query_sparse provided)
-        sparse_results = []
+        sparse_results: List[Dict] = []
         if query_sparse:
-            sparse_results = await self._sparse_search(query_sparse, oversample, filters)
+            sparse_results = await self._sparse_search_on(table, query_sparse, oversample, filters)
 
         # Fuse with RRF (3-way if sparse available, 2-way otherwise)
         if sparse_results:
@@ -204,16 +307,40 @@ class HybridSearcher:
                 fts_weight,
                 sparse_weight,
                 debug,
+                source_db=source_db,
             )
         else:
             # Fall back to 2-way with adjusted weights
             adj_v = vector_weight + sparse_weight * 0.7  # Redistribute sparse weight
             adj_f = fts_weight + sparse_weight * 0.3
-            fused = self._reciprocal_rank_fusion(vector_results, fts_results, adj_v, adj_f, debug)
+            fused = self._reciprocal_rank_fusion(
+                vector_results, fts_results, adj_v, adj_f, debug, source_db=source_db
+            )
 
-        results = fused[:k]
-        self._result_cache.put(query, k, filters, results)
-        return results
+        return fused[:k]
+
+    def _merge_results(
+        self, main: List[SearchResult], restricted: List[SearchResult], k: int
+    ) -> List[SearchResult]:
+        """Merge results from both DBs, deduplicate by catalog_id or document_id."""
+        seen: dict[str, bool] = {}
+        merged: List[SearchResult] = []
+
+        # Restricted results take priority (checked first for dedup)
+        for r in restricted:
+            cid = getattr(r, "catalog_id", "") or r.document_id
+            if cid not in seen:
+                seen[cid] = True
+                merged.append(r)
+
+        for r in main:
+            cid = getattr(r, "catalog_id", "") or r.document_id
+            if cid not in seen:
+                seen[cid] = True
+                merged.append(r)
+
+        merged.sort(key=lambda x: x.rrf_score, reverse=True)
+        return merged[:k]
 
     def _build_filter_clause(self, filters: Dict[str, Any]) -> str:
         """Build a WHERE clause from filters dict.
@@ -226,53 +353,58 @@ class HybridSearcher:
         """
         return build_filter_clause(filters)
 
-    async def _vector_search(
-        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]]
-    ) -> List[Dict]:
-        """Perform ANN vector search."""
-        search = self.table.search(query_vector).limit(k)
+    # ── Table-parametric search helpers ──────────────────────────────────
 
+    async def _vector_search_on(
+        self, table, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Perform ANN vector search on a given table."""
+        search = table.search(query_vector).limit(k)
         if filters:
             search = search.where(self._build_filter_clause(filters))
-
         return search.to_list()
 
-    async def _fts_search(
-        self, query: str, k: int, filters: Optional[Dict[str, Any]]
+    async def _fts_search_on(
+        self, table, query: str, k: int, filters: Optional[Dict[str, Any]]
     ) -> List[Dict]:
-        """Perform full-text search."""
+        """Perform full-text search on a given table."""
         try:
-            search = self.table.search(query, query_type="fts").limit(k)
-
+            search = table.search(query, query_type="fts").limit(k)
             if filters:
                 search = search.where(self._build_filter_clause(filters))
-
             return search.to_list()
         except Exception as e:
             logger.warning(f"FTS search failed: {e}")
             return []
 
-    async def _sparse_search(
-        self, query_sparse: Dict[int, float], k: int, filters: Optional[Dict[str, Any]]
+    async def _sparse_search_on(
+        self,
+        table,
+        query_sparse: Dict[int, float],
+        k: int,
+        filters: Optional[Dict[str, Any]],
     ) -> List[Dict]:
-        """Perform sparse vector search using learned lexical weights."""
+        """Perform sparse vector search on a given table."""
         try:
-            search = self.table.search(query_sparse, vector_column_name="sparse_vector").limit(k)
-
+            search = table.search(query_sparse, vector_column_name="sparse_vector").limit(k)
             if filters:
                 search = search.where(self._build_filter_clause(filters))
-
             return search.to_list()
         except Exception as e:
             logger.debug(f"Sparse search not available: {e}")
             return []
 
-    async def _vector_only_search(
-        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]], debug: bool
+    async def _vector_only_search_on(
+        self,
+        table,
+        query_vector: List[float],
+        k: int,
+        filters: Optional[Dict[str, Any]],
+        debug: bool,
+        source_db: str = "main",
     ) -> List[SearchResult]:
-        """Fallback when FTS is unavailable."""
-        results = await self._vector_search(query_vector, k, filters)
-
+        """Fallback when FTS is unavailable on a specific table."""
+        results = await self._vector_search_on(table, query_vector, k, filters)
         return [
             SearchResult(
                 id=r["id"],
@@ -284,9 +416,36 @@ class HybridSearcher:
                 metadata=r.get("metadata", {}),
                 vector_rank=i + 1 if debug else None,
                 fts_rank=None,
+                source_db=source_db,
             )
             for i, r in enumerate(results)
         ]
+
+    # ── Legacy self.table helpers (delegate to table-parametric versions) ─
+
+    async def _vector_search(
+        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Perform ANN vector search."""
+        return await self._vector_search_on(self.table, query_vector, k, filters)
+
+    async def _fts_search(
+        self, query: str, k: int, filters: Optional[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Perform full-text search."""
+        return await self._fts_search_on(self.table, query, k, filters)
+
+    async def _sparse_search(
+        self, query_sparse: Dict[int, float], k: int, filters: Optional[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Perform sparse vector search using learned lexical weights."""
+        return await self._sparse_search_on(self.table, query_sparse, k, filters)
+
+    async def _vector_only_search(
+        self, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]], debug: bool
+    ) -> List[SearchResult]:
+        """Fallback when FTS is unavailable."""
+        return await self._vector_only_search_on(self.table, query_vector, k, filters, debug)
 
     def _reciprocal_rank_fusion(
         self,
@@ -295,11 +454,12 @@ class HybridSearcher:
         vector_weight: float,
         fts_weight: float,
         debug: bool,
+        source_db: str = "main",
     ) -> List[SearchResult]:
         """
         Combine results using Reciprocal Rank Fusion.
 
-        RRF score = Σ (weight / (k + rank))
+        RRF score = Sigma (weight / (k + rank))
 
         This is robust to different score scales between retrieval methods.
         """
@@ -342,6 +502,7 @@ class HybridSearcher:
                     metadata=doc.get("metadata", {}),
                     vector_rank=v_rank if debug else None,
                     fts_rank=f_rank if debug else None,
+                    source_db=source_db,
                 )
             )
 
@@ -359,6 +520,7 @@ class HybridSearcher:
         fts_weight: float,
         sparse_weight: float,
         debug: bool,
+        source_db: str = "main",
     ) -> List[SearchResult]:
         """3-way RRF fusion: dense + FTS + sparse."""
         v_ranks = {r.get("id", str(i)): i + 1 for i, r in enumerate(vector_results)}
@@ -398,6 +560,7 @@ class HybridSearcher:
                     fts_score=r.get("_score"),
                     rrf_score=score,
                     metadata=metadata,
+                    source_db=source_db,
                 )
             )
 
