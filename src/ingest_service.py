@@ -44,6 +44,7 @@ class IngestService:
         metadata: dict,
         *,
         source_path: str = "api_ingest",
+        catalog_id: str = "",
         skip_context: bool = False,
         skip_quality: bool = False,
         skip_graph: bool = False,
@@ -222,6 +223,7 @@ class IngestService:
                         "tags": tags_str,
                         "content_hash": hashlib.sha256(p.content.encode()).hexdigest(),
                         "summary": parent_summaries.get(p.id, ""),
+                        "catalog_id": catalog_id,
                     }
                 )
 
@@ -244,6 +246,7 @@ class IngestService:
                     "date_extracted": date_extracted_list[i],
                     "date_confidence": date_confidence_list[i],
                     "sparse_vector": sparse_vecs[i],
+                    "catalog_id": catalog_id,
                 }
             )
 
