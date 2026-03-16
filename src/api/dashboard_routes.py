@@ -309,6 +309,51 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         except Exception as e:
             return {"error": str(e), "total_documents": 0}
 
+    @router.get("/api/catalog/folder-tree")
+    async def get_folder_tree() -> dict:
+        """Category/folder hierarchy with counts for archive sidebar."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        try:
+            catalog = CatalogManager()
+            return catalog.get_folder_tree()
+        except Exception as e:
+            return {
+                "categories": [],
+                "no_archive_path": 0,
+                "offline": 0,
+                "total": 0,
+                "error": str(e),
+            }
+
+    @router.get("/api/catalog/devices")
+    async def get_catalog_devices() -> dict:
+        """List known storage devices."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        try:
+            catalog = CatalogManager()
+            return {"devices": catalog.get_devices()}
+        except Exception as e:
+            return {"devices": [], "error": str(e)}
+
+    @router.post("/api/catalog/cold-storage")
+    async def migrate_to_cold_storage(request: Request) -> dict:
+        """Move selected files to cold storage device."""
+        from src.catalog.catalog_manager import CatalogManager
+
+        data = await request.json()
+        doc_ids = data.get("doc_ids", [])
+        device_name = data.get("device_name", "")
+        destination = data.get("destination_root", "")
+        if not doc_ids or not device_name or not destination:
+            return {"error": "Missing required fields: doc_ids, device_name, destination_root"}
+        try:
+            catalog = CatalogManager()
+            return catalog.migrate_to_cold(doc_ids, device_name, destination)
+        except Exception as e:
+            return {"error": str(e)}
+
     @router.get("/api/catalog/{doc_id}")
     async def get_catalog_entry(doc_id: str) -> dict:
         """Single document with all exports."""
