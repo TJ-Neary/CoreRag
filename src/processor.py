@@ -36,6 +36,18 @@ def _get_custom_pii_terms() -> list:
     return _custom_pii_terms
 
 
+_ALWAYS_REDACT_TYPES = {"ssn", "credit_card"}
+
+
+def _default_redaction_action(match: "SensitiveMatch", custom_matches: list) -> str:  # noqa: F821
+    """Determine default Keep/Redact action for a PII detection."""
+    if match in custom_matches:
+        return "redact"
+    if match.data_type.value.lower() in _ALWAYS_REDACT_TYPES:
+        return "redact"
+    return "keep"
+
+
 async def process_document(file_path: Path, tags: list[str] | None = None):
     """
     Orchestrates the ingestion:
@@ -123,6 +135,10 @@ async def process_document(file_path: Path, tags: list[str] | None = None):
                     "type": m.data_type.value,
                     "confidence": round(m.confidence, 2),
                     "context": m.context[:PII_CONTEXT_TRUNCATE],  # Truncated, already redacted
+                    "source": "custom_dict" if m in custom_matches else "presidio",
+                    "action": _default_redaction_action(m, custom_matches),
+                    "start_pos": m.start_pos,
+                    "end_pos": m.end_pos,
                 }
             )
 

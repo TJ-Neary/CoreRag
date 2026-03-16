@@ -123,6 +123,8 @@ class TestProcessDocument:
         mock_match.data_type = MagicMock()
         mock_match.data_type.value = "SSN"
         mock_match.context = "SSN: [REDACTED]"
+        mock_match.start_pos = 10
+        mock_match.end_pos = 21
 
         mock_scan_result = MagicMock()
         mock_scan_result.matches = [mock_match]
@@ -149,6 +151,8 @@ class TestProcessDocument:
         mock_match.data_type = MagicMock()
         mock_match.data_type.value = "SSN"
         mock_match.context = "SSN: [REDACTED]"
+        mock_match.start_pos = 5
+        mock_match.end_pos = 16
 
         mock_scan_result = MagicMock()
         mock_scan_result.matches = [mock_match]
@@ -283,6 +287,99 @@ class TestProcessDocument:
 
         final_call = mock_dependencies["update"].call_args_list[-1][0][1]
         assert final_call["metadata"]["is_sensitive"] is False
+
+    async def test_detection_has_source_and_action(self, mock_dependencies, tmp_path):
+        """Test that PII detections include source, action, start_pos, and end_pos."""
+        from src.processor import process_document
+        from src.utils.privacy_audit import SensitiveMatch
+
+        mock_match = MagicMock(spec=SensitiveMatch)
+        mock_match.confidence = 0.90
+        mock_match.data_type = MagicMock()
+        mock_match.data_type.value = "EMAIL"
+        mock_match.context = "email: user@example.com"
+        mock_match.start_pos = 7
+        mock_match.end_pos = 23
+
+        mock_scan_result = MagicMock()
+        mock_scan_result.matches = [mock_match]
+        mock_dependencies["scanner"].scan.return_value = mock_scan_result
+
+        test_file = tmp_path / "doc.txt"
+        test_file.write_text("content")
+
+        await process_document(test_file)
+
+        final_call = mock_dependencies["update"].call_args_list[-1][0][1]
+        detections = final_call["metadata"]["pii_detections"]
+        assert len(detections) == 1
+        d = detections[0]
+        assert "source" in d
+        assert "action" in d
+        assert "start_pos" in d
+        assert "end_pos" in d
+        assert d["start_pos"] == 7
+        assert d["end_pos"] == 23
+
+    async def test_custom_dict_defaults_to_redact(self, mock_dependencies, tmp_path):
+        """Test that custom dictionary matches default to action='redact'."""
+        from src.processor import process_document
+        from src.utils.privacy_audit import SensitiveMatch
+
+        # Create a custom dictionary match
+        custom_match = MagicMock(spec=SensitiveMatch)
+        custom_match.confidence = 1.0
+        custom_match.data_type = MagicMock()
+        custom_match.data_type.value = "NAME"
+        custom_match.context = "Name: [REDACTED]"
+        custom_match.start_pos = 6
+        custom_match.end_pos = 16
+
+        # Scanner returns no matches; custom_matches has the match
+        mock_scan_result = MagicMock()
+        mock_scan_result.matches = []
+        mock_dependencies["scanner"].scan.return_value = mock_scan_result
+
+        with patch("src.processor.scan_custom_terms", return_value=[custom_match]):
+            test_file = tmp_path / "doc.txt"
+            test_file.write_text("content")
+
+            await process_document(test_file)
+
+        final_call = mock_dependencies["update"].call_args_list[-1][0][1]
+        detections = final_call["metadata"]["pii_detections"]
+        assert len(detections) == 1
+        assert detections[0]["source"] == "custom_dict"
+        assert detections[0]["action"] == "redact"
+
+    async def test_ner_defaults_to_keep(self, mock_dependencies, tmp_path):
+        """Test that NER-detected names/emails default to action='keep'."""
+        from src.processor import process_document
+        from src.utils.privacy_audit import SensitiveMatch
+
+        # Presidio NER match (not SSN/credit_card, not custom dict)
+        ner_match = MagicMock(spec=SensitiveMatch)
+        ner_match.confidence = 0.85
+        ner_match.data_type = MagicMock()
+        ner_match.data_type.value = "NAME"
+        ner_match.context = "Contact: Alice Smith"
+        ner_match.start_pos = 9
+        ner_match.end_pos = 20
+
+        mock_scan_result = MagicMock()
+        mock_scan_result.matches = [ner_match]
+        mock_dependencies["scanner"].scan.return_value = mock_scan_result
+
+        test_file = tmp_path / "doc.txt"
+        test_file.write_text("content")
+
+        await process_document(test_file)
+
+        final_call = mock_dependencies["update"].call_args_list[-1][0][1]
+        detections = final_call["metadata"]["pii_detections"]
+        assert len(detections) == 1
+        assert detections[0]["source"] == "presidio"
+        assert detections[0]["action"] == "keep"
 
 
 class TestIntelligenceHelpers:
