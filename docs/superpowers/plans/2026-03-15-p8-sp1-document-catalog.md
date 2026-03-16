@@ -379,37 +379,103 @@ git commit -m "feat: retroactive catalog rebuild from existing LanceDB + manifes
 
 After all tasks complete:
 
-- [ ] **Run full test suite**
+- [x] **Run full test suite** — 660 passed, 1 pre-existing failure, 26 skipped (Session 32)
 
-Run: `pytest --tb=short -q`
-Expected: 633+ pass, no regressions.
+- [x] **Test catalog end-to-end** — 102 docs cataloged, 2 sensitive, 111 exports (Session 32)
 
-- [ ] **Test catalog end-to-end**
+- [x] **Run retroactive rebuild** — 99 docs from LanceDB, 97 new + 2 existing, --skip-llm (Session 32)
 
+---
+
+## Task 8: LLM Re-classification of Existing 99 Documents
+
+> **Status:** NOT STARTED — Execute after archive folder migration is complete.
+
+**Goal:** Replace the low-quality keyword auto-tagger tags on all 99 existing documents with LLM-powered tags, proper categories, and year tags. The initial catalog rebuild (Task 7) populated entries using old metadata — 56 of 99 documents have `category=Unsorted` and carry shotgun keyword tags like `fitness,workout,plan,training,mind-pump,gym,lifting` that don't meaningfully describe the content.
+
+**Why this matters:**
+- The keyword auto-tagger (now removed) assigned 7-10 generic tags per document based on word frequency, making tag-based search useless (56 docs all share the same tags)
+- 58 of 99 documents have no category or year because they predate the staging manifest
+- The new LLM prompt (Task 3) produces purpose-driven collection tags (1-3 per doc) plus year, with folder tree and existing tag context for consistency
+- Without this step, the catalog's metadata quality is poor for half the collection
+
+**Prerequisites:**
+1. Archive folder migration must be complete (`~/Documents/Knowledge/` → `~/Documents/PKM/`)
+2. `.env` ARCHIVE_PATH must point to `~/Documents/PKM/` (done)
+3. Original files must be locatable in the archive (Phase 4 found only 41/99 — the remaining 58 need to be located or their text extracted from LanceDB chunks)
+
+**Files:**
+- Modify: `scripts/rebuild_catalog.py` (add Phase 3 text fallback from LanceDB chunks)
+
+- [ ] **Step 1: Locate and migrate archived files**
+
+Move `~/Documents/Knowledge/` to `~/Documents/PKM/` (preserving folder structure):
 ```bash
-python -m src.cli.main catalog-stats
-python -m src.cli.main catalog-list --tag fitness
+# Check what's in Knowledge/
+ls ~/Documents/Knowledge/
+# Move to PKM (the new canonical location)
+mv ~/Documents/Knowledge/* ~/Documents/PKM/
+rmdir ~/Documents/Knowledge
 ```
 
-- [ ] **Run retroactive rebuild**
+Also scan `~/Documents/` root level for loose archived files that ended up there due to the old `ARCHIVE_PATH=~/Documents` default. Move any CoreRag-archived files into appropriate `~/Documents/PKM/` subfolders.
+
+- [ ] **Step 2: Add LanceDB text fallback to rebuild script**
+
+For the 58 documents where original files can't be found, reconstruct text from LanceDB `child_chunks` by concatenating chunk content in order. This provides enough text for LLM re-classification without needing the original file.
+
+In `scripts/rebuild_catalog.py`, update `phase3_llm_reclassify()`:
+```python
+# If original file not found, reconstruct from LanceDB chunks
+if not text:
+    chunks = [row for row in all_rows if row["document_id"] == doc_id]
+    chunks.sort(key=lambda r: r.get("chunk_index", 0))
+    text = "\n".join(c["content"] for c in chunks)
+    if text:
+        logger.info(f"  Reconstructed {len(text)} chars from {len(chunks)} LanceDB chunks")
+```
+
+- [ ] **Step 3: Run LLM re-classification**
 
 ```bash
-python scripts/rebuild_catalog.py --dry-run
-python scripts/rebuild_catalog.py
+python scripts/rebuild_catalog.py --phase 3
+```
+
+This will:
+- Re-analyze each document with the improved LLM prompt (folder tree + existing tag context)
+- Replace old keyword tags with 1-3 purposeful collection tags + year tag
+- Update categories from "Unsorted" to proper values (Education, Fitness, Technical, etc.)
+- Estimated time: ~30s/file × 99 files = ~50 minutes with Ollama qwen3:32b
+
+- [ ] **Step 4: Verify re-classification quality**
+
+```bash
+python -m src.cli.main catalog stats
+python -m src.cli.main catalog list --category Unsorted
+```
+
+Expected: "Unsorted" count should drop from 56 to near zero. Tags should be diverse and meaningful (not all documents sharing the same 7 tags).
+
+- [ ] **Step 5: Commit updated rebuild script**
+
+```bash
+git add scripts/rebuild_catalog.py
+git commit -m "feat: LanceDB text fallback for rebuild re-classification"
 ```
 
 ---
 
 ## Summary
 
-| Task | What | Files | Effort |
+| Task | What | Files | Status |
 |------|------|-------|--------|
-| 1 | CatalogManager + tests | 3 new files | ~200 lines |
-| 2 | Archive path → ~/Documents/PKM/ | config.py | ~5 lines |
-| 3 | LLM tags + year tag | processor.py, intelligence.py | ~30 lines |
-| 4 | Integrate into executor | executor.py | ~25 lines |
-| 5 | CLI commands | cli/main.py | ~60 lines |
-| 6 | Dashboard API + MCP | dashboard_routes.py, server.py | ~40 lines |
-| 7 | Retroactive rebuild script | scripts/rebuild_catalog.py | ~150 lines |
+| 1 | CatalogManager + tests | 3 new files | ✅ Complete |
+| 2 | Archive path → ~/Documents/PKM/ | config.py | ✅ Complete |
+| 3 | LLM tags + year tag | processor.py, intelligence.py | ✅ Complete |
+| 4 | Integrate into executor | executor.py | ✅ Complete |
+| 5 | CLI commands | cli/main.py | ✅ Complete |
+| 6 | Dashboard API + MCP | dashboard_routes.py, server.py | ✅ Complete |
+| 7 | Retroactive rebuild script | scripts/rebuild_catalog.py | ✅ Complete |
+| 8 | LLM re-classification of 99 docs | scripts/rebuild_catalog.py | ⬜ Not started |
 
-**Total: 7 tasks, ~510 lines, estimated 2-3 hours.**
+**Tasks 1-7 complete (Session 32). Task 8 requires archive folder migration first.**

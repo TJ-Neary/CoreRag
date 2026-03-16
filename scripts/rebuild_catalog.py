@@ -196,11 +196,45 @@ def phase2_cross_reference_manifest(docs: dict[str, dict[str, Any]]) -> dict[str
 # ── Phase 3: LLM Re-classification (optional) ─────────────────────────────────
 
 
+def _reconstruct_text_from_lancedb(doc_id: str) -> str | None:
+    """Reconstruct document text by concatenating LanceDB child chunks.
+
+    For documents whose original files can't be found, we can still
+    reconstruct enough text for LLM re-classification by joining the
+    chunk content stored in LanceDB.
+
+    Args:
+        doc_id: The document_id to look up in child_chunks.
+
+    Returns:
+        Reconstructed text, or None if no chunks found.
+    """
+    import lancedb
+
+    try:
+        db = lancedb.connect(str(DB_PATH))
+        child_table = db.open_table("child_chunks")
+        # Query chunks for this document
+        results = child_table.search().where(f"document_id = '{doc_id}'").limit(500).to_list()
+        if not results:
+            return None
+
+        # Sort by chunk_index if available, otherwise by position
+        results.sort(key=lambda r: r.get("chunk_index", 0))
+        chunks = [r.get("content", "") for r in results if r.get("content")]
+        if chunks:
+            return "\n\n".join(chunks)
+    except Exception as e:
+        logger.debug("  LanceDB chunk reconstruction failed for %s: %s", doc_id, e)
+    return None
+
+
 def phase3_llm_reclassify(docs: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Re-classify documents through the improved LLM analysis pipeline.
 
-    Attempts to find and extract text from each document's archived original,
-    then runs analyze_document() for fresh classification.
+    Attempts to find and extract text from each document's archived original.
+    Falls back to reconstructing text from LanceDB chunks when originals
+    can't be found (handles the 58 documents without archive paths).
 
     This is the slow phase (~30s per file). Skip with --skip-llm.
 
@@ -217,6 +251,7 @@ def phase3_llm_reclassify(docs: dict[str, dict[str, Any]]) -> dict[str, dict[str
 
     total = len(docs)
     reclassified = 0
+    from_chunks = 0
 
     for i, (doc_id, doc) in enumerate(docs.items(), 1):
         source_path = Path(doc["source_path"]) if doc["source_path"] else None
@@ -229,8 +264,11 @@ def phase3_llm_reclassify(docs: dict[str, dict[str, Any]]) -> dict[str, dict[str
         if source_path:
             search_paths.append(source_path)
             search_paths.append(ARCHIVE_PATH / source_path.name)
+            # Search recursively in PKM subdirectories
+            for subdir in ARCHIVE_PATH.rglob(source_path.name):
+                if subdir.is_file():
+                    search_paths.append(subdir)
             # Legacy archive locations
-            search_paths.append(Path.home() / "Documents" / "Knowledge" / source_path.name)
             search_paths.append(Path.home() / "Documents" / source_path.name)
 
         if doc.get("archive_path"):
@@ -245,9 +283,15 @@ def phase3_llm_reclassify(docs: dict[str, dict[str, Any]]) -> dict[str, dict[str
                 except Exception:
                     pass
 
+        # Fallback: reconstruct text from LanceDB chunks
         if not text:
-            logger.warning("  Could not find/extract text for %s, skipping LLM", source_name)
-            continue
+            text = _reconstruct_text_from_lancedb(doc_id)
+            if text:
+                from_chunks += 1
+                logger.info("  Reconstructed %d chars from LanceDB chunks", len(text))
+            else:
+                logger.warning("  No text available for %s (no file, no chunks)", source_name)
+                continue
 
         try:
             metadata, _redacted = asyncio.run(analyze_document(text))
@@ -267,7 +311,13 @@ def phase3_llm_reclassify(docs: dict[str, dict[str, Any]]) -> dict[str, dict[str
         except Exception as e:
             logger.warning("  LLM re-classification failed: %s", e)
 
-    logger.info("Phase 3: Re-classified %d/%d documents", reclassified, total)
+    logger.info(
+        "Phase 3: Re-classified %d/%d documents (%d from archived files, %d from LanceDB chunks)",
+        reclassified,
+        total,
+        reclassified - from_chunks,
+        from_chunks,
+    )
     return docs
 
 
@@ -367,6 +417,7 @@ def register_in_catalog(docs: dict[str, dict[str, Any]], *, dry_run: bool = Fals
 
     catalog = CatalogManager()
     registered = 0
+    updated = 0
     skipped = 0
 
     for doc_id, doc in docs.items():
@@ -376,8 +427,30 @@ def register_in_catalog(docs: dict[str, dict[str, Any]], *, dry_run: bool = Fals
             # Check if already registered
             existing = catalog.get(doc_id)
             if existing:
-                logger.debug("  Already cataloged: %s", source_name)
-                skipped += 1
+                # Update if we have fresh metadata (from LLM re-classification)
+                updates: dict[str, Any] = {}
+                new_cat = doc.get("category", "")
+                new_year = doc.get("year", "")
+                new_summary = doc.get("summary", "")
+                new_tags = doc.get("tags", "")
+
+                if new_cat and new_cat != "Unsorted" and existing.category != new_cat:
+                    updates["category"] = new_cat
+                if new_year and new_year != "Unknown" and existing.year != new_year:
+                    updates["year"] = new_year
+                if new_summary and len(new_summary) > len(existing.summary or ""):
+                    updates["summary"] = new_summary
+                if new_tags and new_tags != existing.tags:
+                    updates["tags"] = new_tags
+                if doc.get("archive_path") and not existing.archive_path:
+                    updates["archive_path"] = doc["archive_path"]
+
+                if updates:
+                    catalog.update(doc_id, **updates)
+                    updated += 1
+                    logger.info("  Updated: %s (%s)", source_name, ", ".join(updates.keys()))
+                else:
+                    skipped += 1
                 continue
 
             record = DocumentRecord(
@@ -414,11 +487,12 @@ def register_in_catalog(docs: dict[str, dict[str, Any]], *, dry_run: bool = Fals
             logger.warning("  Failed to register %s: %s", source_name, e)
 
     logger.info(
-        "Registered %d new documents in catalog (%d already existed)",
+        "Registered %d new, updated %d existing, skipped %d unchanged",
         registered,
+        updated,
         skipped,
     )
-    return registered
+    return registered + updated
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
