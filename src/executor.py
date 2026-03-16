@@ -75,7 +75,7 @@ def _redact_pii(text: str, file_name: str) -> str:
         return text  # Fall back to original text rather than blocking
 
 
-def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
+def _index_in_rag(text: str, file_name: str, metadata: dict, catalog_id: str = "") -> None:
     """Chunk, embed, and store document text in the LanceDB vector database.
 
     Delegates to IngestService for the full enrichment pipeline.
@@ -94,7 +94,13 @@ def _index_in_rag(text: str, file_name: str, metadata: dict) -> None:
 
         with asyncio.Runner() as runner:
             result = runner.run(
-                service.ingest(text, metadata, source_path=file_name, skip_graph=True)
+                service.ingest(
+                    text,
+                    metadata,
+                    source_path=file_name,
+                    skip_graph=True,
+                    catalog_id=catalog_id,
+                )
             )
 
         logger.info(
@@ -227,10 +233,45 @@ def execute_approved_item(item_id: str):
             )
             export_text = item["redacted_text"]
 
+        # Compute doc_id from unredacted text (consistent ID for both databases)
+        doc_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
+
         # If PII is flagged, redact the full text for both Obsidian and RAG.
         # The original file archives untouched, but exported content gets
         # actual PII values replaced with [REDACTED-TYPE] placeholders.
         is_sensitive = item.get("metadata", {}).get("is_sensitive", False)
+
+        # Index in RESTRICTED RAG (unredacted) — before PII redaction
+        if is_sensitive and not item.get("skip_restricted_rag", False):
+            try:
+                import asyncio
+
+                import lancedb
+
+                from src.embeddings.embedding_service import create_embedding_service
+                from src.ingest_service import IngestService
+
+                restricted_db = lancedb.connect(str(config.RESTRICTED_DB_PATH))
+                restricted_embedder = create_embedding_service()
+                restricted_service = IngestService(
+                    embedding_service=restricted_embedder, db=restricted_db
+                )
+
+                with asyncio.Runner() as runner:
+                    runner.run(
+                        restricted_service.ingest(
+                            export_text,  # Original unredacted text
+                            final_metadata,
+                            source_path=current_path.name,
+                            skip_graph=True,
+                            catalog_id=doc_id,
+                        )
+                    )
+
+                logger.info(f"Restricted RAG indexed (unredacted): {current_path.name}")
+            except Exception as e:
+                logger.warning(f"Restricted RAG indexing failed (non-fatal): {e}")
+
         if is_sensitive:
             export_text = _redact_pii(export_text, current_path.name)
             logger.info(f"PII-redacted text will be used for exports of {current_path.name}")
@@ -249,7 +290,6 @@ def execute_approved_item(item_id: str):
         from src.utils.versioning import VersionManager
 
         vm = VersionManager()
-        doc_id = hashlib.sha256(export_text[:5000].encode()).hexdigest()[:16]
 
         if not item.get("skip_rag"):
             # Check if document content has changed since last indexing
@@ -257,9 +297,9 @@ def execute_approved_item(item_id: str):
                 if not vm.is_changed(doc_id, export_text):
                     logger.info(f"Content unchanged for {current_path.name}, skipping RAG re-index")
                 else:
-                    _index_in_rag(export_text, current_path.name, final_metadata)
+                    _index_in_rag(export_text, current_path.name, final_metadata, catalog_id=doc_id)
             except Exception:
-                _index_in_rag(export_text, current_path.name, final_metadata)
+                _index_in_rag(export_text, current_path.name, final_metadata, catalog_id=doc_id)
             # Extract entities for knowledge graph
             _extract_entities(export_text, current_path.name)
         else:
@@ -324,6 +364,11 @@ def execute_approved_item(item_id: str):
                 original_path=str(original_path),
                 archive_path=str(config.ARCHIVE_PATH / target_folder / current_path.name),
                 main_rag_doc_id=document_id if not item.get("skip_rag") else None,
+                restricted_rag_doc_id=(
+                    document_id
+                    if is_sensitive and not item.get("skip_restricted_rag", False)
+                    else None
+                ),
                 category=final_metadata.get("category", ""),
                 year=final_metadata.get("year", ""),
                 tags=",".join(final_metadata.get("tags", [])),
@@ -350,6 +395,15 @@ def execute_approved_item(item_id: str):
                         destination="main_rag",
                         path=document_id,
                         redacted=is_sensitive,
+                    )
+                )
+            if is_sensitive and not item.get("skip_restricted_rag", False):
+                catalog.record_export(
+                    ExportRecord(
+                        document_id=document_id,
+                        destination="restricted_rag",
+                        path=document_id,
+                        redacted=False,
                     )
                 )
             if not item.get("skip_obsidian"):
