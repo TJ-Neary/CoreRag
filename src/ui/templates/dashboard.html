@@ -75,6 +75,10 @@
                 class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                 Archive
             </button>
+            <button id="tab-settings" onclick="switchTab('settings')"
+                class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                Settings
+            </button>
         </div>
 
         <div id="ingestion-view">
@@ -354,6 +358,90 @@
         </div>
     </div>
 </div>
+
+        <div id="settings-view" class="hidden">
+            <!-- Section A: Agent Management -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-white">Agent Access Control</h2>
+                    <button onclick="showAddAgentForm()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm">
+                        + Add Agent
+                    </button>
+                </div>
+                <div id="add-agent-form" class="hidden mb-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <div class="flex gap-3 items-end">
+                        <div class="flex-1">
+                            <label class="block text-xs text-gray-400 mb-1">Agent Name</label>
+                            <input type="text" id="new-agent-name" placeholder="e.g., kendra"
+                                class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                            <p class="text-xs text-gray-500 mt-1">Letters, numbers, hyphens, underscores only</p>
+                        </div>
+                        <button onclick="createAgent()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded text-sm">Create</button>
+                        <button onclick="hideAddAgentForm()" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded text-sm">Cancel</button>
+                    </div>
+                    <div id="new-agent-key" class="hidden mt-3 bg-yellow-900/30 border border-yellow-700 rounded p-3">
+                        <p class="text-yellow-300 text-sm font-medium">Save this API key — it won't be shown again:</p>
+                        <div class="flex gap-2 mt-2">
+                            <code id="new-agent-key-value" class="bg-gray-900 px-3 py-1 rounded text-green-400 text-sm flex-1"></code>
+                            <button onclick="copyAgentKey()" class="bg-gray-700 text-gray-300 px-3 py-1 rounded text-sm">Copy</button>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">Add to the agent's environment: CORERAG_API_KEY=&lt;key&gt;</p>
+                    </div>
+                </div>
+                <div id="agent-list" class="space-y-2"></div>
+            </div>
+
+            <!-- Section B: LLM Configuration -->
+            <div class="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-semibold text-white mb-4">LLM Configuration</h2>
+                <div id="restart-banner" class="hidden mb-4 bg-yellow-900/30 border border-yellow-700 rounded p-3">
+                    <p class="text-yellow-300 text-sm">Settings changed — restart server to apply.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Provider</label>
+                        <select id="llm-provider" onchange="llmConfigChanged()"
+                            class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                            <option value="">Auto-detect</option>
+                            <option value="ollama">Ollama (local)</option>
+                            <option value="claude-cli">Claude CLI</option>
+                            <option value="gemini-cli">Gemini CLI</option>
+                            <option value="gemini">Gemini API</option>
+                            <option value="anthropic">Anthropic API</option>
+                            <option value="codex-cli">Codex CLI</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Ollama Model</label>
+                        <select id="ollama-model" onchange="llmConfigChanged()"
+                            class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                        </select>
+                    </div>
+                </div>
+                <button onclick="saveLlmConfig()" class="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm">
+                    Save LLM Settings
+                </button>
+            </div>
+
+            <!-- Section C: Model Status -->
+            <div class="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-semibold text-white mb-4">Model Status</h2>
+                <div id="model-status-list" class="space-y-2"></div>
+            </div>
+
+            <!-- Section D: Database Management -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-semibold text-white mb-4">Database Management</h2>
+                <div id="db-stats-list" class="space-y-3"></div>
+                <div class="flex gap-2 mt-4">
+                    <button onclick="dbAction('optimize_main')" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded text-sm border border-gray-600">Optimize Main DB</button>
+                    <button onclick="dbAction('optimize_restricted')" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded text-sm border border-gray-600">Optimize Restricted DB</button>
+                    <button onclick="dbAction('backup')" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded text-sm border border-gray-600">Create Backup</button>
+                    <button onclick="dbAction('health_check')" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded text-sm border border-gray-600">Health Check</button>
+                </div>
+                <div id="db-action-result" class="hidden mt-3 p-3 bg-gray-900 rounded text-sm text-gray-300"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Chat FAB -->
@@ -409,20 +497,24 @@
         function switchTab(tab) {
             const ingestion = document.getElementById('ingestion-view');
             const archive = document.getElementById('archive-view');
+            const settings = document.getElementById('settings-view');
             const tabIng = document.getElementById('tab-ingestion');
             const tabArch = document.getElementById('tab-archive');
+            const tabSet = document.getElementById('tab-settings');
+
+            const activeClass = 'px-6 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-400';
+            const inactiveClass = 'px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200';
 
             ingestion.classList.toggle('hidden', tab !== 'ingestion');
             archive.classList.toggle('hidden', tab !== 'archive');
+            settings.classList.toggle('hidden', tab !== 'settings');
 
-            tabIng.className = tab === 'ingestion'
-                ? 'px-6 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-400'
-                : 'px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200';
-            tabArch.className = tab === 'archive'
-                ? 'px-6 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-400'
-                : 'px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200';
+            tabIng.className = tab === 'ingestion' ? activeClass : inactiveClass;
+            tabArch.className = tab === 'archive' ? activeClass : inactiveClass;
+            tabSet.className = tab === 'settings' ? activeClass : inactiveClass;
 
             if (tab === 'archive') loadArchiveView();
+            if (tab === 'settings') loadSettingsView();
         }
 
         // ── Archive Manager State ──
@@ -1955,6 +2047,360 @@
 
             sendBtn.disabled = false;
             sendBtn.textContent = 'Send';
+        }
+
+        // ── Settings Tab ──────────────────────────────────────────────────
+
+        let settingsLlmOriginal = {};
+
+        async function loadSettingsView() {
+            try {
+                const resp = await fetch('/api/settings');
+                const data = await resp.json();
+
+                renderAgentList(data.settings?.agents || {});
+                renderLlmConfig(data.settings?.llm || {});
+                if (data.restart_required) {
+                    document.getElementById('restart-banner').classList.remove('hidden');
+                } else {
+                    document.getElementById('restart-banner').classList.add('hidden');
+                }
+
+                loadModelStatus();
+                loadDbStats();
+                loadOllamaModels();
+            } catch (e) {
+                console.error('Failed to load settings:', e);
+            }
+        }
+
+        function renderAgentList(agents) {
+            const container = document.getElementById('agent-list');
+            container.textContent = '';
+            for (const [name, config] of Object.entries(agents)) {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 rounded-lg p-4 border border-gray-700';
+
+                // Header: name + revoke button
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-center mb-3';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'text-white font-medium';
+                nameEl.textContent = name;
+                header.appendChild(nameEl);
+
+                if (!name.startsWith('_')) {
+                    const revokeBtn = document.createElement('button');
+                    revokeBtn.className = 'text-red-400 hover:text-red-300 text-xs';
+                    revokeBtn.textContent = 'Revoke';
+                    revokeBtn.onclick = function() { revokeAgent(name); };
+                    header.appendChild(revokeBtn);
+                }
+                card.appendChild(header);
+
+                // Permission toggles grid
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-2 gap-2';
+                const perms = config.permissions || {};
+                for (const [perm, enabled] of Object.entries(perms)) {
+                    const row = document.createElement('label');
+                    row.className = 'flex items-center gap-2 cursor-pointer';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = enabled;
+                    cb.className = 'w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 ' +
+                        (perm === 'search_restricted' ? 'text-red-500' : 'text-blue-500');
+                    cb.onchange = function() { updatePermission(name, perm, cb.checked); };
+                    row.appendChild(cb);
+                    const label = document.createElement('span');
+                    label.className = 'text-xs text-gray-300';
+                    label.textContent = perm.replace(/_/g, ' ');
+                    row.appendChild(label);
+                    if (perm === 'search_restricted') {
+                        const warn = document.createElement('span');
+                        warn.className = 'text-yellow-500 text-xs';
+                        warn.textContent = '\u26A0';
+                        warn.title = 'Unredacted PII \u2014 ensure local LLM only';
+                        row.appendChild(warn);
+                    }
+                    grid.appendChild(row);
+                }
+                card.appendChild(grid);
+                container.appendChild(card);
+            }
+            if (Object.keys(agents).length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-gray-500 text-sm';
+                empty.textContent = 'No agents configured. Click "+ Add Agent" to create one.';
+                container.appendChild(empty);
+            }
+        }
+
+        function showAddAgentForm() {
+            document.getElementById('add-agent-form').classList.remove('hidden');
+            document.getElementById('new-agent-key').classList.add('hidden');
+            document.getElementById('new-agent-name').value = '';
+            document.getElementById('new-agent-name').focus();
+        }
+
+        function hideAddAgentForm() {
+            document.getElementById('add-agent-form').classList.add('hidden');
+        }
+
+        async function createAgent() {
+            const name = document.getElementById('new-agent-name').value.trim();
+            if (!name) return;
+            try {
+                const resp = await fetch('/api/settings/agents', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: name})
+                });
+                const data = await resp.json();
+                if (data.error) { alert(data.error); return; }
+                // Show the one-time key
+                document.getElementById('new-agent-key').classList.remove('hidden');
+                document.getElementById('new-agent-key-value').textContent = data.api_key;
+                loadSettingsView();
+            } catch (e) {
+                console.error('Create agent failed:', e);
+            }
+        }
+
+        async function copyAgentKey() {
+            const key = document.getElementById('new-agent-key-value').textContent;
+            try {
+                await navigator.clipboard.writeText(key);
+            } catch (e) {
+                // Fallback for non-HTTPS contexts
+                const ta = document.createElement('textarea');
+                ta.value = key;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        }
+
+        async function updatePermission(agentName, permission, enabled) {
+            try {
+                const resp = await fetch('/api/settings/agents');
+                const data = await resp.json();
+                const agent = data.agents?.[agentName];
+                if (!agent) return;
+                const perms = {...agent.permissions, [permission]: enabled};
+                await fetch('/api/settings/agents/' + encodeURIComponent(agentName), {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({permissions: perms})
+                });
+            } catch (e) {
+                console.error('Update permission failed:', e);
+            }
+        }
+
+        async function revokeAgent(name) {
+            if (!confirm('Revoke agent "' + name + '"? This cannot be undone.')) return;
+            try {
+                await fetch('/api/settings/agents/' + encodeURIComponent(name), {method: 'DELETE'});
+                loadSettingsView();
+            } catch (e) {
+                console.error('Revoke agent failed:', e);
+            }
+        }
+
+        // ── LLM Configuration ──
+
+        function renderLlmConfig(llm) {
+            settingsLlmOriginal = {...llm};
+            const providerSelect = document.getElementById('llm-provider');
+            if (llm.provider) {
+                providerSelect.value = llm.provider;
+            } else {
+                providerSelect.value = '';
+            }
+        }
+
+        function llmConfigChanged() {
+            const provider = document.getElementById('llm-provider').value;
+            const model = document.getElementById('ollama-model').value;
+            const changed = provider !== (settingsLlmOriginal.provider || '') ||
+                            model !== (settingsLlmOriginal.ollama_model || '');
+            document.getElementById('restart-banner').classList.toggle('hidden', !changed);
+        }
+
+        async function saveLlmConfig() {
+            const provider = document.getElementById('llm-provider').value;
+            const model = document.getElementById('ollama-model').value;
+            try {
+                const resp = await fetch('/api/settings/llm', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider: provider, ollama_model: model})
+                });
+                const data = await resp.json();
+                if (data.error) { alert(data.error); return; }
+                settingsLlmOriginal = {provider: provider, ollama_model: model};
+                document.getElementById('restart-banner').classList.remove('hidden');
+            } catch (e) {
+                console.error('Save LLM config failed:', e);
+            }
+        }
+
+        async function loadOllamaModels() {
+            const select = document.getElementById('ollama-model');
+            select.textContent = '';
+            try {
+                const resp = await fetch('/api/settings/ollama-models');
+                const data = await resp.json();
+                const models = data.models || [];
+                for (const m of models) {
+                    const opt = document.createElement('option');
+                    opt.value = m.name;
+                    opt.textContent = m.name + (m.size ? ' (' + m.size + ')' : '');
+                    select.appendChild(opt);
+                }
+                // Select current model
+                if (settingsLlmOriginal.ollama_model) {
+                    select.value = settingsLlmOriginal.ollama_model;
+                }
+            } catch (e) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Ollama not available';
+                select.appendChild(opt);
+            }
+        }
+
+        // ── Model Status ──
+
+        async function loadModelStatus() {
+            const container = document.getElementById('model-status-list');
+            container.textContent = '';
+            try {
+                const resp = await fetch('/api/settings/model-status');
+                const data = await resp.json();
+                const models = data.models || [];
+                for (const m of models) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between bg-gray-700 rounded p-3';
+
+                    const left = document.createElement('div');
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'text-white text-sm font-medium';
+                    nameEl.textContent = m.name;
+                    left.appendChild(nameEl);
+
+                    const roleEl = document.createElement('span');
+                    roleEl.className = 'text-gray-400 text-xs ml-2';
+                    roleEl.textContent = m.role || '';
+                    left.appendChild(roleEl);
+                    row.appendChild(left);
+
+                    const badge = document.createElement('span');
+                    badge.className = m.status === 'loaded'
+                        ? 'text-xs px-2 py-1 rounded bg-green-900 text-green-300'
+                        : m.status === 'available'
+                        ? 'text-xs px-2 py-1 rounded bg-blue-900 text-blue-300'
+                        : 'text-xs px-2 py-1 rounded bg-gray-600 text-gray-400';
+                    badge.textContent = m.status || 'unknown';
+                    row.appendChild(badge);
+
+                    container.appendChild(row);
+                }
+                if (models.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.className = 'text-gray-500 text-sm';
+                    empty.textContent = 'No model status available.';
+                    container.appendChild(empty);
+                }
+            } catch (e) {
+                const err = document.createElement('p');
+                err.className = 'text-red-400 text-sm';
+                err.textContent = 'Failed to load model status.';
+                container.appendChild(err);
+            }
+        }
+
+        // ── Database Management ──
+
+        async function loadDbStats() {
+            const container = document.getElementById('db-stats-list');
+            container.textContent = '';
+            try {
+                const resp = await fetch('/api/settings/db-stats');
+                const data = await resp.json();
+                const stats = data.databases || [];
+                for (const db of stats) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between bg-gray-700 rounded p-3';
+
+                    const left = document.createElement('div');
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'text-white text-sm font-medium';
+                    nameEl.textContent = db.name;
+                    left.appendChild(nameEl);
+                    row.appendChild(left);
+
+                    const right = document.createElement('div');
+                    right.className = 'flex gap-4 text-xs text-gray-400';
+
+                    if (db.child_chunks !== undefined) {
+                        const chunks = document.createElement('span');
+                        chunks.textContent = db.child_chunks + ' chunks';
+                        right.appendChild(chunks);
+                    }
+                    if (db.parent_chunks !== undefined) {
+                        const parents = document.createElement('span');
+                        parents.textContent = db.parent_chunks + ' parents';
+                        right.appendChild(parents);
+                    }
+                    if (db.size) {
+                        const size = document.createElement('span');
+                        size.textContent = db.size;
+                        right.appendChild(size);
+                    }
+
+                    row.appendChild(right);
+                    container.appendChild(row);
+                }
+                if (stats.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.className = 'text-gray-500 text-sm';
+                    empty.textContent = 'No database stats available.';
+                    container.appendChild(empty);
+                }
+            } catch (e) {
+                const err = document.createElement('p');
+                err.className = 'text-red-400 text-sm';
+                err.textContent = 'Failed to load database stats.';
+                container.appendChild(err);
+            }
+        }
+
+        async function dbAction(action) {
+            const resultDiv = document.getElementById('db-action-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.textContent = 'Running ' + action.replace(/_/g, ' ') + '...';
+            try {
+                const resp = await fetch('/api/settings/db-action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: action})
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    resultDiv.textContent = 'Error: ' + data.error;
+                    resultDiv.className = 'mt-3 p-3 bg-gray-900 rounded text-sm text-red-400';
+                } else {
+                    resultDiv.textContent = data.message || 'Action completed.';
+                    resultDiv.className = 'mt-3 p-3 bg-gray-900 rounded text-sm text-green-400';
+                    loadDbStats();
+                }
+            } catch (e) {
+                resultDiv.textContent = 'Network error.';
+                resultDiv.className = 'mt-3 p-3 bg-gray-900 rounded text-sm text-red-400';
+            }
         }
 
         // ── Keyboard Navigation & Bulk Operations ────────────────────────
