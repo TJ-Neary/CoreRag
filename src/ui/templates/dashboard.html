@@ -276,7 +276,84 @@
         </div>
         </div><!-- /ingestion-view -->
 
-        <div id="archive-view" class="hidden"></div>
+        <div id="archive-view" class="hidden">
+    <div class="flex gap-6">
+        <!-- Sidebar: Folder Tree -->
+        <div class="w-1/4 min-w-[200px]">
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 sticky top-4">
+                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Folders</h3>
+                <div id="archive-folder-tree" class="space-y-1"></div>
+            </div>
+        </div>
+
+        <!-- Main: Filter Bar + File List -->
+        <div class="flex-1">
+            <!-- Filter Bar -->
+            <div class="bg-gray-800 rounded-lg p-3 border border-gray-700 mb-4 flex items-center gap-3 flex-wrap">
+                <input type="text" id="archive-search" placeholder="Search files..."
+                    oninput="filterArchiveFiles()"
+                    class="w-48 px-3 py-1.5 rounded border border-gray-600 bg-gray-700 text-white text-sm focus:outline-none focus:border-blue-500">
+                <div id="archive-active-filters" class="flex gap-1 flex-wrap"></div>
+                <label class="flex items-center gap-1.5 cursor-pointer ml-auto">
+                    <input type="checkbox" id="archive-sensitive-toggle" onchange="filterArchiveFiles()"
+                        class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-red-500">
+                    <span class="text-xs text-gray-400">Sensitive only</span>
+                </label>
+                <span id="archive-file-count" class="text-xs text-gray-500"></span>
+            </div>
+
+            <!-- Bulk Actions (hidden until selection) -->
+            <div id="archive-bulk-bar" class="hidden mb-4 bg-blue-900/30 rounded-lg p-3 border border-blue-700 flex items-center gap-3">
+                <span id="archive-selected-text" class="text-sm text-blue-300"></span>
+                <button onclick="showColdStorageDialog()"
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm">
+                    Move to Cold Storage
+                </button>
+                <button onclick="bulkDeleteCatalog()"
+                    class="bg-red-900/50 hover:bg-red-800 text-red-300 px-3 py-1 rounded text-sm">
+                    Remove from Catalog
+                </button>
+            </div>
+
+            <!-- File List -->
+            <div id="archive-file-list" class="space-y-1"></div>
+
+            <!-- Cold Storage Dialog (hidden) -->
+            <div id="cold-storage-dialog" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 w-96 shadow-2xl">
+                    <h3 class="text-lg font-semibold text-white mb-4">Move to Cold Storage</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Storage Device</label>
+                            <select id="cold-device-select" onchange="coldDeviceChanged()"
+                                class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                                <option value="">Select device...</option>
+                            </select>
+                        </div>
+                        <div id="cold-new-device" class="hidden space-y-2">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Device Name</label>
+                                <input type="text" id="cold-device-name" placeholder="e.g., WD_Passport_2TB"
+                                    class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Destination Path</label>
+                                <input type="text" id="cold-device-path" placeholder="e.g., /Volumes/WD_Passport_2TB"
+                                    class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white text-sm">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button onclick="closeColdDialog()"
+                            class="px-4 py-2 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 text-sm">Cancel</button>
+                        <button onclick="executeColdMigration()"
+                            class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm">Move Files</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
     </div>
 
     <!-- Chat FAB -->
@@ -347,12 +424,291 @@
             if (tab === 'archive') loadArchiveView();
         }
 
-        // Placeholder for archive loading (Task 8)
-        function loadArchiveView() {
+        // ── Archive Manager State ──
+        let archiveData = [];
+        let archiveFilter = { category: null, search: '', sensitive: false };
+        let archiveSelected = new Set();
+
+        async function loadArchiveView() {
             const view = document.getElementById('archive-view');
-            if (!view.dataset.loaded) {
-                view.textContent = 'Archive manager loading...';
+            view.dataset.loaded = 'true';
+
+            // Load tree and files in parallel
+            const [treeResp, filesResp] = await Promise.all([
+                fetch('/api/catalog/folder-tree'),
+                fetch('/api/catalog')
+            ]);
+            const tree = await treeResp.json();
+            const files = await filesResp.json();
+            archiveData = files.documents || [];
+            renderFolderTree(tree);
+            renderArchiveFiles();
+        }
+
+        function renderFolderTree(tree) {
+            const container = document.getElementById('archive-folder-tree');
+            container.textContent = '';
+
+            // "All" item
+            const allBtn = document.createElement('button');
+            allBtn.className = 'w-full text-left px-2 py-1.5 rounded text-sm hover:bg-gray-700 ' +
+                (archiveFilter.category === null ? 'bg-gray-700 text-blue-400' : 'text-gray-300');
+            allBtn.textContent = 'All (' + tree.total + ')';
+            allBtn.onclick = function() { archiveFilter.category = null; loadArchiveView(); };
+            container.appendChild(allBtn);
+
+            // Category items
+            for (const cat of (tree.categories || [])) {
+                const btn = document.createElement('button');
+                btn.className = 'w-full text-left px-2 py-1.5 rounded text-sm hover:bg-gray-700 ' +
+                    (archiveFilter.category === cat.name ? 'bg-gray-700 text-blue-400' : 'text-gray-300');
+                const label = document.createTextNode(cat.name + ' (' + cat.count + ')');
+                btn.appendChild(label);
+                btn.onclick = function() { archiveFilter.category = cat.name; filterArchiveFiles(); renderFolderTree(tree); };
+                container.appendChild(btn);
             }
+
+            // Special items
+            if (tree.no_archive_path > 0) {
+                const noArch = document.createElement('div');
+                noArch.className = 'text-xs text-gray-500 mt-2 px-2';
+                noArch.textContent = 'No archive path: ' + tree.no_archive_path;
+                container.appendChild(noArch);
+            }
+            if (tree.offline > 0) {
+                const offlineEl = document.createElement('div');
+                offlineEl.className = 'text-xs text-yellow-600 mt-1 px-2';
+                offlineEl.textContent = '\u26A0 Offline: ' + tree.offline;
+                container.appendChild(offlineEl);
+            }
+        }
+
+        function renderArchiveFiles() {
+            const container = document.getElementById('archive-file-list');
+            container.textContent = '';
+            archiveSelected.clear();
+            updateBulkBar();
+
+            let filtered = archiveData;
+            if (archiveFilter.category) {
+                filtered = filtered.filter(function(d) { return d.category === archiveFilter.category; });
+            }
+            if (archiveFilter.sensitive) {
+                filtered = filtered.filter(function(d) { return d.is_sensitive; });
+            }
+            const search = (document.getElementById('archive-search')?.value || '').toLowerCase();
+            if (search) {
+                filtered = filtered.filter(function(d) {
+                    return (d.original_filename || '').toLowerCase().includes(search) ||
+                           (d.summary || '').toLowerCase().includes(search) ||
+                           (d.tags || '').toLowerCase().includes(search);
+                });
+            }
+
+            document.getElementById('archive-file-count').textContent = filtered.length + ' of ' + archiveData.length + ' documents';
+
+            for (const doc of filtered) {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-3 px-3 py-2 bg-gray-800 rounded border border-gray-700 hover:border-gray-600 cursor-pointer text-sm';
+                row.dataset.docId = doc.id;
+
+                // Checkbox
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-blue-500 flex-shrink-0';
+                cb.onclick = function(e) {
+                    e.stopPropagation();
+                    if (cb.checked) archiveSelected.add(doc.id);
+                    else archiveSelected.delete(doc.id);
+                    updateBulkBar();
+                };
+                row.appendChild(cb);
+
+                // Filename
+                const nameEl = document.createElement('span');
+                nameEl.className = 'text-white truncate flex-1 min-w-0';
+                nameEl.textContent = doc.original_filename || doc.id;
+                row.appendChild(nameEl);
+
+                // Category
+                const catEl = document.createElement('span');
+                catEl.className = 'text-gray-400 text-xs w-20 flex-shrink-0';
+                catEl.textContent = doc.category || '';
+                row.appendChild(catEl);
+
+                // Tags
+                const tagsEl = document.createElement('span');
+                tagsEl.className = 'text-gray-500 text-xs truncate w-40 flex-shrink-0';
+                tagsEl.textContent = (doc.tags || '').replace(/^,|,$/g, '').replace(/,/g, ', ');
+                row.appendChild(tagsEl);
+
+                // Year
+                const yearEl = document.createElement('span');
+                yearEl.className = 'text-purple-400 text-xs w-12 flex-shrink-0 text-right';
+                yearEl.textContent = doc.year || '';
+                row.appendChild(yearEl);
+
+                // Storage icon
+                const storageEl = document.createElement('span');
+                storageEl.className = 'text-xs flex-shrink-0 w-5 text-center';
+                if (!doc.storage_accessible) {
+                    storageEl.textContent = '\u26A0';
+                    storageEl.title = 'Offline \u2014 connect ' + (doc.storage_device || 'device') + ' to access';
+                    storageEl.className += ' text-yellow-500';
+                } else if (doc.storage_location === 'external_hd') {
+                    storageEl.textContent = '\uD83D\uDCBE';
+                    storageEl.title = 'External: ' + (doc.storage_device || '');
+                }
+                row.appendChild(storageEl);
+
+                // Sensitive badge
+                if (doc.is_sensitive) {
+                    const badge = document.createElement('span');
+                    badge.className = 'bg-red-900 text-red-200 text-xs px-1.5 py-0.5 rounded flex-shrink-0';
+                    badge.textContent = 'PII';
+                    row.appendChild(badge);
+                }
+
+                // Click to expand details
+                row.onclick = function() { toggleArchiveDetail(doc.id, row); };
+                container.appendChild(row);
+            }
+        }
+
+        function filterArchiveFiles() {
+            archiveFilter.sensitive = document.getElementById('archive-sensitive-toggle')?.checked || false;
+            renderArchiveFiles();
+        }
+
+        async function toggleArchiveDetail(docId, rowEl) {
+            const existing = rowEl.nextElementSibling;
+            if (existing && existing.classList.contains('archive-detail')) {
+                existing.remove();
+                return;
+            }
+            // Remove any other open details
+            document.querySelectorAll('.archive-detail').forEach(function(el) { el.remove(); });
+
+            const resp = await fetch('/api/catalog/' + docId);
+            const data = await resp.json();
+            const doc = data.document;
+            const exports = data.exports || [];
+
+            const detail = document.createElement('div');
+            detail.className = 'archive-detail bg-gray-900 rounded-b border border-t-0 border-gray-700 p-4 mb-1 text-sm';
+
+            const lines = [];
+            if (doc.summary) lines.push('Summary: ' + doc.summary);
+            if (doc.archive_path) lines.push('Archive: ' + doc.archive_path);
+            if (doc.file_size) lines.push('Size: ' + Math.round(doc.file_size / 1024) + ' KB');
+            if (doc.chunk_count) lines.push('Chunks: ' + doc.chunk_count);
+            if (doc.ingested_at) lines.push('Ingested: ' + doc.ingested_at.split('T')[0]);
+            if (exports.length > 0) {
+                lines.push('Exports: ' + exports.map(function(e) { return e.destination; }).join(', '));
+            }
+
+            for (const line of lines) {
+                const p = document.createElement('p');
+                p.className = 'text-gray-400 mb-1';
+                p.textContent = line;
+                detail.appendChild(p);
+            }
+
+            rowEl.after(detail);
+        }
+
+        function updateBulkBar() {
+            const bar = document.getElementById('archive-bulk-bar');
+            const text = document.getElementById('archive-selected-text');
+            if (archiveSelected.size > 0) {
+                bar.classList.remove('hidden');
+                text.textContent = archiveSelected.size + ' files selected';
+            } else {
+                bar.classList.add('hidden');
+            }
+        }
+
+        // ── Cold Storage Dialog ──
+
+        async function showColdStorageDialog() {
+            if (archiveSelected.size === 0) return;
+            const dialog = document.getElementById('cold-storage-dialog');
+            const select = document.getElementById('cold-device-select');
+
+            // Load known devices
+            const resp = await fetch('/api/catalog/devices');
+            const data = await resp.json();
+
+            // Clear and rebuild select options
+            select.textContent = '';
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = 'Select device...';
+            select.appendChild(defaultOpt);
+
+            for (const dev of (data.devices || [])) {
+                const opt = document.createElement('option');
+                opt.value = dev.device;
+                opt.textContent = dev.device + ' (' + dev.file_count + ' files)';
+                select.appendChild(opt);
+            }
+
+            const newOpt = document.createElement('option');
+            newOpt.value = '__new__';
+            newOpt.textContent = '+ New location...';
+            select.appendChild(newOpt);
+
+            dialog.classList.remove('hidden');
+        }
+
+        function coldDeviceChanged() {
+            const val = document.getElementById('cold-device-select').value;
+            document.getElementById('cold-new-device').classList.toggle('hidden', val !== '__new__');
+        }
+
+        function closeColdDialog() {
+            document.getElementById('cold-storage-dialog').classList.add('hidden');
+        }
+
+        async function executeColdMigration() {
+            const selectVal = document.getElementById('cold-device-select').value;
+            let deviceName = selectVal;
+            let destPath = '';
+
+            if (selectVal === '__new__') {
+                deviceName = document.getElementById('cold-device-name').value.trim();
+                destPath = document.getElementById('cold-device-path').value.trim();
+            } else {
+                // For known devices, we need the path
+                destPath = prompt('Enter the base path for ' + deviceName + ' (e.g., /Volumes/' + deviceName + '):');
+            }
+
+            if (!deviceName || !destPath) {
+                alert('Device name and path are required.');
+                return;
+            }
+
+            const ids = Array.from(archiveSelected);
+            const resp = await fetch('/api/catalog/cold-storage', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ doc_ids: ids, device_name: deviceName, destination_root: destPath })
+            });
+            const result = await resp.json();
+
+            closeColdDialog();
+            const msg = 'Moved ' + result.succeeded.length + ' files.' +
+                (result.failed.length > 0 ? ' ' + result.failed.length + ' failed.' : '');
+            alert(msg);
+            loadArchiveView();  // Refresh
+        }
+
+        async function bulkDeleteCatalog() {
+            if (!confirm('Remove ' + archiveSelected.size + ' documents from catalog? (Files are not deleted from disk)')) return;
+            for (const docId of archiveSelected) {
+                await fetch('/api/catalog/' + docId, { method: 'DELETE' });
+            }
+            loadArchiveView();
         }
 
         // ── Skip File ───────────────────────────────────────────────────
