@@ -28,7 +28,23 @@ def export_to_vault(
 
     # Metadata for YAML
     category = metadata.get("category", "Unsorted")
-    summary = metadata.get("summary", "No summary provided.").replace('"', '\\"')
+    summary = metadata.get("summary", "").replace('"', '\\"')
+    if not summary:
+        summary = "No summary available."
+    is_sensitive = metadata.get("is_sensitive", False)
+
+    # Build tag list: category + type + year + LLM collection tags
+    tags = [category, doc_type, year]
+    collection_tags = metadata.get("tags", [])
+    if isinstance(collection_tags, str):
+        collection_tags = [t.strip() for t in collection_tags.split(",") if t.strip()]
+    for tag in collection_tags:
+        if tag not in tags:
+            tags.append(tag)
+    tags_yaml = "\n".join(f"  - {t}" for t in tags if t and t != "Unknown")
+
+    # Content heading — only say "Redacted" if actually sensitive
+    content_heading = "Content (Redacted)" if is_sensitive else "Content"
 
     # YAML Frontmatter
     note_content = f"""---
@@ -37,10 +53,9 @@ original_filename: "{original_filename}"
 category: "{category}"
 type: "{doc_type}"
 year: "{year}"
+is_sensitive: {str(is_sensitive).lower()}
 tags:
-  - {category}
-  - {doc_type}
-  - {year}
+{tags_yaml}
 ---
 
 # {original_filename}
@@ -50,7 +65,7 @@ tags:
 
 ---
 
-## Content (Redacted)
+## {content_heading}
 {redacted_text}
 """
 

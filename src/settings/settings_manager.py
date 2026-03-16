@@ -97,7 +97,7 @@ class SettingsManager:
 
     def __init__(self, settings_path: Path | None = None) -> None:
         self._path: Path = settings_path or SETTINGS_PATH
-        self._data: dict[str, Any] = {}
+        self._data: dict[str, Any] | None = None
         self._mtime: float = 0.0
         self._key_cache: dict[str, str] = {}  # api_key_value → agent_name
 
@@ -217,6 +217,11 @@ class SettingsManager:
         if name not in agents:
             raise KeyError(f"Agent '{name}' not found.")
 
+        # Validate permission keys — reject unknown keys to prevent future exploits
+        invalid_keys = set(permissions.keys()) - set(DEFAULT_PERMISSIONS.keys())
+        if invalid_keys:
+            raise ValueError(f"Unknown permission keys: {invalid_keys}")
+
         current_perms = agents[name].setdefault("permissions", {})
         current_perms.update(permissions)
         self.save()
@@ -288,7 +293,7 @@ class SettingsManager:
 
     def _ensure_loaded(self) -> None:
         """Reload settings if the file has been modified since last load."""
-        if not self._data:
+        if self._data is None:
             self.load()
             return
         if self._path.exists():

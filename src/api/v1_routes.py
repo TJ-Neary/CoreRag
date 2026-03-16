@@ -779,7 +779,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
                 if table_name in db.table_names():
                     tbl = db.open_table(table_name)
                     # Count matching rows before delete (cheaper than counting all rows twice)
-                    matching = tbl.count_rows(f"document_id = '{document_id}'")
+                    matching = tbl.count_rows(doc_filter)
                     tbl.delete(doc_filter)
                     deleted[table_name] = matching
 
@@ -940,7 +940,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
                     for table_name in ["parent_chunks", "child_chunks"]:
                         if table_name in db.table_names():
                             tbl = db.open_table(table_name)
-                            matching = tbl.count_rows(f"document_id = '{doc_id}'")
+                            matching = tbl.count_rows(doc_filter)
                             tbl.delete(doc_filter)
                             deleted[table_name] = matching
 

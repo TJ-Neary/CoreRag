@@ -354,6 +354,10 @@ def execute_approved_item(item_id: str):
         # Log any human corrections for AI learning
         log_correction(item)
 
+        # NOTE: Status set to "completed" BEFORE catalog registration intentionally.
+        # Catalog failure should not block a successful commit. If catalog registration
+        # fails, the doc is still in RAG + archive + vault — just missing from the catalog.
+        # The catalog can be rebuilt from LanceDB via scripts/rebuild_catalog.py.
         update_item(item_id, {"status": "completed"})
 
         # Post-commit integrity validation

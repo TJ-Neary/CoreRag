@@ -153,15 +153,14 @@ class CoreRagTools:
         """
         import time
 
-        # Permission check — restricted scope requires search_restricted
-        if search_scope == "restricted":
+        # Permission check — restricted or all scope requires search_restricted
+        if search_scope in ("restricted", "all"):
             denied = self._check_permission("search_restricted")
             if denied:
                 return denied
-        else:
-            denied = self._check_permission("search_main")
-            if denied:
-                return denied
+        denied = self._check_permission("search_main")
+        if denied:
+            return denied
 
         start_time = time.time()
 
