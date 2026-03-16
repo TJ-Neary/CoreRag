@@ -55,6 +55,9 @@ if _vault_paths_raw:
 
 STATE_DIR = Path(os.getenv("CORERAG_STATE_DIR", str(Path.home() / ".corerag")))
 DB_PATH = Path(os.getenv("CORERAG_DB_PATH", str(STATE_DIR / "lancedb")))
+RESTRICTED_DB_PATH = Path(
+    os.getenv("CORERAG_RESTRICTED_DB_PATH", str(STATE_DIR / "lancedb-restricted"))
+)
 QUEUE_DIR = STATE_DIR / "queue"
 CHECKPOINT_DIR = STATE_DIR / "checkpoints"
 HEALTH_DIR = STATE_DIR / "health"

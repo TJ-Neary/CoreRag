@@ -30,6 +30,7 @@ class ParentChunk:
     section_title: Optional[str] = None
     token_count: int = 0
     metadata: dict = field(default_factory=dict)
+    catalog_id: str = ""  # Cross-DB identifier from SQLite catalog
 
     def to_dict(self) -> dict:
         return {
@@ -56,6 +57,7 @@ class ChildChunk:
     end_char: int
     chunk_index: int
     embedding: Optional[List[float]] = None
+    catalog_id: str = ""  # Cross-DB identifier from SQLite catalog
 
     def to_dict(self) -> dict:
         result = {
@@ -491,6 +493,8 @@ def create_parent_child_tables(db) -> Tuple:
             # Phase 0 additions
             pa.field("content_hash", pa.string()),
             pa.field("summary", pa.string()),
+            # P8 dual-RAG additions
+            pa.field("catalog_id", pa.string()),
         ]
     )
 
@@ -511,6 +515,8 @@ def create_parent_child_tables(db) -> Tuple:
             pa.field("source_authority", pa.string()),
             pa.field("date_extracted", pa.string()),
             pa.field("date_confidence", pa.float32()),
+            # P8 dual-RAG additions
+            pa.field("catalog_id", pa.string()),
         ]
     )
 
