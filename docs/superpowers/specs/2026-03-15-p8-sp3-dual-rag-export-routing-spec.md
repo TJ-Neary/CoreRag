@@ -257,7 +257,19 @@ catalog.update(doc_id, restricted_rag_doc_id=doc_id)
 
 **Why deferred to SP5:** Requires RBAC enforcement to be meaningful. Without role checks, any toggle would be a UI-only safety measure. SP5 wires the full security chain: role → scope → provider check → access.
 
-### 7d. Update TD-002 When SP5 Begins
+### 7d. Dashboard System/Database Management Panel
+
+**What:** Database status and management actions accessible from the dashboard UI (not from the menu bar icon — the menu icon stays simple: server status + open dashboard).
+
+**Features:**
+- Database status display: main DB (chunk count, size, last optimized) + restricted DB (chunk count, size)
+- Actions: "Optimize Main DB" / "Optimize Restricted DB" / "Backup Both" / "Run Health Check"
+- Quick stats: total documents, sensitive count, offline count
+- Could live in the Settings tab (SP5) or as a "System" section in the existing dashboard
+
+**Why deferred:** SP3 builds the restricted database. The management UI should come after both databases are operational and there's real data to manage. Settings tab (SP5) is the natural home since it will also have agent access controls and role management.
+
+### 7e. Update TD-002 When SP5 Begins
 
 TD-002 currently describes the RBAC scaffold and wiring plan. When SP5 begins, update TD-002 with:
 - The `search_scope` parameter (from SP3) and how RBAC should default it per role
