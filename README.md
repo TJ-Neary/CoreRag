@@ -51,6 +51,7 @@ A local-first, privacy-preserving knowledge engine with semantic search, exposed
 - **Rate-Limited REST API**: Authenticated v1 endpoints with slowapi
 - **MCP Server**: Full tool suite for Claude Desktop integration
 - **Memory Safety**: Auto-pause at high RAM usage, GC between files
+- **Security Hardening**: CSRF protection, XSS escaping, PII redaction fail-safe, asyncio.to_thread for blocking I/O, LanceDB connection caching, thread-safe embedding singleton, OrderedDict LRU cache
 
 ## Quick Start
 
