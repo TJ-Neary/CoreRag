@@ -15,6 +15,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -167,6 +168,7 @@ async def check_permissions(request: Request) -> dict[str, bool]:
             # Open mode: localhost trust, full permissions
             request.state.agent_name = "_open"
             perms: dict[str, bool] = {p: True for p in DEFAULT_PERMISSIONS}
+            perms["search_restricted"] = False  # Must be explicitly configured
             request.state.permissions = perms
             return perms
         raise HTTPException(status_code=401, detail="API key required")
@@ -187,6 +189,9 @@ validate_config()
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "ui" / "templates"))
+
+# Serve bundled UI assets (e.g. Tailwind) from ui/static/ at /static/
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "ui" / "static")), name="static")
 
 # Shared state
 _batch = BatchProcessor()

@@ -311,11 +311,16 @@ class SettingsManager:
         if "_legacy" in agents:
             return
 
+        perms = {perm: True for perm in DEFAULT_PERMISSIONS}
+        perms["search_restricted"] = False  # Must be explicitly enabled
         agents["_legacy"] = {
             "api_key_env": "CORERAG_API_KEY",
-            "permissions": {perm: True for perm in DEFAULT_PERMISSIONS},
+            "permissions": perms,
         }
-        logger.info("Migrated legacy CORERAG_API_KEY to _legacy agent.")
+        logger.warning(
+            "Migrated legacy CORERAG_API_KEY to _legacy agent with search_restricted=False. "
+            "Review permissions in the Settings tab."
+        )
         self.save()
 
     @staticmethod
