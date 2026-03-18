@@ -89,7 +89,7 @@ def _redact_pii(text: str, file_name: str, detection_overrides: list[dict] | Non
         raise
     except Exception as e:
         logger.error(f"PII redaction failed for {file_name}: {e}", exc_info=True)
-        return text  # Fall back to original text rather than blocking
+        raise ProcessingError(f"PII redaction failed for {file_name}: {e}") from e
 
 
 def _index_in_rag(text: str, file_name: str, metadata: dict, catalog_id: str = "") -> None:

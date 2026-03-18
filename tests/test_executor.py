@@ -82,16 +82,32 @@ class TestRedactPII:
     @patch("src.utils.privacy_audit.PrivacyScanner")
     @patch("src.utils.privacy_audit.load_custom_pii_terms")
     @patch("src.utils.privacy_audit.scan_custom_terms")
-    def test_returns_original_on_error(self, mock_custom_scan, mock_load_terms, mock_scanner_class):
-        """Test that errors fall back to original text."""
+    def test_raises_processing_error_on_scanner_failure(
+        self, mock_custom_scan, mock_load_terms, mock_scanner_class
+    ):
+        """TD-025: PII redaction must raise ProcessingError on failure, not silently return unredacted text."""
+        from src.exceptions import ProcessingError
         from src.executor import _redact_pii
 
         mock_scanner_class.side_effect = Exception("Scanner failed")
 
-        text = "Original text"
-        result = _redact_pii(text, "test.txt")
+        with pytest.raises(ProcessingError, match="PII redaction failed"):
+            _redact_pii("Original text", "test.txt")
 
-        assert result == text
+    def test_redact_pii_raises_on_presidio_failure(self):
+        """TD-025: PII redaction must NOT silently return unredacted text on failure."""
+        from unittest.mock import MagicMock, patch
+
+        from src.exceptions import ProcessingError
+        from src.executor import _redact_pii
+
+        with patch("src.utils.privacy_audit.PrivacyScanner") as mock_scanner_cls:
+            mock_scanner = MagicMock()
+            mock_scanner.scan.side_effect = RuntimeError("spaCy model failed to load")
+            mock_scanner_cls.return_value = mock_scanner
+
+            with pytest.raises(ProcessingError, match="PII redaction failed"):
+                _redact_pii("Text with SSN 123-45-6789", "test_doc.pdf")
 
 
 class TestIndexInRAG:
