@@ -57,8 +57,8 @@ _commit_state: dict[str, Any] = {
     "paused_reason": "",
 }
 _commit_lock = threading.Lock()
-_commit_pause_requested = False
-_commit_stop_requested = False
+_commit_pause_event = threading.Event()
+_commit_stop_event = threading.Event()
 
 
 def _get_memory_pct() -> float:
@@ -67,10 +67,9 @@ def _get_memory_pct() -> float:
 
 def _wait_for_safe_memory() -> None:
     """Block until memory drops below resume threshold or stop is requested."""
-    global _commit_stop_requested
     while _get_memory_pct() > BATCH_MEMORY_RESUME_PCT:
         with _commit_lock:
-            if _commit_stop_requested:
+            if _commit_stop_event.is_set():
                 return
             _commit_state["status"] = "paused"
             _commit_state["paused_reason"] = (
@@ -88,9 +87,8 @@ def _wait_for_safe_memory() -> None:
 
 def _run_commit(item_ids: list[str]) -> None:
     """Process approved items sequentially with memory safety."""
-    global _commit_pause_requested, _commit_stop_requested
-    _commit_pause_requested = False
-    _commit_stop_requested = False
+    _commit_pause_event.clear()
+    _commit_stop_event.clear()
 
     with _commit_lock:
         _commit_state.update(
@@ -125,7 +123,7 @@ def _run_commit(item_ids: list[str]) -> None:
     for i, item_id in enumerate(item_ids):
         # Check for stop
         with _commit_lock:
-            if _commit_stop_requested:
+            if _commit_stop_event.is_set():
                 _commit_state["status"] = "stopped"
                 _commit_state["current_file"] = ""
                 _commit_state["paused_reason"] = (
@@ -135,7 +133,7 @@ def _run_commit(item_ids: list[str]) -> None:
                 return
 
         # Check for user pause
-        while _commit_pause_requested and not _commit_stop_requested:
+        while _commit_pause_event.is_set() and not _commit_stop_event.is_set():
             with _commit_lock:
                 _commit_state["status"] = "paused"
                 _commit_state["paused_reason"] = "Paused by user"
@@ -144,7 +142,7 @@ def _run_commit(item_ids: list[str]) -> None:
 
         # Re-check stop after pause
         with _commit_lock:
-            if _commit_stop_requested:
+            if _commit_stop_event.is_set():
                 _commit_state["status"] = "stopped"
                 _commit_state["current_file"] = ""
                 _commit_state["paused_reason"] = (
@@ -598,21 +596,18 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
 
     @router.post("/api/commit-pause")
     async def commit_pause() -> dict:
-        global _commit_pause_requested
-        _commit_pause_requested = True
+        _commit_pause_event.set()
         return {"status": "paused"}
 
     @router.post("/api/commit-resume")
     async def commit_resume() -> dict:
-        global _commit_pause_requested
-        _commit_pause_requested = False
+        _commit_pause_event.clear()
         return {"status": "resumed"}
 
     @router.post("/api/commit-stop")
     async def commit_stop() -> dict:
-        global _commit_stop_requested, _commit_pause_requested
-        _commit_stop_requested = True
-        _commit_pause_requested = False
+        _commit_stop_event.set()
+        _commit_pause_event.clear()
         return {"status": "stopped"}
 
     # ── Folder Structure Routes ───────────────────────────────────────────
