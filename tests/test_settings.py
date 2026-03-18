@@ -266,7 +266,7 @@ def test_delete_special_agent_rejected(tmp_path: Path) -> None:
 
 
 def test_legacy_migration(tmp_path: Path) -> None:
-    """CORERAG_API_KEY in env → creates _legacy agent with all perms True."""
+    """CORERAG_API_KEY in env → creates _legacy agent with search_restricted=False (TD-042)."""
     settings_file = tmp_path / "settings.yaml"
 
     with patch.dict(os.environ, {"CORERAG_API_KEY": "legacy-secret-key-123"}):
@@ -276,9 +276,12 @@ def test_legacy_migration(tmp_path: Path) -> None:
     agent = mgr.get_agent("_legacy")
     assert agent is not None
     assert agent["api_key_env"] == "CORERAG_API_KEY"
-    # All permissions granted for legacy key
+    # All permissions granted EXCEPT search_restricted (TD-042: must be explicitly enabled)
     for perm in DEFAULT_PERMISSIONS:
-        assert agent["permissions"][perm] is True
+        if perm == "search_restricted":
+            assert agent["permissions"][perm] is False, "search_restricted must default to False"
+        else:
+            assert agent["permissions"][perm] is True
 
 
 def test_legacy_migration_skips_if_exists(tmp_path: Path) -> None:
