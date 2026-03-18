@@ -86,60 +86,61 @@ class CatalogManager:
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id TEXT PRIMARY KEY,
-                    original_filename TEXT NOT NULL,
-                    original_path TEXT,
-                    archive_path TEXT,
-                    main_rag_doc_id TEXT,
-                    restricted_rag_doc_id TEXT,
-                    obsidian_path TEXT,
-                    category TEXT,
-                    year TEXT,
-                    tags TEXT,
-                    is_sensitive INTEGER DEFAULT 0,
-                    summary TEXT,
-                    file_type TEXT,
-                    file_size INTEGER,
-                    chunk_count INTEGER DEFAULT 0,
-                    parent_count INTEGER DEFAULT 0,
-                    batch_id TEXT,
-                    ingested_at TEXT,
-                    updated_at TEXT,
-                    status TEXT DEFAULT 'active',
-                    storage_location TEXT DEFAULT 'local',
-                    storage_device TEXT,
-                    storage_accessible INTEGER DEFAULT 1
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS documents (
+                        id TEXT PRIMARY KEY,
+                        original_filename TEXT NOT NULL,
+                        original_path TEXT,
+                        archive_path TEXT,
+                        main_rag_doc_id TEXT,
+                        restricted_rag_doc_id TEXT,
+                        obsidian_path TEXT,
+                        category TEXT,
+                        year TEXT,
+                        tags TEXT,
+                        is_sensitive INTEGER DEFAULT 0,
+                        summary TEXT,
+                        file_type TEXT,
+                        file_size INTEGER,
+                        chunk_count INTEGER DEFAULT 0,
+                        parent_count INTEGER DEFAULT 0,
+                        batch_id TEXT,
+                        ingested_at TEXT,
+                        updated_at TEXT,
+                        status TEXT DEFAULT 'active',
+                        storage_location TEXT DEFAULT 'local',
+                        storage_device TEXT,
+                        storage_accessible INTEGER DEFAULT 1
+                    )
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS document_exports (
+                        document_id TEXT,
+                        destination TEXT,
+                        path TEXT,
+                        exported_at TEXT,
+                        redacted INTEGER,
+                        FOREIGN KEY (document_id) REFERENCES documents(id)
+                    )
+                """)
+
+                # Indices for common queries
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_docs_category ON documents(category)"
                 )
-            """)
-
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS document_exports (
-                    document_id TEXT,
-                    destination TEXT,
-                    path TEXT,
-                    exported_at TEXT,
-                    redacted INTEGER,
-                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status)")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_docs_sensitive ON documents(is_sensitive)"
                 )
-            """)
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_exports_doc_id ON document_exports(document_id)"
+                )
 
-            # Indices for common queries
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_docs_category ON documents(category)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status)")
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_docs_sensitive ON documents(is_sensitive)"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_exports_doc_id ON document_exports(document_id)"
-            )
-
-            conn.commit()
-            conn.close()
+                conn.commit()
             logger.info("Catalog database initialized at %s", self.db_path)
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to initialize catalog database: {e}") from e
@@ -207,48 +208,47 @@ class CatalogManager:
             tags_normalized = f",{tags_normalized},"
 
         try:
-            conn = self._get_conn()
-            conn.execute(
-                """
-                INSERT INTO documents (
-                    id, original_filename, original_path, archive_path,
-                    main_rag_doc_id, restricted_rag_doc_id, obsidian_path,
-                    category, year, tags, is_sensitive, summary,
-                    file_type, file_size, chunk_count, parent_count,
-                    batch_id, ingested_at, updated_at, status,
-                    storage_location, storage_device, storage_accessible
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO documents (
+                        id, original_filename, original_path, archive_path,
+                        main_rag_doc_id, restricted_rag_doc_id, obsidian_path,
+                        category, year, tags, is_sensitive, summary,
+                        file_type, file_size, chunk_count, parent_count,
+                        batch_id, ingested_at, updated_at, status,
+                        storage_location, storage_device, storage_accessible
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        record.id,
+                        record.original_filename,
+                        record.original_path,
+                        record.archive_path,
+                        record.main_rag_doc_id,
+                        record.restricted_rag_doc_id,
+                        record.obsidian_path,
+                        record.category,
+                        record.year,
+                        tags_normalized,
+                        int(record.is_sensitive),
+                        record.summary,
+                        record.file_type,
+                        record.file_size,
+                        record.chunk_count,
+                        record.parent_count,
+                        record.batch_id,
+                        record.ingested_at,
+                        record.updated_at,
+                        record.status,
+                        record.storage_location,
+                        record.storage_device,
+                        int(record.storage_accessible),
+                    ),
                 )
-                """,
-                (
-                    record.id,
-                    record.original_filename,
-                    record.original_path,
-                    record.archive_path,
-                    record.main_rag_doc_id,
-                    record.restricted_rag_doc_id,
-                    record.obsidian_path,
-                    record.category,
-                    record.year,
-                    tags_normalized,
-                    int(record.is_sensitive),
-                    record.summary,
-                    record.file_type,
-                    record.file_size,
-                    record.chunk_count,
-                    record.parent_count,
-                    record.batch_id,
-                    record.ingested_at,
-                    record.updated_at,
-                    record.status,
-                    record.storage_location,
-                    record.storage_device,
-                    int(record.storage_accessible),
-                ),
-            )
-            conn.commit()
-            conn.close()
+                conn.commit()
             logger.info("Registered document %s: %s", record.id, record.original_filename)
             return record.id
         except sqlite3.Error as e:
@@ -263,10 +263,8 @@ class CatalogManager:
         Returns:
             DocumentRecord if found, None otherwise.
         """
-        conn = self._get_conn()
-        row = conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
-        conn.close()
-
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_record(row)
@@ -337,11 +335,10 @@ class CatalogManager:
         query = "UPDATE documents SET " + set_clause + " WHERE id = ?"
 
         try:
-            conn = self._get_conn()
-            cursor = conn.execute(query, values)  # nosemgrep: sqlalchemy-execute-raw-query
-            conn.commit()
-            updated = cursor.rowcount > 0
-            conn.close()
+            with self._get_conn() as conn:
+                cursor = conn.execute(query, values)  # nosemgrep: sqlalchemy-execute-raw-query
+                conn.commit()
+                updated = cursor.rowcount > 0
             if updated:
                 logger.info("Updated document %s: %s", document_id, list(kwargs.keys()))
             return updated
@@ -407,14 +404,10 @@ class CatalogManager:
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         # Safe: conditions are hardcoded strings, all user values use parameterized ?.
-        query = (
-            f"SELECT * FROM documents WHERE {where_clause} ORDER BY ingested_at DESC"  # noqa: S608
-        )
+        query = f"SELECT * FROM documents WHERE {where_clause} ORDER BY ingested_at DESC"  # noqa: S608
 
-        conn = self._get_conn()
-        rows = conn.execute(query, params).fetchall()  # nosemgrep: sqlalchemy-execute-raw-query
-        conn.close()
-
+        with self._get_conn() as conn:
+            rows = conn.execute(query, params).fetchall()  # nosemgrep: sqlalchemy-execute-raw-query
         return [self._row_to_record(row) for row in rows]
 
     def delete(self, document_id: str) -> bool:
@@ -443,23 +436,22 @@ class CatalogManager:
             export.exported_at = self._now()
 
         try:
-            conn = self._get_conn()
-            conn.execute(
-                """
-                INSERT INTO document_exports (
-                    document_id, destination, path, exported_at, redacted
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    export.document_id,
-                    export.destination,
-                    export.path,
-                    export.exported_at,
-                    int(export.redacted),
-                ),
-            )
-            conn.commit()
-            conn.close()
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO document_exports (
+                        document_id, destination, path, exported_at, redacted
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        export.document_id,
+                        export.destination,
+                        export.path,
+                        export.exported_at,
+                        int(export.redacted),
+                    ),
+                )
+                conn.commit()
             logger.info("Recorded export for %s to %s", export.document_id, export.destination)
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to record export for {export.document_id}: {e}") from e
@@ -473,13 +465,11 @@ class CatalogManager:
         Returns:
             List of ExportRecords for the document.
         """
-        conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM document_exports WHERE document_id = ? ORDER BY exported_at",
-            (document_id,),
-        ).fetchall()
-        conn.close()
-
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM document_exports WHERE document_id = ? ORDER BY exported_at",
+                (document_id,),
+            ).fetchall()
         return [
             ExportRecord(
                 document_id=row["document_id"],
@@ -498,51 +488,50 @@ class CatalogManager:
             Dictionary with counts by category, tag, sensitivity, status,
             and overall totals.
         """
-        conn = self._get_conn()
+        with self._get_conn() as conn:
+            # Total counts
+            total = conn.execute(
+                "SELECT COUNT(*) as count FROM documents WHERE status != 'deleted'"
+            ).fetchone()
+            total_count: int = total["count"] if total else 0
 
-        # Total counts
-        total = conn.execute(
-            "SELECT COUNT(*) as count FROM documents WHERE status != 'deleted'"
-        ).fetchone()
-        total_count: int = total["count"] if total else 0
+            # By category
+            category_rows = conn.execute("""
+                SELECT category, COUNT(*) as count FROM documents
+                WHERE status != 'deleted' AND category IS NOT NULL
+                GROUP BY category ORDER BY count DESC
+                """).fetchall()
+            by_category: dict[str, int] = {row["category"]: row["count"] for row in category_rows}
 
-        # By category
-        category_rows = conn.execute("""
-            SELECT category, COUNT(*) as count FROM documents
-            WHERE status != 'deleted' AND category IS NOT NULL
-            GROUP BY category ORDER BY count DESC
-            """).fetchall()
-        by_category: dict[str, int] = {row["category"]: row["count"] for row in category_rows}
+            # By status
+            status_rows = conn.execute(
+                "SELECT status, COUNT(*) as count FROM documents GROUP BY status ORDER BY count DESC"
+            ).fetchall()
+            by_status: dict[str, int] = {row["status"]: row["count"] for row in status_rows}
 
-        # By status
-        status_rows = conn.execute(
-            "SELECT status, COUNT(*) as count FROM documents GROUP BY status ORDER BY count DESC"
-        ).fetchall()
-        by_status: dict[str, int] = {row["status"]: row["count"] for row in status_rows}
+            # Sensitivity
+            sensitive_count_row = conn.execute(
+                "SELECT COUNT(*) as count FROM documents WHERE is_sensitive = 1 AND status != 'deleted'"
+            ).fetchone()
+            sensitive_count: int = sensitive_count_row["count"] if sensitive_count_row else 0
 
-        # Sensitivity
-        sensitive_count_row = conn.execute(
-            "SELECT COUNT(*) as count FROM documents WHERE is_sensitive = 1 AND status != 'deleted'"
-        ).fetchone()
-        sensitive_count: int = sensitive_count_row["count"] if sensitive_count_row else 0
+            # Tags — parse comma-delimited tags and count each unique tag
+            tag_rows = conn.execute(
+                "SELECT tags FROM documents WHERE status != 'deleted' AND tags IS NOT NULL"
+            ).fetchall()
+            tag_counts: dict[str, int] = {}
+            for row in tag_rows:
+                tags_str: str = row["tags"]
+                for tag in tags_str.split(","):
+                    tag = tag.strip()
+                    if tag:
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
-        # Tags — parse comma-delimited tags and count each unique tag
-        tag_rows = conn.execute(
-            "SELECT tags FROM documents WHERE status != 'deleted' AND tags IS NOT NULL"
-        ).fetchall()
-        tag_counts: dict[str, int] = {}
-        for row in tag_rows:
-            tags_str: str = row["tags"]
-            for tag in tags_str.split(","):
-                tag = tag.strip()
-                if tag:
-                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
-
-        # Total exports
-        export_count_row = conn.execute("SELECT COUNT(*) as count FROM document_exports").fetchone()
-        export_count: int = export_count_row["count"] if export_count_row else 0
-
-        conn.close()
+            # Total exports
+            export_count_row = conn.execute(
+                "SELECT COUNT(*) as count FROM document_exports"
+            ).fetchone()
+            export_count: int = export_count_row["count"] if export_count_row else 0
 
         return {
             "total_documents": total_count,
@@ -560,26 +549,27 @@ class CatalogManager:
             Dictionary with categories (name + count), no_archive_path count,
             offline count, and total active documents.
         """
-        conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT category, COUNT(*) as cnt FROM documents "
-            "WHERE status != 'deleted' GROUP BY category ORDER BY cnt DESC"
-        ).fetchall()
-        categories = [{"name": row["category"] or "Unsorted", "count": row["cnt"]} for row in rows]
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT category, COUNT(*) as cnt FROM documents "
+                "WHERE status != 'deleted' GROUP BY category ORDER BY cnt DESC"
+            ).fetchall()
+            categories = [
+                {"name": row["category"] or "Unsorted", "count": row["cnt"]} for row in rows
+            ]
 
-        no_archive = conn.execute(
-            "SELECT COUNT(*) as cnt FROM documents "
-            "WHERE status != 'deleted' AND (archive_path IS NULL OR archive_path = '')"
-        ).fetchone()["cnt"]
-        offline = conn.execute(
-            "SELECT COUNT(*) as cnt FROM documents "
-            "WHERE status != 'deleted' AND storage_accessible = 0"
-        ).fetchone()["cnt"]
-        total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM documents WHERE status != 'deleted'"
-        ).fetchone()["cnt"]
+            no_archive = conn.execute(
+                "SELECT COUNT(*) as cnt FROM documents "
+                "WHERE status != 'deleted' AND (archive_path IS NULL OR archive_path = '')"
+            ).fetchone()["cnt"]
+            offline = conn.execute(
+                "SELECT COUNT(*) as cnt FROM documents "
+                "WHERE status != 'deleted' AND storage_accessible = 0"
+            ).fetchone()["cnt"]
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM documents WHERE status != 'deleted'"
+            ).fetchone()["cnt"]
 
-        conn.close()
         return {
             "categories": categories,
             "no_archive_path": no_archive,
@@ -593,14 +583,13 @@ class CatalogManager:
         Returns:
             List of dicts with device name, location_type, and file_count.
         """
-        conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT DISTINCT storage_device, storage_location, "
-            "COUNT(*) as file_count FROM documents "
-            "WHERE storage_device IS NOT NULL AND storage_device != '' "
-            "GROUP BY storage_device, storage_location"
-        ).fetchall()
-        conn.close()
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT storage_device, storage_location, "
+                "COUNT(*) as file_count FROM documents "
+                "WHERE storage_device IS NOT NULL AND storage_device != '' "
+                "GROUP BY storage_device, storage_location"
+            ).fetchall()
         return [
             {
                 "device": row["storage_device"],

@@ -227,57 +227,58 @@ class KnowledgeGraph:
 
     def _init_db(self):
         """Initialize database schema with bitemporal fields."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        # Entities table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS entities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                type TEXT NOT NULL,
-                document_id TEXT NOT NULL,
-                confidence REAL DEFAULT 1.0,
-                metadata TEXT DEFAULT '{}',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
-                last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
-                mention_count INTEGER DEFAULT 1,
-                confidence_score REAL DEFAULT 1.0,
-                UNIQUE(name, type, document_id)
+            # Entities table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    confidence REAL DEFAULT 1.0,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                    mention_count INTEGER DEFAULT 1,
+                    confidence_score REAL DEFAULT 1.0,
+                    UNIQUE(name, type, document_id)
+                )
+            """)
+
+            # Relationships table (triples) with bitemporal tracking
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS relationships (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subject TEXT NOT NULL,
+                    predicate TEXT NOT NULL,
+                    object TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    confidence REAL DEFAULT 1.0,
+                    context TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    when_true TEXT DEFAULT '',
+                    when_learned TEXT DEFAULT CURRENT_TIMESTAMP,
+                    superseded_by INTEGER DEFAULT NULL,
+                    UNIQUE(subject, predicate, object, document_id)
+                )
+            """)
+
+            # Indices for fast lookup
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_subject ON relationships(subject)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_object ON relationships(object)")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_rel_predicate ON relationships(predicate)"
             )
-        """)
 
-        # Relationships table (triples) with bitemporal tracking
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS relationships (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                subject TEXT NOT NULL,
-                predicate TEXT NOT NULL,
-                object TEXT NOT NULL,
-                document_id TEXT NOT NULL,
-                confidence REAL DEFAULT 1.0,
-                context TEXT DEFAULT '',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                when_true TEXT DEFAULT '',
-                when_learned TEXT DEFAULT CURRENT_TIMESTAMP,
-                superseded_by INTEGER DEFAULT NULL,
-                UNIQUE(subject, predicate, object, document_id)
-            )
-        """)
+            # Migrate existing tables — add new columns if they don't exist
+            self._migrate_schema(cursor)
 
-        # Indices for fast lookup
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_subject ON relationships(subject)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_object ON relationships(object)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_rel_predicate ON relationships(predicate)")
-
-        # Migrate existing tables — add new columns if they don't exist
-        self._migrate_schema(cursor)
-
-        conn.commit()
-        conn.close()
+            conn.commit()
 
     def _migrate_schema(self, cursor: sqlite3.Cursor) -> None:
         """Add bitemporal columns to existing tables if missing.
@@ -359,8 +360,8 @@ class KnowledgeGraph:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
-    def add_entity(self, entity: Entity):
-        """Add an entity to the graph with bitemporal tracking.
+    def _add_entity_with_conn(self, conn: sqlite3.Connection, entity: Entity) -> None:
+        """Add an entity using an existing connection (for batch operations).
 
         If the entity already exists (same name+type+document_id), updates
         last_seen and increments mention_count instead of replacing.
@@ -368,11 +369,9 @@ class KnowledgeGraph:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc).isoformat()
-        conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         try:
-            # Try to insert new
             cursor.execute(
                 """
                 INSERT INTO entities
@@ -408,20 +407,30 @@ class KnowledgeGraph:
                 f"Failed to add entity '{entity.name}': {e}", table_name="entities"
             ) from e
 
-        conn.commit()
-        conn.close()
+    def add_entity(self, entity: Entity) -> None:
+        """Add an entity to the graph with bitemporal tracking.
 
-    def add_relationship(self, rel: Relationship, when_true: str = ""):
-        """Add a relationship to the graph with bitemporal tracking.
+        If the entity already exists (same name+type+document_id), updates
+        last_seen and increments mention_count instead of replacing.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            self._add_entity_with_conn(conn, entity)
+            conn.commit()
+
+    def _add_relationship_with_conn(
+        self, conn: sqlite3.Connection, rel: Relationship, when_true: str = ""
+    ) -> None:
+        """Add a relationship using an existing connection (for batch operations).
 
         Args:
+            conn: Active SQLite connection.
             rel: Relationship to add.
             when_true: When the fact was true (event time), e.g. "2024-03".
         """
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc).isoformat()
-        conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -443,22 +452,36 @@ class KnowledgeGraph:
                     now,
                 ),
             )
-            conn.commit()
         except Exception as e:
             logger.error(f"Error adding relationship: {e}")
             raise CoreRagDatabaseError(
                 f"Failed to add relationship '{rel.subject} -> {rel.object}': {e}",
                 table_name="relationships",
             ) from e
-        finally:
-            conn.close()
 
-    def add_from_extraction(self, entities: List[Entity], relationships: List[Relationship]):
-        """Batch add entities and relationships."""
-        for entity in entities:
-            self.add_entity(entity)
-        for rel in relationships:
-            self.add_relationship(rel)
+    def add_relationship(self, rel: Relationship, when_true: str = "") -> None:
+        """Add a relationship to the graph with bitemporal tracking.
+
+        Args:
+            rel: Relationship to add.
+            when_true: When the fact was true (event time), e.g. "2024-03".
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            self._add_relationship_with_conn(conn, rel, when_true)
+            conn.commit()
+
+    def add_from_extraction(
+        self, entities: List[Entity], relationships: List[Relationship]
+    ) -> None:
+        """Batch add entities and relationships using a single shared connection."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            for entity in entities:
+                self._add_entity_with_conn(conn, entity)
+            for rel in relationships:
+                self._add_relationship_with_conn(conn, rel)
+            conn.commit()
 
     def get_neighbors(
         self,
@@ -477,13 +500,11 @@ class KnowledgeGraph:
         Returns:
             List of related entities with relationship info
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         results = []
         name_lower = entity_name.lower()
 
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             if direction in ("outgoing", "both"):
                 query = """
                     SELECT object, predicate, document_id, confidence
@@ -534,9 +555,6 @@ class KnowledgeGraph:
                         }
                     )
 
-        finally:
-            conn.close()
-
         return results
 
     def find_path(self, start: str, end: str, max_hops: int = 3) -> Optional[List[Triple]]:
@@ -580,16 +598,12 @@ class KnowledgeGraph:
 
     def supersede_relationship(self, old_id: int, new_id: int) -> None:
         """Mark an old relationship as superseded by a newer one."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
                 "UPDATE relationships SET superseded_by = ? WHERE id = ?",
                 (new_id, old_id),
             )
             conn.commit()
-        finally:
-            conn.close()
 
     def apply_confidence_decay(self, half_life_days: int = 365) -> int:
         """Reduce confidence of stale entities based on time since last seen.
@@ -606,11 +620,10 @@ class KnowledgeGraph:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
         updated = 0
 
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute("SELECT id, last_seen, confidence_score FROM entities")
             rows = cursor.fetchall()
 
@@ -638,8 +651,6 @@ class KnowledgeGraph:
                     continue
 
             conn.commit()
-        finally:
-            conn.close()
 
         logger.info(f"Confidence decay: updated {updated} entities (half_life={half_life_days}d)")
         return updated
@@ -653,10 +664,8 @@ class KnowledgeGraph:
         Returns:
             List of dicts with document_id, type, first_seen, last_seen, mention_count.
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT document_id, type, first_seen, last_seen,
@@ -667,7 +676,6 @@ class KnowledgeGraph:
             """,
                 (name.lower(),),
             )
-
             return [
                 {
                     "document_id": row[0],
@@ -679,8 +687,6 @@ class KnowledgeGraph:
                 }
                 for row in cursor.fetchall()
             ]
-        finally:
-            conn.close()
 
     def search_entities(
         self, query: str, min_confidence: float = 0.0, limit: int = 20
@@ -695,10 +701,8 @@ class KnowledgeGraph:
         Returns:
             List of entity dicts.
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT DISTINCT name, type, confidence_score, mention_count, last_seen
@@ -709,7 +713,6 @@ class KnowledgeGraph:
             """,
                 (f"%{query.lower()}%", min_confidence, limit),
             )
-
             return [
                 {
                     "name": row[0],
@@ -720,15 +723,11 @@ class KnowledgeGraph:
                 }
                 for row in cursor.fetchall()
             ]
-        finally:
-            conn.close()
 
     def get_stats(self) -> Dict:
         """Get graph statistics."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute("SELECT COUNT(DISTINCT name) FROM entities")
             entity_count = cursor.fetchone()[0]
 
@@ -748,14 +747,10 @@ class KnowledgeGraph:
                 "relationship_types": rel_types,
             }
 
-        finally:
-            conn.close()
-
     def get_all_entities(self) -> List[Dict]:
         """Return all distinct entities from the graph."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute(
                 "SELECT DISTINCT name, type, confidence_score, mention_count FROM entities"
             )
@@ -763,8 +758,6 @@ class KnowledgeGraph:
                 {"name": row[0], "type": row[1], "confidence": row[2], "mention_count": row[3]}
                 for row in cursor.fetchall()
             ]
-        finally:
-            conn.close()
 
     def build_entity_index(self, embedding_service) -> int:
         """Embed all entity names into a LanceDB table for semantic discovery."""
@@ -837,10 +830,8 @@ class KnowledgeGraph:
 
         Returns list of dicts with document_id and shared_entities.
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT e2.document_id, GROUP_CONCAT(DISTINCT e2.name)
@@ -854,26 +845,18 @@ class KnowledgeGraph:
             """,
                 (document_id, limit),
             )
-
             return [
                 {"document_id": row[0], "shared_entities": row[1].split(",")}
                 for row in cursor.fetchall()
             ]
-        finally:
-            conn.close()
 
-    def delete_by_document(self, document_id: str):
+    def delete_by_document(self, document_id: str) -> None:
         """Delete all entities and relationships from a document."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("DELETE FROM entities WHERE document_id = ?", (document_id,))
-            cursor.execute("DELETE FROM relationships WHERE document_id = ?", (document_id,))
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM entities WHERE document_id = ?", (document_id,))
+            conn.execute("DELETE FROM relationships WHERE document_id = ?", (document_id,))
             conn.commit()
             logger.info(f"Deleted graph data for document: {document_id}")
-        finally:
-            conn.close()
 
 
 class GraphEnhancedRetrieval:
@@ -914,12 +897,13 @@ class GraphEnhancedRetrieval:
         for r in initial_results:
             doc_id = r.get("document_id")
             # Query graph for entities in this document
-            conn = sqlite3.connect(self.graph.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT name FROM entities WHERE document_id = ?", (doc_id,))
-            for row in cursor.fetchall():
-                mentioned_entities.add(row[0])
-            conn.close()
+            with sqlite3.connect(self.graph.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT DISTINCT name FROM entities WHERE document_id = ?", (doc_id,)
+                )
+                for row in cursor.fetchall():
+                    mentioned_entities.add(row[0])
 
         # Step 3: Find related entities
         related_doc_ids = set()
