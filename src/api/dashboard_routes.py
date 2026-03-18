@@ -307,8 +307,8 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         try:
             catalog = CatalogManager()
             return catalog.get_stats()
-        except Exception as e:
-            return {"error": str(e), "total_documents": 0}
+        except Exception:
+            return {"error": "Internal server error", "total_documents": 0}
 
     @router.get("/api/catalog/folder-tree")
     async def get_folder_tree() -> dict:
@@ -318,13 +318,13 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         try:
             catalog = CatalogManager()
             return catalog.get_folder_tree()
-        except Exception as e:
+        except Exception:
             return {
                 "categories": [],
                 "no_archive_path": 0,
                 "offline": 0,
                 "total": 0,
-                "error": str(e),
+                "error": "Internal server error",
             }
 
     @router.get("/api/catalog/devices")
@@ -335,8 +335,8 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         try:
             catalog = CatalogManager()
             return {"devices": catalog.get_devices()}
-        except Exception as e:
-            return {"devices": [], "error": str(e)}
+        except Exception:
+            return {"devices": [], "error": "Internal server error"}
 
     @router.post("/api/catalog/cold-storage")
     async def migrate_to_cold_storage(request: Request) -> dict:
@@ -363,8 +363,8 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         try:
             catalog = CatalogManager()
             return catalog.migrate_to_cold(doc_ids, device_name, destination)
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            return {"error": "Internal server error"}
 
     @router.get("/api/catalog/{doc_id}")
     async def get_catalog_entry(doc_id: str) -> dict:
@@ -409,8 +409,8 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                     for exp in exports
                 ],
             }
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            return {"error": "Internal server error"}
 
     # ── Queue Routes ──────────────────────────────────────────────────────
 
@@ -701,7 +701,12 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             }
         except Exception as e:
             logger.error(f"RAG index query failed: {e}", exc_info=True)
-            return {"files": [], "total_parents": 0, "total_children": 0, "error": str(e)}
+            return {
+                "files": [],
+                "total_parents": 0,
+                "total_children": 0,
+                "error": "Internal server error",
+            }
 
     @router.delete("/api/rag-index/{file_name}")
     async def rag_delete(file_name: str) -> dict:
@@ -718,7 +723,7 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             return {"success": True, "deleted": file_name}
         except Exception as e:
             logger.error(f"RAG delete failed: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Internal server error"}
 
     # ── RAG Verification ──────────────────────────────────────────────────
 
@@ -748,7 +753,7 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             }
         except Exception as e:
             logger.error(f"RAG verification failed: {e}", exc_info=True)
-            return {"error": str(e), "summary": {}, "files": []}
+            return {"error": "Internal server error", "summary": {}, "files": []}
 
     # ── Episodic Memory Routes — extracted to dashboard_memory.py (sub-router above)
     # ── Query Analytics Routes — extracted to dashboard_analytics.py (sub-router above)
@@ -833,7 +838,7 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
 
         except Exception as e:
             logger.error(f"Tag update failed for {doc_id}: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Internal server error"}
 
     # ── Legacy ────────────────────────────────────────────────────────────
 

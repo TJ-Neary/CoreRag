@@ -57,9 +57,9 @@ def create_settings_router() -> APIRouter:
                 },
                 "restart_required": bool(restart_required),
             }
-        except Exception as e:
+        except Exception:
             logger.exception("Error loading settings")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 2. List agents ───────────────────────────────────────────────────
 
@@ -74,9 +74,9 @@ def create_settings_router() -> APIRouter:
             mgr = SettingsManager()
             agents = mgr.get_agents()
             return {"agents": agents}
-        except Exception as e:
+        except Exception:
             logger.exception("Error listing agents")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 3. Create agent ──────────────────────────────────────────────────
 
@@ -107,9 +107,9 @@ def create_settings_router() -> APIRouter:
             }
         except ValueError as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
-        except Exception as e:
+        except Exception:
             logger.exception("Error creating agent")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 4. Update agent permissions ──────────────────────────────────────
 
@@ -136,9 +136,9 @@ def create_settings_router() -> APIRouter:
             return {"name": name, "permissions": agent["permissions"] if agent else {}}
         except KeyError as e:
             return JSONResponse(status_code=404, content={"error": str(e)})
-        except Exception as e:
+        except Exception:
             logger.exception("Error updating agent '%s'", name)
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 5. Delete agent ──────────────────────────────────────────────────
 
@@ -155,9 +155,9 @@ def create_settings_router() -> APIRouter:
             return {"status": "deleted", "name": name}
         except KeyError as e:
             return JSONResponse(status_code=404, content={"error": str(e)})
-        except Exception as e:
+        except Exception:
             logger.exception("Error deleting agent '%s'", name)
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 6. Update LLM config ────────────────────────────────────────────
 
@@ -185,9 +185,9 @@ def create_settings_router() -> APIRouter:
             mgr.update_llm_config(**kwargs)
 
             return {"status": "updated", "llm": mgr.get_llm_config()}
-        except Exception as e:
+        except Exception:
             logger.exception("Error updating LLM config")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 7. List available Ollama models ──────────────────────────────────
 
@@ -244,9 +244,9 @@ def create_settings_router() -> APIRouter:
                 "reranker_model": RERANKER_MODEL,
                 "restart_required": bool(restart_required),
             }
-        except Exception as e:
+        except Exception:
             logger.exception("Error getting model status")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 9. Database stats ────────────────────────────────────────────────
 
@@ -288,9 +288,9 @@ def create_settings_router() -> APIRouter:
                 }
 
             return stats
-        except Exception as e:
+        except Exception:
             logger.exception("Error getting DB stats")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     # ── 10. Database actions ─────────────────────────────────────────────
 
@@ -392,8 +392,8 @@ def create_settings_router() -> APIRouter:
             # Unreachable but satisfies type checker
             return JSONResponse(status_code=400, content={"error": "Unknown action"})
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error executing DB action")
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
     return router

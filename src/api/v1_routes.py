@@ -452,7 +452,12 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             logger.error(f"Search API failed: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e), "results": [], "total": 0, "query": query},
+                content={
+                    "error": "Internal server error",
+                    "results": [],
+                    "total": 0,
+                    "query": query,
+                },
             )
 
     @router.post("/answer", response_model=AnswerResponse)
@@ -588,7 +593,12 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             logger.error(f"Answer API failed: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e), "query": query, "answer": "", "not_found": True},
+                content={
+                    "error": "Internal server error",
+                    "query": query,
+                    "answer": "",
+                    "not_found": True,
+                },
             )
 
     @router.post("/ingest", response_model=IngestResponse)
@@ -747,7 +757,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             return JSONResponse(
                 status_code=500,
                 content={
-                    "error": str(e),
+                    "error": "Internal server error",
                     "document_id": "",
                     "source": source,
                     "chunks_created": 0,
@@ -835,7 +845,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
                     "document_id": document_id,
                     "chunks_deleted": 0,
                     "graph_deleted": 0,
-                    "error": str(e),
+                    "error": "Internal server error",
                 },
             )
 
@@ -906,7 +916,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             logger.error(f"Get document failed: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e)},
+                content={"error": "Internal server error"},
             )
 
     # ── DELETE /api/v1/documents/bulk ──────────────────────────────────────
@@ -968,7 +978,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             logger.error(f"Bulk delete failed: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e), "results": [], "total_deleted": 0},
+                content={"error": "Internal server error", "results": [], "total_deleted": 0},
             )
 
         return BulkDeleteResponse(results=results, total_deleted=total_deleted)
@@ -1062,7 +1072,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
             logger.error(f"Quick capture failed: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"document_id": "", "status": "error", "error": str(e)},
+                content={"document_id": "", "status": "error", "error": "Internal server error"},
             )
 
     return router
