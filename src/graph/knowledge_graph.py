@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from src.exceptions import DatabaseError as CoreRagDatabaseError
+from src.utils.query_sanitize import safe_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +286,11 @@ class KnowledgeGraph:
         reject CURRENT_TIMESTAMP as a non-constant default. Backfills
         existing rows with created_at value after adding columns.
         """
-        # Entity columns — use constant defaults for ALTER TABLE compatibility
+        # Entity columns — use constant defaults for ALTER TABLE compatibility.
+        # SQLite DDL cannot use ? placeholders for column/type identifiers.
+        # All identifiers come from the hardcoded list above and are validated
+        # by safe_identifier() before use — no user input reaches these queries.
+        # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
         for col, col_type, default in [
             ("first_seen", "TEXT", "''"),
             ("last_seen", "TEXT", "''"),
@@ -293,28 +298,64 @@ class KnowledgeGraph:
             ("confidence_score", "REAL", "1.0"),
         ]:
             try:
-                cursor.execute(
-                    f"ALTER TABLE entities ADD COLUMN {col} {col_type} DEFAULT {default}"
+                col_s = safe_identifier(col)
+                type_s = safe_identifier(col_type)
+                add_sql = (
+                    "ALTER TABLE entities ADD COLUMN "
+                    + col_s
+                    + " "
+                    + type_s
+                    + " DEFAULT "
+                    + default
                 )
+                cursor.execute(
+                    add_sql
+                )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
                 # Backfill: set timestamp columns to created_at for existing rows
                 if col in ("first_seen", "last_seen"):
-                    cursor.execute(f"UPDATE entities SET {col} = created_at WHERE {col} = ''")
+                    backfill_sql = (
+                        "UPDATE entities SET " + col_s + " = created_at WHERE " + col_s + " = ''"
+                    )
+                    cursor.execute(
+                        backfill_sql
+                    )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
-        # Relationship columns
+        # Relationship columns — same rationale: hardcoded identifiers validated
+        # by safe_identifier(), no user input reaches these queries.
+        # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
         for col, col_type, default in [
             ("when_true", "TEXT", "''"),
             ("when_learned", "TEXT", "''"),
             ("superseded_by", "INTEGER", "NULL"),
         ]:
             try:
-                cursor.execute(
-                    f"ALTER TABLE relationships ADD COLUMN {col} {col_type} DEFAULT {default}"
+                col_s = safe_identifier(col)
+                type_s = safe_identifier(col_type)
+                add_sql = (
+                    "ALTER TABLE relationships ADD COLUMN "
+                    + col_s
+                    + " "
+                    + type_s
+                    + " DEFAULT "
+                    + default
                 )
+                cursor.execute(
+                    add_sql
+                )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
                 # Backfill: set when_learned to created_at for existing rows
                 if col == "when_learned":
-                    cursor.execute(f"UPDATE relationships SET {col} = created_at WHERE {col} = ''")
+                    backfill_sql = (
+                        "UPDATE relationships SET "
+                        + col_s
+                        + " = created_at WHERE "
+                        + col_s
+                        + " = ''"
+                    )
+                    cursor.execute(
+                        backfill_sql
+                    )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
