@@ -26,7 +26,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.settings_routes import create_settings_router
-from src.settings.settings_manager import DEFAULT_PERMISSIONS, SettingsManager
+from src.settings.settings_manager import DEFAULT_PERMISSIONS, SettingsManager  # noqa: F401
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,11 +55,17 @@ def tmp_mgr(tmp_path: Path) -> SettingsManager:
     return _make_mgr(tmp_path)
 
 
+# Patch target: the routes import SettingsManager locally inside each function with
+# `from src.settings.settings_manager import SettingsManager`, so the class is resolved
+# from the settings_manager module, not from settings_routes.
+_PATCH_TARGET = "src.settings.settings_manager.SettingsManager"
+
+
 @pytest.fixture()
 def client(tmp_mgr: SettingsManager) -> TestClient:
     """TestClient with SettingsManager patched so every endpoint shares the same instance."""
     app = _make_app()
-    with patch("src.api.settings_routes.SettingsManager", return_value=tmp_mgr):
+    with patch(_PATCH_TARGET, return_value=tmp_mgr):
         yield TestClient(app)
 
 
@@ -107,7 +113,7 @@ class TestGetSettings:
 
     def test_restart_required_false_by_default(self, client: TestClient):
         """With no pending provider change restart_required should be False."""
-        with patch("src.api.settings_routes.SettingsManager") as mock_mgr_cls:
+        with patch(_PATCH_TARGET) as mock_mgr_cls:
             mgr = mock_mgr_cls.return_value
             mgr.get_agents.return_value = {}
             mgr.get_llm_config.return_value = {"provider": "", "ollama_model": ""}
@@ -123,7 +129,7 @@ class TestGetSettings:
 
     def test_restart_required_true_on_provider_mismatch(self, client: TestClient):
         """restart_required=True when stored provider differs from running provider."""
-        with patch("src.api.settings_routes.SettingsManager") as mock_mgr_cls:
+        with patch(_PATCH_TARGET) as mock_mgr_cls:
             mgr = mock_mgr_cls.return_value
             mgr.get_agents.return_value = {}
             mgr.get_llm_config.return_value = {"provider": "anthropic", "ollama_model": ""}
@@ -168,7 +174,7 @@ class TestListAgents:
             mgr.create_agent("mybot")
         # Patch SettingsManager so the route uses our pre-configured instance
         app = _make_app()
-        with patch("src.api.settings_routes.SettingsManager", return_value=mgr):
+        with patch(_PATCH_TARGET, return_value=mgr):
             c = TestClient(app)
             response = c.get("/api/settings/agents")
         assert response.status_code == 200
@@ -189,7 +195,7 @@ class TestCreateAgent:
         dotenv.write_text("")
 
         with (
-            patch("src.api.settings_routes.SettingsManager", return_value=mgr),
+            patch(_PATCH_TARGET, return_value=mgr),
             patch("src.settings.settings_manager._find_dotenv_path", return_value=dotenv),
         ):
             app = _make_app()
@@ -211,7 +217,7 @@ class TestCreateAgent:
         dotenv.write_text("")
         keys = []
         with (
-            patch("src.api.settings_routes.SettingsManager", return_value=mgr),
+            patch(_PATCH_TARGET, return_value=mgr),
             patch("src.settings.settings_manager._find_dotenv_path", return_value=dotenv),
         ):
             app = _make_app()
@@ -308,7 +314,7 @@ class TestUpdateAgent:
         assert original["permissions"]["server_admin"] is True
 
         app = _make_app()
-        with patch("src.api.settings_routes.SettingsManager", return_value=mgr):
+        with patch(_PATCH_TARGET, return_value=mgr):
             c = TestClient(app)
             c.put(
                 "/api/settings/agents/_dashboard",
@@ -335,7 +341,7 @@ class TestDeleteAgent:
         os.environ.pop("CORERAG_AGENT_TODELETE_KEY", None)
 
         app = _make_app()
-        with patch("src.api.settings_routes.SettingsManager", return_value=mgr):
+        with patch(_PATCH_TARGET, return_value=mgr):
             c = TestClient(app)
             response = c.delete("/api/settings/agents/todelete")
 
@@ -409,7 +415,7 @@ class TestUpdateLlm:
 
         app = _make_app()
         with (
-            patch("src.api.settings_routes.SettingsManager", return_value=mgr),
+            patch(_PATCH_TARGET, return_value=mgr),
             patch("src.settings.settings_manager._find_dotenv_path", return_value=dotenv),
         ):
             c = TestClient(app)
