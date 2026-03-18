@@ -561,6 +561,7 @@ class TestDocumentEndpoint:
 
         mock_child_table = MagicMock()
         mock_child_table.search.return_value = mock_child_search
+        mock_child_table.count_rows.return_value = 3  # endpoint uses count_rows for children
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
@@ -589,6 +590,7 @@ class TestDocumentEndpoint:
 
         mock_table = MagicMock()
         mock_table.search.return_value = mock_search
+        mock_table.count_rows.return_value = 0  # endpoint uses count_rows for children
 
         mock_db = MagicMock()
         mock_db.table_names.return_value = ["parent_chunks", "child_chunks"]
