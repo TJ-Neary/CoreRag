@@ -102,11 +102,11 @@ def _index_in_rag(text: str, file_name: str, metadata: dict, catalog_id: str = "
 
         import lancedb
 
-        from src.embeddings.embedding_service import create_embedding_service
+        from src.embeddings.embedding_service import get_embedding_service
         from src.ingest_service import IngestService
 
         db = lancedb.connect(str(config.DB_PATH))
-        embedder = create_embedding_service()
+        embedder = get_embedding_service()
         service = IngestService(embedding_service=embedder, db=db)
 
         with asyncio.Runner() as runner:
@@ -265,11 +265,11 @@ def execute_approved_item(item_id: str):
 
                 import lancedb
 
-                from src.embeddings.embedding_service import create_embedding_service
+                from src.embeddings.embedding_service import get_embedding_service
                 from src.ingest_service import IngestService
 
                 restricted_db = lancedb.connect(str(config.RESTRICTED_DB_PATH))
-                restricted_embedder = create_embedding_service()
+                restricted_embedder = get_embedding_service()
                 restricted_service = IngestService(
                     embedding_service=restricted_embedder, db=restricted_db
                 )
