@@ -348,6 +348,17 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
         destination = data.get("destination_root", "")
         if not doc_ids or not device_name or not destination:
             return {"error": "Missing required fields: doc_ids, device_name, destination_root"}
+        # Validate destination path (TD-027: prevent path traversal)
+        from pathlib import Path as _Path
+
+        dest_resolved = _Path(destination).resolve()
+        allowed_roots = [_Path("/Volumes"), _Path.home() / "Documents"]
+        if not any(str(dest_resolved).startswith(str(root)) for root in allowed_roots):
+            return {"error": "Destination must be under /Volumes/ or ~/Documents"}
+        if ".." in _Path(destination).parts:
+            return {"error": "Path traversal (..) not allowed"}
+        if not dest_resolved.exists() or not dest_resolved.is_dir():
+            return {"error": "Destination must be an existing directory"}
         try:
             catalog = CatalogManager()
             return catalog.migrate_to_cold(doc_ids, device_name, destination)
