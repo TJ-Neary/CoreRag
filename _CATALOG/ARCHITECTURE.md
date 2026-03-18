@@ -44,17 +44,22 @@ C4Container
     Container(search, "Search Stack", "Python", "Hybrid vector+BM25, reranking, HyDE, CRAG, multi-query fusion")
     Container(cli, "CLI", "Python argparse", "13 commands for search, ingest, health, backup, graph, memory")
 
-    ContainerDb(lancedb, "LanceDB", "Lance format", "Vector store with parent-child chunks (BGE-M3, 1024d)")
+    ContainerDb(lancedb, "LanceDB (Main)", "Lance format", "Vector store with parent-child chunks (BGE-M3, 1024d) — redacted content")
+    ContainerDb(restricted_lancedb, "LanceDB (Restricted)", "Lance format", "Unredacted sensitive document chunks — access gated by per-agent search_restricted permission")
     ContainerDb(kg, "Knowledge Graph", "SQLite", "Bitemporal entity-relationship graph with confidence decay")
+    ContainerDb(catalog_db, "Catalog", "SQLite", "Document catalog tracking files across all destinations (RAG, Obsidian, archive)")
     ContainerDb(staging, "Staging Manifest", "JSON file", "Pipeline state for documents in review")
 
     Rel(dashboard, ingestion, "Triggers batch processing")
     Rel(dashboard, staging, "Reads/writes document state")
     Rel(api, search, "Delegates search queries")
     Rel(mcp, search, "Delegates search queries")
-    Rel(ingestion, lancedb, "Indexes chunks with embeddings")
+    Rel(ingestion, lancedb, "Indexes redacted chunks with embeddings")
+    Rel(ingestion, restricted_lancedb, "Indexes unredacted sensitive chunks")
     Rel(ingestion, kg, "Extracts entities and relationships")
+    Rel(ingestion, catalog_db, "Registers documents at commit time")
     Rel(search, lancedb, "Hybrid search (vector + BM25 + RRF)")
+    Rel(search, restricted_lancedb, "Restricted search (when search_scope=restricted or all)")
     Rel(search, kg, "Entity-based graph search")
 ```
 
