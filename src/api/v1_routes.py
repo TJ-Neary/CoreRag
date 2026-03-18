@@ -976,7 +976,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
     # ── GET /api/v1/vaults ──────────────────────────────────────────────────
 
     @router.get("/vaults")
-    async def list_vaults():
+    async def list_vaults(permissions: dict[str, bool] = Depends(check_permissions)):
         """List configured Obsidian vaults."""
         return {
             "vaults": {
