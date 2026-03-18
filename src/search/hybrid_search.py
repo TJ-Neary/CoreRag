@@ -8,6 +8,7 @@ CRITICAL: FTS index MUST be created for hybrid search to work correctly.
 import asyncio
 import hashlib
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,7 @@ class _ResultCache:
         self._cache: dict[str, tuple[float, list]] = {}
         self._max_size = max_size
         self._ttl = ttl_seconds
+        self._lock = threading.Lock()
 
     def _key(self, query: str, k: int, filters: dict | None, search_scope: str = "main") -> str:
         raw = f"{query}|{k}|{sorted(filters.items()) if filters else ''}|{search_scope}"
@@ -33,13 +35,14 @@ class _ResultCache:
     def get(
         self, query: str, k: int, filters: dict | None, search_scope: str = "main"
     ) -> list | None:
-        key = self._key(query, k, filters, search_scope)
-        if key in self._cache:
-            ts, results = self._cache[key]
-            if time.time() - ts < self._ttl:
-                return results
-            del self._cache[key]
-        return None
+        with self._lock:
+            key = self._key(query, k, filters, search_scope)
+            if key in self._cache:
+                ts, results = self._cache[key]
+                if time.time() - ts < self._ttl:
+                    return results
+                del self._cache[key]
+            return None
 
     def put(
         self,
@@ -49,11 +52,12 @@ class _ResultCache:
         results: list,
         search_scope: str = "main",
     ) -> None:
-        key = self._key(query, k, filters, search_scope)
-        if len(self._cache) >= self._max_size:
-            oldest = min(self._cache, key=lambda k: self._cache[k][0])
-            del self._cache[oldest]
-        self._cache[key] = (time.time(), results)
+        with self._lock:
+            key = self._key(query, k, filters, search_scope)
+            if len(self._cache) >= self._max_size:
+                oldest = min(self._cache, key=lambda k: self._cache[k][0])
+                del self._cache[oldest]
+            self._cache[key] = (time.time(), results)
 
     def invalidate(self) -> None:
         self._cache.clear()
