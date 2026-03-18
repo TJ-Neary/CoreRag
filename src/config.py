@@ -193,8 +193,12 @@ def validate_config():
             config_key="CORERAG_STATE_DIR",
         ) from e
 
-    if not GOOGLE_API_KEY:
+    # Only warn if no LLM provider is configured at all.
+    # Ollama (default) requires no API key; warn only if the user has no provider available.
+    has_any_provider = bool(OLLAMA_HOST or GOOGLE_API_KEY or ANTHROPIC_API_KEY)
+    if not has_any_provider:
         print(
-            "Warning: GOOGLE_API_KEY is missing. Intelligence features will be limited.",
+            "Warning: No LLM provider configured. Set OLLAMA_HOST, GOOGLE_API_KEY, or "
+            "ANTHROPIC_API_KEY to enable intelligence features.",
             file=sys.stderr,
         )

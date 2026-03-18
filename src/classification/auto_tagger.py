@@ -691,7 +691,8 @@ class AutoTagger:
         self._tag_history.append(feedback)
         self._save_history()
 
-        # TODO: Use feedback to adjust thresholds or train classifier
+        # Note: feedback data is collected but not yet used for threshold adjustment.
+        # LearnedRules module handles similar functionality.
 
     def get_tag_stats(self) -> Dict[str, Any]:
         """Get tagging statistics."""

@@ -10,7 +10,6 @@ pytest-asyncio>=0.21.0
 pytest-timeout>=2.2.0
 pytest-xdist>=3.5.0
 pytest-mock>=3.12.0
-hypothesis>=6.85.0             # Property-based testing — finds edge cases AI agents miss
 
 # ── Code Quality ────────────────────────────────────────────────────────────
 ruff>=0.1.0
