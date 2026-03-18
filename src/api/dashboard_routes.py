@@ -823,13 +823,18 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 if table_name in db.table_names():
                     tbl = db.open_table(table_name)
                     doc_filter = build_eq_clause("document_id", doc_id)
-                    rows = tbl.search().where(doc_filter).limit(10000).to_list()
-                    if rows:
-                        for row in rows:
-                            row["tags"] = tags_str
-                        tbl.delete(doc_filter)
-                        tbl.add(rows)
-                        updated += len(rows)
+                    try:
+                        tbl.update(where=doc_filter, values={"tags": tags_str})
+                        updated += tbl.count_rows(doc_filter)
+                    except Exception:
+                        # Fallback for older LanceDB versions without update()
+                        rows = tbl.search().where(doc_filter).limit(10000).to_list()
+                        if rows:
+                            for row in rows:
+                                row["tags"] = tags_str
+                            tbl.delete(doc_filter)
+                            tbl.add(rows)
+                            updated += len(rows)
 
             state.tag_manager.set_tags(doc_id, tags)
 
