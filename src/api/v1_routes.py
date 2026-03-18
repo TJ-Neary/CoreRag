@@ -58,7 +58,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["v1"])
 
     @router.get("/manifest")
-    async def api_manifest() -> dict:
+    async def api_manifest(request: Request) -> dict:
         """
         Capability manifest for connecting AI systems.
 
@@ -70,13 +70,14 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
 
         stats = {"documents": 0, "chunks": 0, "entities": 0, "relationships": 0}
         try:
-            db = lancedb.connect(DB_PATH)
+            db = getattr(request.app.state, "db", None)
+            if db is None:
+                db = lancedb.connect(DB_PATH)
             if "child_chunks" in db.table_names():
                 stats["chunks"] = db.open_table("child_chunks").count_rows()
             if "parent_chunks" in db.table_names():
-                sources = (
-                    db.open_table("parent_chunks").to_arrow().column("source_path").to_pylist()
-                )
+                pt = db.open_table("parent_chunks")
+                sources = pt.to_arrow(columns=["source_path"]).column("source_path").to_pylist()
                 stats["documents"] = len(set(sources))
         except Exception:
             pass
@@ -242,11 +243,13 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
         relationships = 0
 
         try:
-            db = lancedb.connect(DB_PATH)
+            db = getattr(request.app.state, "db", None)
+            if db is None:
+                db = lancedb.connect(DB_PATH)
             if "parent_chunks" in db.table_names():
                 pt = db.open_table("parent_chunks")
                 parent_chunks = pt.count_rows()
-                sources = pt.to_arrow().column("source_path").to_pylist()
+                sources = pt.to_arrow(columns=["source_path"]).column("source_path").to_pylist()
                 documents = len(set(sources))
             if "child_chunks" in db.table_names():
                 child_chunks = db.open_table("child_chunks").count_rows()
@@ -781,7 +784,9 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
         try:
             import lancedb
 
-            db = lancedb.connect(DB_PATH)
+            db = getattr(request.app.state, "db", None)
+            if db is None:
+                db = lancedb.connect(DB_PATH)
 
             deleted = {"parent_chunks": 0, "child_chunks": 0}
             doc_filter = build_eq_clause("document_id", document_id)
@@ -867,7 +872,9 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
         try:
             import lancedb
 
-            db = lancedb.connect(DB_PATH)
+            db = getattr(request.app.state, "db", None)
+            if db is None:
+                db = lancedb.connect(DB_PATH)
 
             source_path = ""
             parent_count = 0
@@ -893,8 +900,7 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
 
             if "child_chunks" in db.table_names():
                 ct = db.open_table("child_chunks")
-                children = ct.search().where(doc_filter).limit(10000).to_list()
-                child_count = len(children)
+                child_count = ct.count_rows(doc_filter)
 
             if parent_count == 0 and child_count == 0:
                 return JSONResponse(
@@ -940,7 +946,9 @@ def create_v1_router(check_permissions: Callable) -> APIRouter:
         total_deleted = 0
 
         try:
-            db = lancedb.connect(DB_PATH)
+            db = getattr(request.app.state, "db", None)
+            if db is None:
+                db = lancedb.connect(DB_PATH)
 
             for doc_id in body.document_ids:
                 try:

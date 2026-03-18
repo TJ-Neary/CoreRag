@@ -242,7 +242,7 @@ class HybridSearcher:
     ) -> List[SearchResult]:
         """Run hybrid search against a single LanceDB instance."""
         try:
-            table = db.open_table(self.table_name)
+            table = self.table if db is self.db else db.open_table(self.table_name)
         except Exception:
             logger.warning(f"Could not open table '{self.table_name}' in {source_db} DB")
             return []
