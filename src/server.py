@@ -15,6 +15,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
@@ -211,6 +212,20 @@ app.include_router(create_dashboard_router(_dashboard_state))
 app.include_router(create_v1_router(check_permissions))
 
 app.include_router(create_settings_router())
+
+
+@app.middleware("http")
+async def csrf_origin_check(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Block cross-origin mutation requests (CSRF/DNS rebinding protection)."""
+    if request.method in ("POST", "PUT", "DELETE"):
+        origin = request.headers.get("origin", "")
+        if origin and not origin.startswith(("http://localhost", "http://127.0.0.1")):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Cross-origin request blocked"},
+            )
+    return await call_next(request)
+
 
 # ── Port Discovery ────────────────────────────────────────────────────────────
 
