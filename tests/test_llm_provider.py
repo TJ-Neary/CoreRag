@@ -1,5 +1,6 @@
 """Tests for LLM Provider abstraction."""
 
+import asyncio
 import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -407,11 +408,13 @@ class TestGeminiCliProvider:
             mock_run.return_value = (cli_response.encode(), b"", 0)
             await provider.generate("Be a classifier", "doc text")
 
-            args = mock_run.call_args[0][0]
-            p_idx = args.index("-p")
-            combined = args[p_idx + 1]
+            # Prompt must be in input_data (stdin), not in the args list
+            input_data = mock_run.call_args[0][1]
+            combined = input_data.decode()
             assert "Be a classifier" in combined
             assert "doc text" in combined
+            args = mock_run.call_args[0][0]
+            assert "-p" not in args, "System prompt must not appear as -p CLI argument"
 
     async def test_generate_no_system_prompt(self, config):
         with patch("shutil.which", return_value="/usr/local/bin/gemini"):
@@ -422,12 +425,14 @@ class TestGeminiCliProvider:
             mock_run.return_value = (cli_response.encode(), b"", 0)
             await provider.generate("", "just user text")
 
+            # Prompt must be in input_data (stdin), not in the args list
+            input_data = mock_run.call_args[0][1]
+            assert input_data.decode() == "just user text"
             args = mock_run.call_args[0][0]
-            p_idx = args.index("-p")
-            assert args[p_idx + 1] == "just user text"
+            assert "-p" not in args, "Prompt must not appear as -p CLI argument"
 
     async def test_generate_uses_headless_mode(self, config):
-        """Verify -p flag is used for non-interactive headless mode."""
+        """Verify prompt is passed via stdin (not -p flag) for headless safety."""
         with patch("shutil.which", return_value="/usr/local/bin/gemini"):
             provider = GeminiCliProvider(config)
 
@@ -437,8 +442,11 @@ class TestGeminiCliProvider:
             await provider.generate("", "test")
 
             args = mock_run.call_args[0][0]
-            assert "-p" in args
+            assert "-p" not in args, "Prompt must not be passed via -p to prevent injection"
             assert "--output-format" in args
+            # Confirm prompt arrived via stdin
+            input_data = mock_run.call_args[0][1]
+            assert input_data == b"test"
 
     async def test_generate_includes_model_flag(self, config):
         with patch("shutil.which", return_value="/usr/local/bin/gemini"):
@@ -468,6 +476,43 @@ class TestGeminiCliProvider:
             provider = GeminiCliProvider(config)
             assert provider.provider_name == "gemini-cli"
             assert provider.model_name == "gemini-2.5-pro"
+
+    async def test_gemini_cli_uses_stdin_not_dash_p(self, config):
+        """TD-026: GeminiCliProvider must pass prompt via stdin, not -p argument."""
+        with patch("shutil.which", return_value="/usr/local/bin/gemini"):
+            provider = GeminiCliProvider(config)
+
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(
+            return_value=(
+                b'{"result": "response"}',
+                b"",
+            )
+        )
+        mock_process.returncode = 0
+        with patch(
+            "asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=mock_process,
+        ) as mock_exec:
+            await provider.generate("system prompt", "user prompt with --dangerous-flag")
+            call_args = mock_exec.call_args
+            args_list = list(call_args[0])
+            assert "-p" not in args_list, "Prompt must be passed via stdin, not -p argument"
+            # Verify stdin is PIPE (not DEVNULL)
+            kwargs = call_args[1] if call_args[1] else {}
+            assert kwargs.get("stdin") == asyncio.subprocess.PIPE, (
+                "stdin must be PIPE to accept prompt data"
+            )
+            # Verify the combined prompt was sent via communicate()
+            communicate_call = mock_process.communicate.call_args
+            input_bytes = (
+                communicate_call[0][0] if communicate_call[0] else communicate_call[1].get("input")
+            )
+            assert input_bytes is not None, "communicate() must receive input_data"
+            decoded = input_bytes.decode()
+            assert "system prompt" in decoded
+            assert "user prompt with --dangerous-flag" in decoded
 
 
 # ── CodexCliProvider Tests ────────────────────────────────────────────────────

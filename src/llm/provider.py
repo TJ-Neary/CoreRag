@@ -392,7 +392,7 @@ class GeminiCliProvider(LLMProvider):
         Args:
             system_prompt: System instructions (folded into user prompt since
                            Gemini CLI has no --system-prompt flag).
-            user_prompt: User message (passed via -p argument).
+            user_prompt: User message (passed via stdin to prevent CLI flag injection).
 
         Returns:
             Generated text response
@@ -407,8 +407,6 @@ class GeminiCliProvider(LLMProvider):
 
         args = [
             self._cli_path,
-            "-p",
-            combined_prompt,
             "--output-format",
             "json",
             "-m",
@@ -416,7 +414,9 @@ class GeminiCliProvider(LLMProvider):
         ]
 
         try:
-            stdout, stderr, returncode = await self._run_process(args, timeout=self.config.timeout)
+            stdout, stderr, returncode = await self._run_process(
+                args, combined_prompt.encode(), timeout=self.config.timeout
+            )
 
             if returncode != 0:
                 error = stderr.decode().strip() if stderr else "Unknown error"
@@ -453,12 +453,12 @@ class GeminiCliProvider(LLMProvider):
     async def _run_process(
         self,
         args: list[str],
-        timeout: float,
+        input_data: bytes = b"",
+        timeout: float = 300.0,
     ) -> tuple[bytes, bytes, int]:
         """Run subprocess with Python 3.13 event loop compatibility.
 
-        Gemini CLI takes the prompt via -p argument (not stdin),
-        so stdin is DEVNULL.
+        Prompt is passed via stdin (input_data) to prevent CLI flag injection.
         """
         import subprocess as sp
 
@@ -467,12 +467,14 @@ class GeminiCliProvider(LLMProvider):
         try:
             process = await asyncio.create_subprocess_exec(
                 *args,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input_data), timeout=timeout
+            )
             return stdout or b"", stderr or b"", process.returncode or 0
 
         except NotImplementedError:
@@ -481,7 +483,7 @@ class GeminiCliProvider(LLMProvider):
                 try:
                     result = sp.run(
                         args,
-                        stdin=sp.DEVNULL,
+                        input=input_data,
                         capture_output=True,
                         env=env,
                         timeout=timeout,
