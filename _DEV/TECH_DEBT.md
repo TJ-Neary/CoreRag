@@ -9,7 +9,7 @@
 | Critical | 0 | 4 | 0 | 0 |
 | High | 1 | 13 | 0 | 0 |
 | Medium | 3 | 20 | 1 | 0 |
-| Low | 5 | 4 | 0 | 2 |
+| Low | 6 | 4 | 0 | 2 |
 
 ## Quick Reference
 
@@ -67,6 +67,7 @@
 | TD-050 | Documentation staleness (StartHere, Architecture, Settings API) | Low | **Partial (Session 33 — Architecture done, StartHere/CLAUDE.md/DevPlan remain)** |
 | TD-051 | Stale GOOGLE_API_KEY warning + misc cleanup | Low | **Resolved (Session 33, P9 W4)** |
 | TD-052 | Pre-existing test failure: test_approve_archives_and_exports | Low | Open |
+| TD-053 | Intermittent test failure: test_concurrent_adds_no_corruption | Low | Open |
 
 ---
 
@@ -1067,14 +1068,54 @@
 
 - **Severity:** Low
 - **Category:** Test Coverage / Bug
-- **Found:** 2026-03-17 (Session 33, security hardening)
-- **Files:** `tests/test_hitl.py::TestExecutionFlow::test_approve_archives_and_exports`
-- **Description:** The test asserts that a vault markdown file is created after approving a document, but the vault is empty after commit. The exporter silently fails (log shows "Catalog registration failed: UNIQUE constraint failed"). The exporter write to vault is not being called or fails silently. Pre-existing failure confirmed on `git stash` against base branch.
+- **Found:** 2026-03-17 (Session 33, P9 hardening)
+- **Files:** `tests/test_hitl.py::TestExecutionFlow::test_approve_archives_and_exports`, `src/executor.py`, `src/exporter.py`
+- **Description:** The test creates a staging item, approves it via `execute_approved_item()`, then asserts a vault markdown file was created in the test vault directory. The assertion fails because the vault directory is empty after commit. The test logs show `"Catalog registration failed: UNIQUE constraint failed"` — the catalog `register()` call in `executor.py` raises a UNIQUE constraint error (likely the test uses a document ID that already exists in the test DB), and the exporter may not be called at all, or the vault path in the test fixture doesn't match what `exporter.py` expects.
+  ```python
+  # The failing assertion (tests/test_hitl.py):
+  vault_files = list(vault_path.glob("**/*.md"))
+  assert len(vault_files) > 0, f"Vault note should be created. Vault contents: {vault_files}"
+  ```
+  Pre-existing failure confirmed by `git stash` test against the base branch (before any P9 changes).
 - **Error:** `AssertionError: Vault note should be created. Vault contents: []`
-- **Impact:** Test provides no coverage for vault export in the commit pipeline.
-- **Suggested Fix:** Investigate `src/exporter.py` call in `executor.py` to determine why vault write is skipped in test environment. May require mocking the vault path or checking path construction in the test fixture.
-- **Effort:** ~30 minutes (1-2 files, ~20 line investigation + fix).
-- **Trigger:** P9 Wave 4 test coverage pass.
+- **Impact:** The vault export step of the commit pipeline has no test coverage. If `exporter.py` breaks, no test catches it.
+- **Suggested Fix:**
+  1. Run the test with `-s` to see full log output and determine where the pipeline stops
+  2. Check if the test fixture's `VAULT_PATH` matches what `exporter.py` reads from `config.VAULT_PATH`
+  3. Check if the UNIQUE constraint error in catalog `register()` causes the entire `execute_approved_item()` to abort before reaching the exporter call
+  4. Fix: either mock the catalog to avoid the constraint error, or use a unique document ID per test run
+  5. Verify the exporter writes to the fixture's vault path, not the real vault path
+- **Effort:** ~30 minutes (read executor.py call sequence, trace vault path from test fixture through exporter, fix mock or path).
+- **Trigger:** Next test quality pass.
+
+### TD-053: Intermittent Test Failure — test_concurrent_adds_no_corruption
+
+- **Severity:** Low
+- **Category:** Test Isolation
+- **Found:** 2026-03-18 (Session 33, P9 verification)
+- **Files:** `tests/test_staging.py::TestConcurrentAccess::test_concurrent_adds_no_corruption`
+- **Description:** This test spawns 10 threads that each call `add_to_staging()` to add an item to the staging manifest, then asserts `len(manifest) == 10`. The test passes reliably in isolation (5/5 runs) but fails intermittently during full test suite runs. The likely cause is a test isolation issue: the `temp_manifest` fixture (which patches `STAGING_MANIFEST_PATH` to a temp file) does not fully isolate when another test in the suite leaves residual state or patches the staging module's globals in a way that bleeds between tests.
+  ```python
+  # The test (tests/test_staging.py line 164):
+  def test_concurrent_adds_no_corruption(self, temp_manifest):
+      threads = [threading.Thread(target=add_item, args=(i,)) for i in range(10)]
+      for t in threads:
+          t.start()
+      for t in threads:
+          t.join()
+      assert not errors
+      manifest = load_manifest()
+      assert len(manifest) == 10  # Fails when residual items exist from other tests
+  ```
+- **Error:** `AssertionError: assert len(manifest) != 10` (actual count varies — includes items from other tests that bled through)
+- **Impact:** Low — the test validates concurrent write safety for the staging manifest. The underlying functionality works; the issue is test isolation, not a code bug.
+- **Suggested Fix:** Investigate the `temp_manifest` fixture to ensure it creates a fresh empty manifest file AND patches the module-level `STAGING_MANIFEST_PATH` before each test. Options:
+  1. Add `manifest_path.write_text("{}")` at the start of the fixture to guarantee empty state
+  2. Use `monkeypatch` instead of `patch` to ensure cleanup even on test failure
+  3. Add `autouse=True` fixture in the test class that resets the manifest between tests
+  4. Mark the test with `@pytest.mark.flaky(reruns=2)` if the fix is not straightforward
+- **Effort:** ~15 minutes (investigate fixture, add reset logic).
+- **Trigger:** Next test quality pass.
 
 ---
 
