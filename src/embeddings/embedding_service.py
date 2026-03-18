@@ -15,9 +15,10 @@ import json
 import logging
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from src.config import EMBEDDING_BATCH_SIZE
 from src.exceptions import EmbeddingError
@@ -95,8 +96,7 @@ class EmbeddingCache:
         self.cache_dir = cache_dir or STATE_DIR / "embedding_cache"
         self.persist = persist
 
-        self._cache: Dict[str, List[float]] = {}
-        self._access_order: List[str] = []
+        self._cache: OrderedDict[str, List[float]] = OrderedDict()
         self._lock = threading.Lock()
 
         if persist:
@@ -108,9 +108,7 @@ class EmbeddingCache:
 
         with self._lock:
             if key in self._cache:
-                # Move to end (most recently used)
-                self._access_order.remove(key)
-                self._access_order.append(key)
+                self._cache.move_to_end(key)  # O(1) vs O(n) list.remove
                 return self._cache[key]
 
         return None
@@ -120,13 +118,11 @@ class EmbeddingCache:
         key = self._make_key(text, model)
 
         with self._lock:
-            # Evict if at capacity
-            while len(self._cache) >= self.max_size:
-                oldest = self._access_order.pop(0)
-                del self._cache[oldest]
-
+            if key in self._cache:
+                self._cache.move_to_end(key)
             self._cache[key] = embedding
-            self._access_order.append(key)
+            while len(self._cache) > self.max_size:
+                self._cache.popitem(last=False)  # O(1) eviction
 
     def _make_key(self, text: str, model: str) -> str:
         """Create cache key from text and model."""
@@ -140,8 +136,10 @@ class EmbeddingCache:
             try:
                 with open(cache_file) as f:
                     data = json.load(f)
-                    self._cache = data.get("cache", {})
-                    self._access_order = data.get("order", list(self._cache.keys()))
+                    raw = data.get("cache", {})
+                    # Restore in insertion order (last-used last) using saved order
+                    order = data.get("order", list(raw.keys()))
+                    self._cache = OrderedDict((k, raw[k]) for k in order if k in raw)
                 logger.info(f"Loaded {len(self._cache)} cached embeddings")
             except Exception as e:
                 logger.warning(f"Failed to load embedding cache: {e}")
@@ -158,8 +156,8 @@ class EmbeddingCache:
             with open(cache_file, "w") as f:
                 json.dump(
                     {
-                        "cache": self._cache,
-                        "order": self._access_order,
+                        "cache": dict(self._cache),
+                        "order": list(self._cache.keys()),
                     },
                     f,
                 )
@@ -170,7 +168,6 @@ class EmbeddingCache:
         """Clear the cache."""
         with self._lock:
             self._cache.clear()
-            self._access_order.clear()
 
     def __len__(self) -> int:
         return len(self._cache)
