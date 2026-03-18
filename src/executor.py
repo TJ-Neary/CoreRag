@@ -296,6 +296,12 @@ def execute_approved_item(item_id: str):
             )
             logger.info(f"PII-redacted text will be used for exports of {current_path.name}")
 
+        # Capture file size before archiving (file won't exist at original_path after move)
+        try:
+            _file_size = current_path.stat().st_size
+        except OSError:
+            _file_size = 0
+
         # Archive (moves original file to target folder — always unredacted)
         archive_to_target(current_path, target_folder)
 
@@ -376,11 +382,7 @@ def execute_approved_item(item_id: str):
             from src.catalog.catalog_manager import CatalogManager, DocumentRecord, ExportRecord
 
             catalog = CatalogManager()
-            file_size = 0
-            try:
-                file_size = original_path.stat().st_size if original_path.exists() else 0
-            except OSError:
-                pass
+            file_size = _file_size
 
             doc_record = DocumentRecord(
                 id=document_id,
