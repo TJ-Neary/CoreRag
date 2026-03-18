@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingestion Approval Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/tailwind.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #e5e7eb; }
         .loader {
@@ -486,6 +486,13 @@
     </div>
 
     <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         let currentState = 'ready';
         let folderChoices = [];
         let pollTimer = null;
@@ -958,7 +965,7 @@
 
                 if (p.status === 'paused' && p.paused_reason) {
                     document.getElementById('progress-detail').innerHTML =
-                        `<span class="text-yellow-400">${p.paused_reason}</span>`;
+                        `<span class="text-yellow-400">${escapeHtml(p.paused_reason)}</span>`;
                 }
 
                 updateBatchControls(p.status);
@@ -967,7 +974,7 @@
                 errDiv.innerHTML = '';
                 if (p.errors && p.errors.length > 0) {
                     for (const err of p.errors) {
-                        errDiv.innerHTML += `<p class="text-red-400 text-sm">Error: ${err.file} - ${err.error}</p>`;
+                        errDiv.innerHTML += `<p class="text-red-400 text-sm">Error: ${escapeHtml(err.file)} - ${escapeHtml(err.error)}</p>`;
                     }
                 }
 
@@ -1162,7 +1169,7 @@
                 // Populate bulk folder datalist
                 const bulkList = document.getElementById('bulk-folder-list');
                 if (bulkList) {
-                    bulkList.innerHTML = folderChoices.map(f => `<option value="${f}">`).join('');
+                    bulkList.innerHTML = folderChoices.map(f => `<option value="${escapeHtml(f)}">`).join('');
                 }
                 renderFolderStructure(data.structure);
             } catch (e) {
@@ -1176,11 +1183,11 @@
             const folders = structure?.folders || {};
             for (const [parent, children] of Object.entries(folders)) {
                 let html = `<div class="bg-gray-700 rounded p-3">
-                    <h4 class="font-medium text-blue-400 mb-1">${parent}</h4>`;
+                    <h4 class="font-medium text-blue-400 mb-1">${escapeHtml(parent)}</h4>`;
                 if (Array.isArray(children) && children.length > 0) {
                     html += '<ul class="text-gray-400 text-xs space-y-0.5">';
                     for (const child of children) {
-                        html += `<li>&nbsp;&nbsp;${child}</li>`;
+                        html += `<li>&nbsp;&nbsp;${escapeHtml(child)}</li>`;
                     }
                     html += '</ul>';
                 } else {
@@ -1203,7 +1210,7 @@
         }
 
         function folderInputHtml(id, currentValue) {
-            const opts = folderChoices.map(f => `<option value="${f}">`).join('');
+            const opts = folderChoices.map(f => `<option value="${escapeHtml(f)}">`).join('');
             return `<input type="text" id="folder-${id}" value="${currentValue || 'Unsorted'}" list="folders-${id}"
                 placeholder="Type path e.g. Work/Safe Place/Handbook"
                 class="w-full px-3 py-2 rounded border border-gray-600 bg-gray-700 text-white focus:outline-none focus:border-blue-500">
@@ -1234,7 +1241,7 @@
                         <p class="text-orange-300 text-sm font-medium">
                             Duplicate detected (${dup.match_type}, ${Math.round(dup.similarity * 100)}% match)
                         </p>
-                        <p class="text-orange-400 text-xs mt-1">Matches: ${dup.matched_file}</p>
+                        <p class="text-orange-400 text-xs mt-1">Matches: ${escapeHtml(dup.matched_file)}</p>
                         <label class="flex items-center space-x-2 mt-2 cursor-pointer">
                             <input type="checkbox" id="skip-dup-${id}" checked
                                 class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-orange-500 focus:ring-orange-500">
@@ -1254,15 +1261,15 @@
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <h3 class="text-lg font-semibold text-white flex items-center">
-                                ${item.proposed?.filename || 'Unknown'}
+                                ${escapeHtml(item.proposed?.filename || 'Unknown')}
                                 <span id="badge-${id}" class="${isSensitive ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'} text-xs px-2 py-1 rounded ml-2">
                                     ${isSensitive ? 'SENSITIVE' : 'CLEAR'}
                                 </span>
                             </h3>
-                            <p class="text-sm text-gray-400">Original: ${item.original_path}</p>
+                            <p class="text-sm text-gray-400">Original: ${escapeHtml(item.original_path)}</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="text-xs bg-purple-900 text-purple-200 px-2 py-1 rounded">${item.proposed?.year || '?'}</span>
+                            <span class="text-xs bg-purple-900 text-purple-200 px-2 py-1 rounded">${escapeHtml(String(item.proposed?.year || '?'))}</span>
                             <button onclick="skipFile('${id}')" title="Skip this file"
                                 class="text-gray-500 hover:text-red-400 transition-colors text-lg leading-none px-1">
                                 &times;
@@ -1327,7 +1334,7 @@
                     </div>
 
                     <div class="border-t border-gray-700 pt-3">
-                        <p class="text-sm text-gray-400">${item.metadata?.summary || 'No summary available.'}</p>
+                        <p class="text-sm text-gray-400">${escapeHtml(item.metadata?.summary || 'No summary available.')}</p>
                     </div>
                 </div>`;
                 container.innerHTML += html;
@@ -1401,7 +1408,7 @@
             html += '<label class="block text-xs font-medium text-gray-400 mb-1">Collection Tags</label>';
             html += `<div class="flex flex-wrap gap-2 mb-2" id="tags-container-${id}">`;
             for (const tag of tags) {
-                html += `<span class="tag-pill text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded inline-flex items-center gap-1" data-tag="${tag}">${tag}<button onclick="removeTag('${id}','${tag}')" class="text-blue-400 hover:text-white ml-1">&times;</button></span>`;
+                html += `<span class="tag-pill text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded inline-flex items-center gap-1" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<button onclick="removeTag('${id}','${escapeHtml(tag)}')" class="text-blue-400 hover:text-white ml-1">&times;</button></span>`;
             }
             html += '</div>';
             html += `<div class="flex gap-2">`;
@@ -1414,7 +1421,7 @@
             if (suggested.length) {
                 html += '<div class="flex flex-wrap gap-1 mt-1">';
                 for (const tag of suggested) {
-                    html += `<button onclick="addTag('${id}','${tag}')" class="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded border border-gray-600 hover:border-blue-500 hover:text-blue-300 transition-colors" title="Click to add suggested tag">${tag}?</button>`;
+                    html += `<button onclick="addTag('${id}','${escapeHtml(tag)}')" class="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded border border-gray-600 hover:border-blue-500 hover:text-blue-300 transition-colors" title="Click to add suggested tag">${escapeHtml(tag)}?</button>`;
                 }
                 html += '</div>';
             }
@@ -1444,7 +1451,14 @@
             const pill = document.createElement('span');
             pill.className = 'tag-pill text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded inline-flex items-center gap-1';
             pill.dataset.tag = tag;
-            pill.innerHTML = `${tag}<button onclick="removeTag('${id}','${tag}')" class="text-blue-400 hover:text-white ml-1">&times;</button>`;
+            const tagSpan = document.createElement('span');
+            tagSpan.textContent = tag;
+            const btn = document.createElement('button');
+            btn.innerHTML = '&times;';
+            btn.className = 'text-blue-400 hover:text-white ml-1';
+            btn.onclick = () => removeTag(id, tag);
+            pill.appendChild(tagSpan);
+            pill.appendChild(btn);
             container.appendChild(pill);
         }
 
@@ -1494,11 +1508,11 @@
                 const summary = Object.entries(typeCounts)
                     .map(([type, count]) => `${count} ${type}`)
                     .join(', ');
-                html += `<p class="text-yellow-400">Auto-detected: ${summary}</p>`;
+                html += `<p class="text-yellow-400">Auto-detected: ${escapeHtml(summary)}</p>`;
             }
 
             if (observations) {
-                html += `<p class="text-blue-400">AI notes: ${observations}</p>`;
+                html += `<p class="text-blue-400">AI notes: ${escapeHtml(observations)}</p>`;
             }
 
             if (source === 'manual') {
@@ -1727,9 +1741,9 @@
 
                 document.getElementById('commit-detail').innerHTML =
                     `<span class="${statusColor}">${pct}% complete</span>` +
-                    (c.current_file ? ` &mdash; ${c.current_file}` : '') +
+                    (c.current_file ? ` &mdash; ${escapeHtml(c.current_file)}` : '') +
                     `<br><span class="text-xs text-gray-500">Memory: ${c.memory_pct?.toFixed(0) || '?'}%</span>` +
-                    (isPaused && c.paused_reason ? `<br><span class="text-yellow-500 text-xs">${c.paused_reason}</span>` : '');
+                    (isPaused && c.paused_reason ? `<br><span class="text-yellow-500 text-xs">${escapeHtml(c.paused_reason)}</span>` : '');
 
                 updateCommitControls(c.status);
 
@@ -1737,7 +1751,7 @@
                 const resultsDiv = document.getElementById('commit-results');
                 if (c.errors && c.errors.length > 0) {
                     resultsDiv.innerHTML = c.errors.map(e =>
-                        `<p class="text-red-400 text-sm">Error: ${e.file} - ${e.error}</p>`
+                        `<p class="text-red-400 text-sm">Error: ${escapeHtml(e.file)} - ${escapeHtml(e.error)}</p>`
                     ).join('');
                 }
 
@@ -1837,9 +1851,9 @@
                 container.innerHTML = data.files.map(f => `
                     <div class="flex items-center justify-between bg-gray-700 rounded p-3">
                         <div class="flex-1 min-w-0">
-                            <p class="text-white text-sm font-medium truncate">${f.source_path}</p>
+                            <p class="text-white text-sm font-medium truncate">${escapeHtml(f.source_path)}</p>
                             <p class="text-gray-400 text-xs">${f.parent_chunks} parent chunks, ${f.child_chunks} child chunks</p>
-                            ${f.preview ? `<p class="text-gray-500 text-xs mt-1 truncate">${f.preview}</p>` : ''}
+                            ${f.preview ? `<p class="text-gray-500 text-xs mt-1 truncate">${escapeHtml(f.preview)}</p>` : ''}
                         </div>
                         <button onclick="deleteFromRag('${f.source_path.replace(/'/g, "\\'")}')"
                             class="ml-3 text-red-400 hover:text-red-300 text-xs px-2 py-1 border border-red-800 rounded hover:border-red-600 transition-colors flex-shrink-0">
@@ -1889,10 +1903,10 @@
                     factsDiv.innerHTML = data.facts.map((f, i) => `
                         <div class="bg-gray-700 rounded p-3 flex justify-between items-start">
                             <div class="flex-1 min-w-0">
-                                <p class="text-white text-sm">${f.content}</p>
+                                <p class="text-white text-sm">${escapeHtml(f.content)}</p>
                                 <p class="text-gray-400 text-xs mt-1">
-                                    <span class="bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">${f.category}</span>
-                                    <span class="ml-2">${f.source}</span>
+                                    <span class="bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">${escapeHtml(f.category)}</span>
+                                    <span class="ml-2">${escapeHtml(f.source)}</span>
                                     ${f.created_at ? `<span class="ml-2">${new Date(f.created_at).toLocaleDateString()}</span>` : ''}
                                 </p>
                             </div>
@@ -1910,11 +1924,11 @@
                 } else {
                     corDiv.innerHTML = data.corrections.map(c => {
                         const changes = Object.entries(c.corrections || {}).map(([field, diff]) =>
-                            `<span class="text-xs"><span class="text-gray-400">${field}:</span> <span class="text-red-400 line-through">${diff.ai || '?'}</span> → <span class="text-green-400">${diff.human || '?'}</span></span>`
+                            `<span class="text-xs"><span class="text-gray-400">${escapeHtml(field)}:</span> <span class="text-red-400 line-through">${escapeHtml(diff.ai || '?')}</span> → <span class="text-green-400">${escapeHtml(diff.human || '?')}</span></span>`
                         ).join('<br>');
                         return `
                             <div class="bg-gray-700 rounded p-3">
-                                <p class="text-white text-sm font-medium">${c.file || 'Unknown file'}</p>
+                                <p class="text-white text-sm font-medium">${escapeHtml(c.file || 'Unknown file')}</p>
                                 <div class="mt-1">${changes || '<span class="text-gray-500 text-xs">No field changes</span>'}</div>
                                 ${c.timestamp ? `<p class="text-gray-500 text-xs mt-1">${new Date(c.timestamp).toLocaleDateString()}</p>` : ''}
                             </div>`;
