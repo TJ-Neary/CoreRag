@@ -1,5 +1,7 @@
 # P8 SP1: Document Catalog + Archive Organization — Implementation Plan
 
+> **Status: COMPLETE** — Implemented (Session 32, 2026-03-15/16). 10 commits, ~2,100 lines.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a SQLite document catalog that tracks every file across all destinations (main RAG, restricted RAG, Obsidian, archive), reorganize the archive at ~/Documents/PKM/, replace the keyword auto-tagger with LLM-powered tags, and retroactively catalog the 99 existing files.

@@ -1,5 +1,7 @@
 # P7 Wave 1: Safety & Correctness — Implementation Plan
 
+> **Status: COMPLETE** — All 9 items implemented (Session 31, 2026-03-14).
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix 8 safety and correctness issues that cause silent failures, stale defaults, and misplaced state files.

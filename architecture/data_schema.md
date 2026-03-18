@@ -1,6 +1,8 @@
 # Data Schema
 
 > **Status**: ✅ Implemented | See `src/models/` for implementation
+>
+> **Note (P8/P9 updates):** The live LanceDB tables are `child_chunks` and `parent_chunks` (not `documents` and `chunks` as shown in the schema below). The embedding model is `BAAI/bge-m3` (1024 dimensions), not `nomic-ai/nomic-embed-text-v1.5` (768 dimensions). Additional fields exist on live chunk records: `content_hash`, `context_prefix`, `quality_score`, `source_authority`, `date_extracted`, `tags` (comma-delimited string), `is_sensitive`, and `source_db` (for dual-RAG results).
 
 > **CRITICAL**: All code must match these data structures exactly.
 
@@ -93,7 +95,7 @@ class Chunk:
 
     # Content
     text: str                        # The actual text content
-    embedding: List[float]           # 768-dimensional vector
+    embedding: List[float]           # 1024-dimensional vector (BGE-M3)
 
     # Position in document
     chunk_index: int                 # 0, 1, 2, ... within document
@@ -156,12 +158,14 @@ documents_schema = pa.schema([
 
 ### chunks table
 
+> **Live table names are `child_chunks` and `parent_chunks`** (not `documents`/`chunks`). The live schema also includes `content_hash`, `context_prefix`, `quality_score`, `source_authority`, `date_extracted`, `is_sensitive`, and `tags` (comma-delimited string).
+
 ```python
 chunks_schema = pa.schema([
     pa.field("id", pa.string()),
     pa.field("document_id", pa.string()),
     pa.field("text", pa.string()),
-    pa.field("embedding", pa.list_(pa.float32(), 768)),  # Fixed 768 dimensions
+    pa.field("embedding", pa.list_(pa.float32(), 1024)),  # Fixed 1024 dimensions (BGE-M3)
     pa.field("chunk_index", pa.int32()),
     pa.field("start_char", pa.int32()),
     pa.field("end_char", pa.int32()),
@@ -256,10 +260,12 @@ class PersonalContext:
 
 ## Embedding Specifications
 
+> **Updated (P8/P9):** Model changed from nomic to BGE-M3. Any code referencing nomic or 768d is stale.
+
 | Property | Value |
 |----------|-------|
-| Model | nomic-ai/nomic-embed-text-v1.5 |
-| Dimensions | 768 |
+| Model | BAAI/bge-m3 |
+| Dimensions | 1024 |
 | Max Tokens | 8192 |
 | Similarity Metric | Cosine |
 
@@ -267,13 +273,13 @@ class PersonalContext:
 # Embedding generation example
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
+model = SentenceTransformer("BAAI/bge-m3")
 
-# For search queries, prefix with "search_query:"
-query_embedding = model.encode("search_query: What is machine learning?")
+# For search queries, use the query instruction prefix
+query_embedding = model.encode("Represent this sentence for searching relevant passages: What is machine learning?")
 
-# For documents, prefix with "search_document:"
-doc_embedding = model.encode("search_document: Machine learning is a subset of AI...")
+# For documents, encode directly
+doc_embedding = model.encode("Machine learning is a subset of AI...")
 ```
 
 ---

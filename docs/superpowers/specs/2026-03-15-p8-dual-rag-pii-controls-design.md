@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-15
 **Author:** Claude Opus 4.6 (Session 31)
-**Status:** Design Brief (needs full brainstorm → spec → plan cycle)
+**Status:** Complete — SP1–SP5 implemented (Session 32, 2026-03-15/16)
 
 ---
 

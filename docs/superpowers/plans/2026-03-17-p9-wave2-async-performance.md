@@ -1,6 +1,8 @@
 # P9 Wave 2: Async Correctness + Performance — Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: COMPLETE** — All 14 async/performance tasks executed (Session 33, 2026-03-17/18).
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the server genuinely concurrent by fixing async-but-synchronous code paths. Eliminate unnecessary I/O (redundant DB connections, full table scans, N+1 queries, model reloading).
 

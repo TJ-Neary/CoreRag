@@ -1,6 +1,8 @@
 # Multi-Modal Search Architecture
 
 > **Status**: ✅ Implemented | See `src/search/, src/multimodal/` for implementation
+>
+> **Note (P8/P9):** Primary text embedding model is BAAI/bge-m3 (1024d), not nomic-embed-text-v1.5 (768d). All modal content is embedded into the same 1024d space.
 
 ## Overview
 

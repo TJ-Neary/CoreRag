@@ -2,8 +2,18 @@
 ## Personal Knowledge Management System
 
 > **Status**: ✅ Core Complete | All major components implemented
+>
+> **Note (P8/P9 updates):** This document is an early design reference. The current architecture differs in several ways:
+> - Authentication: `verify_api_key()` replaced by `check_permissions()` via `SettingsManager` (per-agent keys + permission toggles)
+> - LanceDB tables: `child_chunks` and `parent_chunks` (not `documents`/`chunks`/`context`)
+> - Embedding model: BAAI/bge-m3 (1024d) replacing nomic-embed-text (768d)
+> - Dual RAG: separate restricted LanceDB at `~/.corerag/lancedb-restricted/` for unredacted sensitive content
+> - Catalog: SQLite document catalog at `~/Documents/PKM/_catalog.db`
+> - CSRF origin check middleware added to server (P9 Wave 1)
+> - All search helpers wrapped in `asyncio.to_thread()` (P9 Wave 2)
+> - See `_CATALOG/ARCHITECTURE.md` for the current C4 diagram.
 
-*Last Updated: January 31, 2026*
+*Last Updated: January 31, 2026 (architecture notes updated March 2026)*
 
 ---
 

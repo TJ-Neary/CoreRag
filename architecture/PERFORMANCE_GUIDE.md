@@ -1,6 +1,8 @@
 # Performance Optimization Guide
 
 > **Status**: ✅ Applied across codebase
+>
+> **Note (P8/P9):** Embedding model is BAAI/bge-m3 (1024d), not nomic-embed-text-v1.5 (768d). Async helpers use `asyncio.to_thread()`. SQLite methods use context managers. See `_CATALOG/ARCHITECTURE.md` for current performance posture.
 
 > **Target Hardware**: 2024 MacBook Pro M4 Max, 48GB Unified Memory
 >

@@ -1,6 +1,8 @@
 # Chunking Strategy: Parent-Child Indexing
 
 > **Status**: ✅ Implemented | See `src/chunking/parent_child.py` for implementation
+>
+> **Note (P8/P9):** Live table names are `child_chunks` and `parent_chunks`. Embedding dimensions are 1024 (BGE-M3), not 768. Context prefixes (Contextual Retrieval) are prepended to chunk text before embedding.
 
 ## The Problem
 

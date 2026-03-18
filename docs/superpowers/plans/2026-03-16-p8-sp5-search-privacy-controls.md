@@ -1,5 +1,7 @@
 # P8 SP5: Search Fan-out + Privacy Controls — Implementation Plan
 
+> **Status: COMPLETE** — Implemented (Session 32, 2026-03-15/16). 6 commits, ~2,074 lines.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add per-agent access control with permission toggles, a Settings tab for managing agents/LLM/models/databases, and enforce permissions across all API and MCP endpoints.

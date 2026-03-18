@@ -1,5 +1,7 @@
 # P8 SP4: Redaction Editor UI — Implementation Plan
 
+> **Status: COMPLETE** — Implemented (Session 32, 2026-03-15/16). 3 commits, ~367 lines.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add per-detection Keep/Redact toggles to the dashboard so users control exactly which PII findings get redacted at commit time.

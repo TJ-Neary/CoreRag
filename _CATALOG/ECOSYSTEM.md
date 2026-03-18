@@ -85,7 +85,7 @@ CoreRag also exposes an HTTP API on **port 8000** (registered in HQ Port Registr
 | `DELETE /api/v1/documents/{id}` | Document deletion |
 | `POST /api/v1/documents/bulk-delete` | Bulk document deletion |
 
-Authentication: `X-API-Key` header (set `CORERAG_API_KEY` in `.env`). Manifest endpoint is always public.
+Authentication: Per-agent `X-API-Key` header managed by `SettingsManager` (`~/.corerag/settings.yaml`). Legacy `CORERAG_API_KEY` migrates to a `_legacy` agent with `search_restricted=False`. Manifest endpoint is always public.
 
 ---
 

@@ -1,6 +1,8 @@
 # P9 Wave 1: Security + Data Protection — Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: COMPLETE** — All 9 security tasks executed (Session 33, 2026-03-17/18). 924 tests passing.
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Eliminate all critical and high security vulnerabilities identified in the P9 5-agent audit. Protect PII data paths, prevent injection attacks, fix XSS, harden permission defaults.
 
@@ -66,7 +68,7 @@ The system has a web dashboard at `localhost:8000`, a REST API (`/api/v1/*`), an
 - Modify: `src/executor.py:88-92`
 - Test: `tests/test_executor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/test_executor.py`, add a test that verifies `_redact_pii` raises `ProcessingError` when the Presidio analyzer fails:
 
@@ -88,12 +90,12 @@ def test_redact_pii_raises_on_presidio_failure():
             _redact_pii("Text with SSN 123-45-6789", "test_doc.pdf")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_executor.py::test_redact_pii_raises_on_presidio_failure -v`
 Expected: FAIL -- currently returns the original text instead of raising
 
-- [ ] **Step 3: Implement the fix**
+- [x] **Step 3: Implement the fix**
 
 In `src/executor.py`, change lines 88-92. The `except ProcessingError: raise` stays. Change the generic handler:
 
@@ -105,17 +107,17 @@ In `src/executor.py`, change lines 88-92. The `except ProcessingError: raise` st
         raise ProcessingError(f"PII redaction failed for {file_name}: {e}") from e
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_executor.py::test_redact_pii_raises_on_presidio_failure -v`
 Expected: PASS
 
-- [ ] **Step 5: Run full test suite to check for regressions**
+- [x] **Step 5: Run full test suite to check for regressions**
 
 Run: `pytest tests/test_executor.py -v`
 Expected: All tests pass
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/executor.py tests/test_executor.py
@@ -172,7 +174,7 @@ git commit -m "fix: PII redaction raises on failure instead of silent fallback (
 - Modify: `src/llm/provider.py:395-495`
 - Test: `tests/test_llm_provider.py`
 
-- [ ] **Step 1: Write the failing test for Gemini CLI stdin**
+- [x] **Step 1: Write the failing test for Gemini CLI stdin**
 
 In `tests/test_llm_provider.py`, add:
 
@@ -204,12 +206,12 @@ async def test_gemini_cli_uses_stdin_not_dash_p():
         assert kwargs.get("stdin") == asyncio.subprocess.PIPE
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_llm_provider.py::test_gemini_cli_uses_stdin_not_dash_p -v`
 Expected: FAIL -- currently uses `-p`
 
-- [ ] **Step 3: Refactor GeminiCliProvider.generate()**
+- [x] **Step 3: Refactor GeminiCliProvider.generate()**
 
 In `src/llm/provider.py`, change the `generate()` method (lines 403-416). Remove `-p` and `combined_prompt` from args. Pass via stdin through `_run_process`:
 
@@ -229,7 +231,7 @@ In `src/llm/provider.py`, change the `generate()` method (lines 403-416). Remove
             )
 ```
 
-- [ ] **Step 4: Refactor _run_process to accept input_data**
+- [x] **Step 4: Refactor _run_process to accept input_data**
 
 Change `_run_process()` (around line 460) to accept `input_data` parameter and use `stdin=PIPE`:
 
@@ -271,16 +273,16 @@ Change `_run_process()` (around line 460) to accept `input_data` parameter and u
             return await asyncio.to_thread(_run)
 ```
 
-- [ ] **Step 5: Apply same change to CodexCliProvider if it uses -p**
+- [x] **Step 5: Apply same change to CodexCliProvider if it uses -p**
 
 Check `CodexCliProvider.generate()` -- if it also passes the prompt via `-p`, apply the same stdin refactor.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `pytest tests/test_llm_provider.py -v`
 Expected: All pass
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/llm/provider.py tests/test_llm_provider.py
@@ -321,7 +323,7 @@ git commit -m "fix: CLI providers use stdin instead of -p for prompt injection s
 - Modify: `src/api/dashboard_routes.py:340-354`
 - Test: `tests/test_dashboard_routes.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -342,12 +344,12 @@ async def test_cold_storage_rejects_path_traversal(client):
         assert "must be" in data["error"].lower() or "not allowed" in data["error"].lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_dashboard_routes.py::test_cold_storage_rejects_path_traversal -v`
 Expected: FAIL -- currently passes the path through unvalidated
 
-- [ ] **Step 3: Add path validation**
+- [x] **Step 3: Add path validation**
 
 In `src/api/dashboard_routes.py`, add validation after line 349 (after the `not destination` check), before the `catalog.migrate_to_cold()` call:
 
@@ -364,12 +366,12 @@ In `src/api/dashboard_routes.py`, add validation after line 349 (after the `not 
             return {"error": "Destination must be an existing directory"}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_dashboard_routes.py::test_cold_storage_rejects_path_traversal -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/api/dashboard_routes.py tests/test_dashboard_routes.py
@@ -393,7 +395,7 @@ Tag pills (line 1447): `pill.innerHTML = \`${tag}<button onclick="removeTag('${i
 **Files:**
 - Modify: `src/ui/templates/dashboard.html:1447,1837-1848,1889-1920`
 
-- [ ] **Step 1: Add escapeHtml() function**
+- [x] **Step 1: Add escapeHtml() function**
 
 Near the top of the `<script>` section in `dashboard.html`, add:
 
@@ -406,7 +408,7 @@ function escapeHtml(str) {
 }
 ```
 
-- [ ] **Step 2: Escape RAG browser data (lines 1837-1848)**
+- [x] **Step 2: Escape RAG browser data (lines 1837-1848)**
 
 Change line 1840:
 `${f.source_path}` to `${escapeHtml(f.source_path)}`
@@ -414,7 +416,7 @@ Change line 1840:
 Change line 1842:
 `${f.preview}` to `${escapeHtml(f.preview)}`
 
-- [ ] **Step 3: Escape memory panel data (lines 1889-1903)**
+- [x] **Step 3: Escape memory panel data (lines 1889-1903)**
 
 Change line 1892: `${f.content}` to `${escapeHtml(f.content)}`
 
@@ -422,7 +424,7 @@ Change line 1894: `${f.category}` to `${escapeHtml(f.category)}`
 
 Change line 1895: `${f.source}` to `${escapeHtml(f.source)}`
 
-- [ ] **Step 4: Escape corrections panel data (lines 1911-1918)**
+- [x] **Step 4: Escape corrections panel data (lines 1911-1918)**
 
 Change line 1912: `${field}` to `${escapeHtml(field)}`
 
@@ -430,7 +432,7 @@ Change line 1913 (two places): `${diff.ai || '?'}` to `${escapeHtml(diff.ai || '
 
 Change line 1917: `${c.file || 'Unknown file'}` to `${escapeHtml(c.file || 'Unknown file')}`
 
-- [ ] **Step 5: Fix tag pill injection (line 1447)**
+- [x] **Step 5: Fix tag pill injection (line 1447)**
 
 Replace the innerHTML assignment:
 ```javascript
@@ -449,7 +451,7 @@ pill.appendChild(tagSpan);
 pill.appendChild(btn);
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/ui/templates/dashboard.html
@@ -479,7 +481,7 @@ git commit -m "fix: escape all innerHTML user-data injections in dashboard (TD-0
 - Modify: `src/api/v1_routes.py:978-986`
 - Test: `tests/test_v1_routes.py`
 
-- [ ] **Step 1: Add auth dependency**
+- [x] **Step 1: Add auth dependency**
 
 Change:
 ```python
@@ -492,12 +494,12 @@ To:
     async def list_vaults(permissions: dict[str, bool] = Depends(check_permissions)):
 ```
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `pytest tests/test_v1_routes.py -v`
 Expected: All pass. Note: if the test client runs in open mode (no agents configured), the endpoint will still return 200. The fix ensures non-localhost external callers get 401.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/api/v1_routes.py
@@ -522,7 +524,7 @@ git commit -m "fix: require auth on /api/v1/vaults endpoint (TD-029)"
 **Files:**
 - Modify: `src/graph/knowledge_graph.py:285-320`
 
-- [ ] **Step 1: Add import and apply to entity columns**
+- [x] **Step 1: Add import and apply to entity columns**
 
 Add at top of `_migrate_schema`:
 ```python
@@ -540,16 +542,16 @@ Change entity column loop (lines 296-301):
                     cursor.execute(f"UPDATE entities SET {col_s} = created_at WHERE {col_s} = ''")
 ```
 
-- [ ] **Step 2: Apply to relationship columns (lines 312-317)**
+- [x] **Step 2: Apply to relationship columns (lines 312-317)**
 
 Same pattern for the relationship column loop.
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `pytest tests/test_knowledge_graph.py -v`
 Expected: All pass
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/graph/knowledge_graph.py
@@ -581,7 +583,7 @@ git commit -m "fix: use safe_identifier() in KG schema migration SQL (TD-030)"
 - Modify: `src/server.py:169`
 - Test: `tests/test_settings.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_legacy_migration_excludes_search_restricted(tmp_path):
@@ -598,7 +600,7 @@ def test_legacy_migration_excludes_search_restricted(tmp_path):
         del os.environ["CORERAG_API_KEY"]
 ```
 
-- [ ] **Step 2: Fix legacy migration**
+- [x] **Step 2: Fix legacy migration**
 
 In `settings_manager.py`, change lines 314-318:
 ```python
@@ -614,7 +616,7 @@ In `settings_manager.py`, change lines 314-318:
         )
 ```
 
-- [ ] **Step 3: Fix open-mode permissions**
+- [x] **Step 3: Fix open-mode permissions**
 
 In `server.py`, change line 169:
 ```python
@@ -622,12 +624,12 @@ In `server.py`, change line 169:
             perms["search_restricted"] = False  # Must be explicitly configured
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/test_settings.py -v`
 Expected: All pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/settings/settings_manager.py src/server.py tests/test_settings.py
@@ -643,7 +645,7 @@ git commit -m "fix: exclude search_restricted from legacy migration and open mod
 **Files:**
 - Modify: `src/server.py`
 
-- [ ] **Step 1: Add CSRF middleware**
+- [x] **Step 1: Add CSRF middleware**
 
 In `src/server.py`, inside `create_app()` after the app is created:
 
@@ -670,12 +672,12 @@ Then add the middleware:
 
 Note: Requests without `Origin` header (curl, MCP stdio, API clients) pass through -- they don't come from browsers.
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `pytest -v`
 Expected: All pass (test client uses localhost)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/server.py
@@ -703,24 +705,24 @@ git commit -m "fix: add CSRF origin check middleware for dashboard endpoints (TD
 - Modify: `src/api/settings_routes.py` (lines ~62, ~190, ~293)
 - Modify: `src/api/dashboard_routes.py` (lines ~337, ~354)
 
-- [ ] **Step 1: Fix v1_routes.py**
+- [x] **Step 1: Fix v1_routes.py**
 
 For each generic `except Exception as e:` handler, change `"error": str(e)` to `"error": "Internal server error"`. Keep `str(e)` for `CoreRagError` handlers (designed to be user-facing).
 
-- [ ] **Step 2: Fix settings_routes.py**
+- [x] **Step 2: Fix settings_routes.py**
 
 Same pattern change at lines ~62, ~190, ~293.
 
-- [ ] **Step 3: Fix dashboard_routes.py**
+- [x] **Step 3: Fix dashboard_routes.py**
 
 Change `return {"error": str(e)}` to `return {"error": "Internal server error"}` in generic exception handlers (lines ~337, ~354).
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/test_v1_routes.py tests/test_settings.py -v`
 Expected: All pass. If any tests assert on specific error messages from generic exceptions, update them to check for "Internal server error".
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/api/v1_routes.py src/api/settings_routes.py src/api/dashboard_routes.py
@@ -733,10 +735,10 @@ git commit -m "fix: sanitize error messages in API responses (TD-043)"
 
 After all 9 tasks are complete:
 
-- [ ] **Run full test suite:** `pytest` -- all 693+ tests must pass
-- [ ] **Run security scanner:** `./scripts/security_scan.sh --staged` -- must pass clean
-- [ ] **Manual dashboard check:** Start server (`python -m src.server`), open `localhost:8000`, verify dashboard loads and basic operations work
-- [ ] **Update TECH_DEBT.md:** Mark TD-025, TD-026, TD-027, TD-028, TD-029, TD-030, TD-041, TD-042, TD-043 as Resolved with session reference
+- [x] **Run full test suite:** `pytest` -- all 693+ tests must pass
+- [x] **Run security scanner:** `./scripts/security_scan.sh --staged` -- must pass clean
+- [x] **Manual dashboard check:** Start server (`python -m src.server`), open `localhost:8000`, verify dashboard loads and basic operations work
+- [x] **Update TECH_DEBT.md:** Mark TD-025, TD-026, TD-027, TD-028, TD-029, TD-030, TD-041, TD-042, TD-043 as Resolved with session reference
 
 ---
 

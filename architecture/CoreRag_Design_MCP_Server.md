@@ -2,8 +2,10 @@
 ## Personal Knowledge Management System
 
 > **Status**: ✅ Core Complete | All major components implemented
+>
+> **Note (P8/P9 updates):** This document is an early design reference. Current MCP server is `src/mcp_server/server.py` using FastMCP over stdio transport. Authentication uses per-agent permissions via `SettingsManager` (`_mcp` agent config in `~/.corerag/settings.yaml`). The embedding model is BAAI/bge-m3 (1024d). Search includes `search_scope` parameter ("main", "restricted", "all") for dual-RAG access control. See `_CATALOG/ECOSYSTEM.md` for the current tool list (30 tools).
 
-*Last Updated: January 31, 2026*
+*Last Updated: January 31, 2026 (architecture notes updated March 2026)*
 
 ---
 

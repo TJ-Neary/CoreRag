@@ -1,5 +1,7 @@
 # P8 SP2: Dashboard HITL Controls — Implementation Plan
 
+> **Status: COMPLETE** — Implemented (Session 32, 2026-03-15/16). 8 commits, ~1,228 lines.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add skip/error file management, quality report banner, and archive manager view to the CoreRag dashboard — giving the user full GUI control over the ingestion pipeline and document catalog.

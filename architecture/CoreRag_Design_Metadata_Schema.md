@@ -2,8 +2,10 @@
 ## Personal Knowledge Management System
 
 > **Status**: ✅ Core Complete | All major components implemented
+>
+> **Note (P8/P9 updates):** `embedding_model` field value is now `BAAI/bge-m3` (1024d). Live chunk records include additional fields: `content_hash`, `context_prefix`, `quality_score`, `source_authority`, `date_extracted`, `is_sensitive`, `tags` (comma-delimited string). Authentication references in this doc are superseded by per-agent SettingsManager.
 
-*Last Updated: January 31, 2026*
+*Last Updated: January 31, 2026 (architecture notes updated March 2026)*
 
 ---
 

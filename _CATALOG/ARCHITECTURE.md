@@ -131,12 +131,16 @@ flowchart TD
 
 | Concern | Approach |
 |---------|----------|
-| Authentication | API key via `X-API-Key` header (optional — omit for open local access). Manifest endpoint always public. |
+| Authentication | Per-agent API keys managed by `SettingsManager` (`~/.corerag/settings.yaml`). Dashboard's `check_permissions()` replaces single `verify_api_key()`. Manifest endpoint always public. |
+| CSRF Protection | Origin-check middleware blocks non-localhost POST/DELETE requests (P9 Wave 1). |
 | Secrets Management | `.env` file (gitignored), loaded via python-dotenv. Template at `.env.example`. |
 | Data at Rest | LanceDB + SQLite stored in `~/.corerag/` with user-level permissions. macOS FileVault for disk encryption. |
 | Data in Transit | Localhost-only binding (`127.0.0.1:8000`). Ollama on `localhost:11434`. No external network calls by default. |
-| PII Protection | Three-layer detection (Presidio NER + custom dictionary + LLM advisory). Redacted exports. `CUI_` filename prefix. |
-| Input Validation | Query length limits, parameter validation on all API endpoints, path traversal prevention. |
+| PII Protection | Three-layer detection (Presidio NER + custom dictionary + LLM advisory). Redacted exports. `CUI_` filename prefix. PII redaction failure raises `ProcessingError` (no silent fallback). |
+| Restricted DB | Unredacted sensitive content in `~/.corerag/lancedb-restricted/` — access gated by per-agent `search_restricted` permission (default: False). |
+| Input Validation | Query length limits, parameter validation on all API endpoints, path traversal prevention for cold storage destination. |
+| SQL Safety | `safe_identifier()` used in KG schema migration; `build_eq_clause()` for LanceDB filters. |
+| Error Handling | Generic exception handlers return "Internal server error" (not raw exception details). |
 | Rate Limiting | slowapi on REST API endpoints. |
 | Memory Safety | Auto-pause at 75% RAM, resume at 65%. GC between files. Notification cooldown on pressure alerts. |
 

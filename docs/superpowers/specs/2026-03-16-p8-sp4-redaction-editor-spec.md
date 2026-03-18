@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-16
 **Author:** Claude Opus 4.6 (Session 32)
-**Status:** Approved (all sections reviewed by TJ)
+**Status:** Complete — implemented (Session 32, P8 SP4)
 **North Star:** Per-detection control over what gets redacted — your PII is protected by default, other people's data stays readable.
 
 ---

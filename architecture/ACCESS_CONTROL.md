@@ -1,6 +1,10 @@
 # Access Control Design
 
-> **Status**: ✅ Implemented | See `src/utils/privacy_audit.py` for implementation
+> **DEPRECATED (P8 SP5 / Session 32):** `src/auth/access_control.py` has been replaced by `src/settings/SettingsManager`. Per-agent permissions are now managed via the Dashboard Settings tab and stored in `~/.corerag/settings.yaml`. The RBAC scaffold described below is historical design documentation only.
+>
+> See `src/settings/settings_manager.py` for the current implementation. The entry point is `check_permissions()` in `src/server.py` (replaced `verify_api_key()`).
+
+> **Status**: ⚠️ Historical — `src/auth/access_control.py` is DEPRECATED | See `src/settings/` for current implementation
 
 ## Overview
 
