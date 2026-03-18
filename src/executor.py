@@ -324,7 +324,8 @@ def execute_approved_item(item_id: str):
                     logger.info(f"Content unchanged for {current_path.name}, skipping RAG re-index")
                 else:
                     _index_in_rag(export_text, current_path.name, final_metadata, catalog_id=doc_id)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Version check failed for {current_path.name}, re-indexing: {e}")
                 _index_in_rag(export_text, current_path.name, final_metadata, catalog_id=doc_id)
             # Extract entities for knowledge graph
             _extract_entities(export_text, current_path.name)
@@ -374,8 +375,8 @@ def execute_approved_item(item_id: str):
                 source_path=current_path.name,
                 skip_rag=item.get("skip_rag", False),
             )
-        except Exception:
-            pass  # Non-fatal — already logged inside validate_commit
+        except Exception as e:
+            logger.warning(f"Post-commit validation failed for {current_path.name}: {e}")
 
         # Register in document catalog
         try:
