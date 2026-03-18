@@ -5,6 +5,7 @@ Combines vector search with full-text search using Reciprocal Rank Fusion (RRF).
 CRITICAL: FTS index MUST be created for hybrid search to work correctly.
 """
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -359,23 +360,33 @@ class HybridSearcher:
         self, table, query_vector: List[float], k: int, filters: Optional[Dict[str, Any]]
     ) -> List[Dict]:
         """Perform ANN vector search on a given table."""
-        search = table.search(query_vector).limit(k)
-        if filters:
-            search = search.where(self._build_filter_clause(filters))
-        return search.to_list()
+        filter_clause = self._build_filter_clause(filters) if filters else None
+
+        def _run() -> List[Dict]:
+            search = table.search(query_vector).limit(k)
+            if filter_clause:
+                search = search.where(filter_clause)
+            return search.to_list()
+
+        return await asyncio.to_thread(_run)
 
     async def _fts_search_on(
         self, table, query: str, k: int, filters: Optional[Dict[str, Any]]
     ) -> List[Dict]:
         """Perform full-text search on a given table."""
-        try:
-            search = table.search(query, query_type="fts").limit(k)
-            if filters:
-                search = search.where(self._build_filter_clause(filters))
-            return search.to_list()
-        except Exception as e:
-            logger.warning(f"FTS search failed: {e}")
-            return []
+        filter_clause = self._build_filter_clause(filters) if filters else None
+
+        def _run() -> List[Dict]:
+            try:
+                search = table.search(query, query_type="fts").limit(k)
+                if filter_clause:
+                    search = search.where(filter_clause)
+                return search.to_list()
+            except Exception as e:
+                logger.warning(f"FTS search failed: {e}")
+                return []
+
+        return await asyncio.to_thread(_run)
 
     async def _sparse_search_on(
         self,
@@ -385,14 +396,19 @@ class HybridSearcher:
         filters: Optional[Dict[str, Any]],
     ) -> List[Dict]:
         """Perform sparse vector search on a given table."""
-        try:
-            search = table.search(query_sparse, vector_column_name="sparse_vector").limit(k)
-            if filters:
-                search = search.where(self._build_filter_clause(filters))
-            return search.to_list()
-        except Exception as e:
-            logger.debug(f"Sparse search not available: {e}")
-            return []
+        filter_clause = self._build_filter_clause(filters) if filters else None
+
+        def _run() -> List[Dict]:
+            try:
+                search = table.search(query_sparse, vector_column_name="sparse_vector").limit(k)
+                if filter_clause:
+                    search = search.where(filter_clause)
+                return search.to_list()
+            except Exception as e:
+                logger.debug(f"Sparse search not available: {e}")
+                return []
+
+        return await asyncio.to_thread(_run)
 
     async def _vector_only_search_on(
         self,

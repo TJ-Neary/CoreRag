@@ -9,6 +9,7 @@ Usage:
     python -m src.mcp_server.server
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -134,7 +135,7 @@ async def _startup():
     # Build async embedder callable for CoreRagTools
     # CoreRagTools.search_knowledge calls: query_vector = await self.embedder(query)
     async def _embed_query(text: str) -> list[float]:
-        return _embedding_service.embed_query(text)
+        return await asyncio.to_thread(_embedding_service.embed_query, text)
 
     # Initialize knowledge graph
     from src.graph.knowledge_graph import KnowledgeGraph

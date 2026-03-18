@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -460,24 +460,28 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
             return {"status": "updated"}
 
     @router.post("/api/approve/{item_id}")
-    async def approve_queue_item(item_id: str, background_tasks: BackgroundTasks) -> dict:
+    async def approve_queue_item(item_id: str) -> dict:
         item = get_item(item_id)
         if item:
             target_folder = item.get("proposed", {}).get("target_folder", "")
             if target_folder:
                 ensure_folder_in_structure(target_folder)
         update_item(item_id, {"status": "approved"})
-        background_tasks.add_task(execute_approved_item, item_id)
+        import threading
+
+        threading.Thread(target=execute_approved_item, args=(item_id,), daemon=True).start()
         return {"status": "approved", "message": "Processing started"}
 
     # ── Bulk Operations ─────────────────────────────────────────────────
 
     @router.post("/api/bulk-approve")
-    async def bulk_approve(request: Request, background_tasks: BackgroundTasks) -> dict:
+    async def bulk_approve(request: Request) -> dict:
         body = await request.json()
         item_ids = body.get("item_ids", [])
         if not item_ids:
             return {"status": "error", "message": "No items specified"}
+        import threading
+
         approved = []
         for item_id in item_ids:
             item = get_item(item_id)
@@ -486,7 +490,7 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 if target_folder:
                     ensure_folder_in_structure(target_folder)
                 update_item(item_id, {"status": "approved"})
-                background_tasks.add_task(execute_approved_item, item_id)
+                threading.Thread(target=execute_approved_item, args=(item_id,), daemon=True).start()
                 approved.append(item_id)
         return {"status": "ok", "approved": len(approved), "items": approved}
 
