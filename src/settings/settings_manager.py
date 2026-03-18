@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,7 @@ class SettingsManager:
         self._data: dict[str, Any] | None = None
         self._mtime: float = 0.0
         self._key_cache: dict[str, str] = {}  # api_key_value → agent_name
+        self._last_stat_check: float = 0.0
 
     # ── Load / Save ──────────────────────────────────────────────────────
 
@@ -291,11 +293,17 @@ class SettingsManager:
                     cache[key_value] = agent_name
         self._key_cache = cache
 
+    _RELOAD_INTERVAL = 5.0  # seconds
+
     def _ensure_loaded(self) -> None:
         """Reload settings if the file has been modified since last load."""
         if self._data is None:
             self.load()
             return
+        now = time.monotonic()
+        if now - self._last_stat_check < self._RELOAD_INTERVAL:
+            return
+        self._last_stat_check = now
         if self._path.exists():
             mtime = self._path.stat().st_mtime
             if mtime != self._mtime:
