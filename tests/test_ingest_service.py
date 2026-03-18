@@ -20,13 +20,11 @@ Mocking strategy:
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.ingest_service import IngestResult, IngestService
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -225,16 +223,14 @@ async def test_dedup_skips_unchanged_content(embedder: MagicMock):
     mock_parent.token_count = 200
 
     content_hash = hashlib.sha256(mock_child.content.encode()).hexdigest()
-    document_id = hashlib.sha256(
-        (mock_child.content * 20)[:5000].encode()
-    ).hexdigest()[:16]
+    document_id = hashlib.sha256((mock_child.content * 20)[:5000].encode()).hexdigest()[:16]
 
     # Make the table return the existing hash
     mock_table = db.open_table.return_value
     mock_table.to_list.return_value = [{"content_hash": content_hash, "document_id": document_id}]
 
-    with patch("src.ingest_service.ParentChildChunker") as MockChunker:
-        MockChunker.return_value.chunk_document.return_value = ([mock_parent], [mock_child])
+    with patch("src.chunking.parent_child.ParentChildChunker") as mock_chunker_cls:
+        mock_chunker_cls.return_value.chunk_document.return_value = ([mock_parent], [mock_child])
         service = IngestService(embedding_service=embedder, db=db)
         result = await service.ingest(
             mock_child.content * 20,
@@ -273,8 +269,8 @@ async def test_changed_content_reindexed(embedder: MagicMock):
     mock_table = db.open_table.return_value
     mock_table.to_list.return_value = [{"content_hash": old_hash, "document_id": "doc-new"}]
 
-    with patch("src.ingest_service.ParentChildChunker") as MockChunker:
-        MockChunker.return_value.chunk_document.return_value = ([mock_parent], [mock_child])
+    with patch("src.chunking.parent_child.ParentChildChunker") as mock_chunker_cls:
+        mock_chunker_cls.return_value.chunk_document.return_value = ([mock_parent], [mock_child])
         service = IngestService(embedding_service=embedder, db=db)
         result = await service.ingest(
             mock_child.content,
@@ -499,7 +495,7 @@ async def test_document_id_in_child_rows(embedder: MagicMock):
 @pytest.mark.asyncio
 async def test_skip_context_skips_context_generation(service: IngestService):
     """skip_context=True should never call ContextGenerator."""
-    with patch("src.chunking.context_generator.ContextGenerator") as MockCtx:
+    with patch("src.chunking.context_generator.ContextGenerator") as mock_ctx_cls:
         result = await service.ingest(
             SAMPLE_TEXT,
             metadata={},
@@ -507,14 +503,14 @@ async def test_skip_context_skips_context_generation(service: IngestService):
             skip_quality=True,
             skip_graph=True,
         )
-    MockCtx.assert_not_called()
+    mock_ctx_cls.assert_not_called()
     assert result.child_chunks > 0
 
 
 @pytest.mark.asyncio
 async def test_skip_graph_skips_entity_extraction(service: IngestService):
     """skip_graph=True should not attempt knowledge graph extraction."""
-    with patch("src.graph.knowledge_graph.KnowledgeGraph") as MockGraph:
+    with patch("src.graph.knowledge_graph.KnowledgeGraph") as mock_graph_cls:
         result = await service.ingest(
             SAMPLE_TEXT,
             metadata={},
@@ -522,14 +518,14 @@ async def test_skip_graph_skips_entity_extraction(service: IngestService):
             skip_quality=True,
             skip_graph=True,
         )
-    MockGraph.assert_not_called()
+    mock_graph_cls.assert_not_called()
     assert result.child_chunks > 0
 
 
 @pytest.mark.asyncio
 async def test_skip_quality_skips_chunk_scorer(service: IngestService):
     """skip_quality=True should not call ChunkScorer."""
-    with patch("src.quality.chunk_scorer.ChunkScorer") as MockScorer:
+    with patch("src.quality.chunk_scorer.ChunkScorer") as mock_scorer_cls:
         result = await service.ingest(
             SAMPLE_TEXT,
             metadata={},
@@ -537,7 +533,7 @@ async def test_skip_quality_skips_chunk_scorer(service: IngestService):
             skip_quality=True,
             skip_graph=True,
         )
-    MockScorer.assert_not_called()
+    mock_scorer_cls.assert_not_called()
     assert result.child_chunks > 0
 
 
@@ -622,23 +618,27 @@ async def test_embed_with_sparse_used_when_available():
 
 
 @pytest.mark.asyncio
-async def test_db_write_error_does_not_propagate_as_exception():
-    """DB failures during write are handled gracefully (logged, not raised)."""
+async def test_db_write_error_propagates_when_all_fallbacks_fail():
+    """When open_table → create_table → open_table all fail, the exception propagates.
+
+    This is by design: the ingest_service tries 3 paths (open, create, open) and
+    only swallows exceptions at the outer try/except level during the dedup read.
+    Write failures at the end of the pipeline surface to the caller.
+    """
     embedder = _make_embedder()
     db = _make_db()
     db.open_table.side_effect = Exception("DB unavailable")
     db.create_table.side_effect = Exception("DB unavailable")
 
     service = IngestService(embedding_service=embedder, db=db)
-    # Should not raise — the pipeline handles DB errors internally
-    result = await service.ingest(
-        SAMPLE_TEXT,
-        metadata={},
-        skip_context=True,
-        skip_quality=True,
-        skip_graph=True,
-    )
-    assert isinstance(result, IngestResult)
+    with pytest.raises(Exception, match="DB unavailable"):
+        await service.ingest(
+            SAMPLE_TEXT,
+            metadata={},
+            skip_context=True,
+            skip_quality=True,
+            skip_graph=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -758,8 +758,9 @@ async def test_context_prefix_set_when_context_generation_enabled(embedder: Magi
     mock_ctx_gen.generate_contexts_batch = AsyncMock(return_value=["Context: test"] * 10)
 
     service = IngestService(embedding_service=embedder, db=db)
-    with patch("src.chunking.context_generator.ContextGenerator", return_value=mock_ctx_gen), patch(
-        "src.config.CONTEXT_GENERATION", True
+    with (
+        patch("src.chunking.context_generator.ContextGenerator", return_value=mock_ctx_gen),
+        patch("src.config.CONTEXT_GENERATION", True),
     ):
         await service.ingest(
             SAMPLE_TEXT,
