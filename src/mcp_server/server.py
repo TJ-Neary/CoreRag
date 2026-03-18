@@ -1090,21 +1090,41 @@ async def catalog_search(
 
     try:
         catalog = CatalogManager()
-        filters: dict = {}
-        if tags:
-            filters["tag"] = tags.split(",")[0].strip()
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+        base_filters: dict = {}
         if sensitive_only:
-            filters["is_sensitive"] = True
-        if query:
-            filters["tag"] = query  # Search by tag match
+            base_filters["is_sensitive"] = True
 
-        results = catalog.search(**filters)
-        # Also search by category
+        results: list = []
+        seen_ids: set = set()
+
+        # Search each explicit tag filter, then merge
+        if tag_list:
+            for tag_val in tag_list:
+                for doc in catalog.search(tag=tag_val, **base_filters):
+                    if doc.id not in seen_ids:
+                        seen_ids.add(doc.id)
+                        results.append(doc)
+        else:
+            # No explicit tag filter — start from base filters only
+            for doc in catalog.search(**base_filters):
+                if doc.id not in seen_ids:
+                    seen_ids.add(doc.id)
+                    results.append(doc)
+
+        # Apply query as a separate tag/category search, intersect with existing or union
         if query:
-            cat_results = catalog.search(category=query)
-            seen_ids = {doc.id for doc in results}
+            # Search by tag match
+            tag_results = catalog.search(tag=query, **base_filters)
+            for doc in tag_results:
+                if doc.id not in seen_ids:
+                    seen_ids.add(doc.id)
+                    results.append(doc)
+            # Also search by category
+            cat_results = catalog.search(category=query, **base_filters)
             for doc in cat_results:
                 if doc.id not in seen_ids:
+                    seen_ids.add(doc.id)
                     results.append(doc)
 
         return {
