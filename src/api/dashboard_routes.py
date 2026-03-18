@@ -296,7 +296,8 @@ def create_dashboard_router(state: DashboardState) -> APIRouter:
                 "total": len(results),
             }
         except Exception as e:
-            return {"documents": [], "total": 0, "error": str(e)}
+            logger.error(f"Catalog list failed: {e}", exc_info=True)
+            return {"documents": [], "total": 0, "error": "Internal server error"}
 
     @router.get("/api/catalog/stats")
     async def get_catalog_stats() -> dict:
