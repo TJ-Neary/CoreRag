@@ -7,8 +7,8 @@
 | Severity | Open | Resolved | Blocked | Deferred |
 |----------|------|----------|---------|----------|
 | Critical | 0 | 4 | 0 | 0 |
-| High | 1 | 13 | 0 | 0 |
-| Medium | 3 | 20 | 1 | 0 |
+| High | 2 | 12 | 0 | 0 |
+| Medium | 3 | 19 | 1 | 0 |
 | Low | 6 | 4 | 0 | 2 |
 
 ## Quick Reference
